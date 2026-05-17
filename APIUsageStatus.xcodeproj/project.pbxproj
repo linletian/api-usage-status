@@ -1,0 +1,298 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		40EE381667DE4DF4CF64013D /* APIUsageStatusApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5408EE11C15AFC05611C02A5 /* APIUsageStatusApp.swift */; };
+		75BF5FE0D38E96A0ABBC4AB4 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B03E158C334541703803E60 /* MenuBarController.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D40AF380D143B91FA54432F3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FBBAA238A7DB2B5F5514317A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E5CE8596F55C324423E05C02;
+			remoteInfo = APIUsageStatus;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		2B03E158C334541703803E60 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
+		39673FA7C9DBE3BF96F870D9 /* APIUsageStatus.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = APIUsageStatus.entitlements; sourceTree = "<group>"; };
+		5408EE11C15AFC05611C02A5 /* APIUsageStatusApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIUsageStatusApp.swift; sourceTree = "<group>"; };
+		7A9D4FCF0188D247F28ACD1C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		C6D41DBF3C9296EEE521EED7 /* APIUsageStatusTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = APIUsageStatusTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CF1B4A6DBD7E72FCA7BD9E00 /* APIUsageStatus.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = APIUsageStatus.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		3D59BAB076C61DD22E612CF5 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				CF1B4A6DBD7E72FCA7BD9E00 /* APIUsageStatus.app */,
+				C6D41DBF3C9296EEE521EED7 /* APIUsageStatusTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		778552EF2583674797F6D5EB /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				7A9D4FCF0188D247F28ACD1C /* Info.plist */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		81440FE5223BD023BD12015B /* MenuBar */ = {
+			isa = PBXGroup;
+			children = (
+				2B03E158C334541703803E60 /* MenuBarController.swift */,
+			);
+			path = MenuBar;
+			sourceTree = "<group>";
+		};
+		AA606449405746D0F97359FA /* APIUsageStatusTests */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = APIUsageStatusTests;
+			sourceTree = "<group>";
+		};
+		B3F2E88B44415E8419F8FFA3 /* APIUsageStatus */ = {
+			isa = PBXGroup;
+			children = (
+				81440FE5223BD023BD12015B /* MenuBar */,
+				778552EF2583674797F6D5EB /* Resources */,
+				39673FA7C9DBE3BF96F870D9 /* APIUsageStatus.entitlements */,
+				5408EE11C15AFC05611C02A5 /* APIUsageStatusApp.swift */,
+			);
+			path = APIUsageStatus;
+			sourceTree = "<group>";
+		};
+		F8383ED420BAA012FA324403 = {
+			isa = PBXGroup;
+			children = (
+				B3F2E88B44415E8419F8FFA3 /* APIUsageStatus */,
+				AA606449405746D0F97359FA /* APIUsageStatusTests */,
+				3D59BAB076C61DD22E612CF5 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		DA248F4391C8F01498EE7265 /* APIUsageStatusTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BF2364C7108342AA2CB9E83F /* Build configuration list for PBXNativeTarget "APIUsageStatusTests" */;
+			buildPhases = (
+				9C4B3E4F48FD48424985E2CA /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				15B1FD6B21528FA5EE1A12BD /* PBXTargetDependency */,
+			);
+			name = APIUsageStatusTests;
+			packageProductDependencies = (
+			);
+			productName = APIUsageStatusTests;
+			productReference = C6D41DBF3C9296EEE521EED7 /* APIUsageStatusTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		E5CE8596F55C324423E05C02 /* APIUsageStatus */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E80C7118B3E62F4DAF17697D /* Build configuration list for PBXNativeTarget "APIUsageStatus" */;
+			buildPhases = (
+				36E21CE4C9B5AAE8E6E32E71 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = APIUsageStatus;
+			packageProductDependencies = (
+			);
+			productName = APIUsageStatus;
+			productReference = CF1B4A6DBD7E72FCA7BD9E00 /* APIUsageStatus.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		FBBAA238A7DB2B5F5514317A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					DA248F4391C8F01498EE7265 = {
+						ProvisioningStyle = Automatic;
+					};
+					E5CE8596F55C324423E05C02 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = A193361153432C53EDF6341A /* Build configuration list for PBXProject "APIUsageStatus" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = F8383ED420BAA012FA324403;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 3D59BAB076C61DD22E612CF5 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E5CE8596F55C324423E05C02 /* APIUsageStatus */,
+				DA248F4391C8F01498EE7265 /* APIUsageStatusTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		36E21CE4C9B5AAE8E6E32E71 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				40EE381667DE4DF4CF64013D /* APIUsageStatusApp.swift in Sources */,
+				75BF5FE0D38E96A0ABBC4AB4 /* MenuBarController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9C4B3E4F48FD48424985E2CA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		15B1FD6B21528FA5EE1A12BD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E5CE8596F55C324423E05C02 /* APIUsageStatus */;
+			targetProxy = D40AF380D143B91FA54432F3 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		48279F8A06E1EF5475E9C07C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = APIUsageStatus/APIUsageStatus.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = APIUsageStatus/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.APIUsageStatus;
+			};
+			name = Release;
+		};
+		891E4AD0634280FC651322FD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.APIUsageStatusTests;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/APIUsageStatus.app/Contents/MacOS/APIUsageStatus";
+			};
+			name = Release;
+		};
+		8F76659416DC841FE43463C5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_NAME = APIUsageStatus;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		9219C579C1F026A9FD02FA9C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.APIUsageStatusTests;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/APIUsageStatus.app/Contents/MacOS/APIUsageStatus";
+			};
+			name = Debug;
+		};
+		96BF6F4218922CF6D604DDDD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = APIUsageStatus/APIUsageStatus.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = APIUsageStatus/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.APIUsageStatus;
+			};
+			name = Debug;
+		};
+		BA533040505F35FD7819DF8C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_NAME = APIUsageStatus;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A193361153432C53EDF6341A /* Build configuration list for PBXProject "APIUsageStatus" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8F76659416DC841FE43463C5 /* Debug */,
+				BA533040505F35FD7819DF8C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		BF2364C7108342AA2CB9E83F /* Build configuration list for PBXNativeTarget "APIUsageStatusTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9219C579C1F026A9FD02FA9C /* Debug */,
+				891E4AD0634280FC651322FD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E80C7118B3E62F4DAF17697D /* Build configuration list for PBXNativeTarget "APIUsageStatus" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				96BF6F4218922CF6D604DDDD /* Debug */,
+				48279F8A06E1EF5475E9C07C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = FBBAA238A7DB2B5F5514317A /* Project object */;
+}

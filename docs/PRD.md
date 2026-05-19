@@ -463,9 +463,54 @@ Authorization: Bearer <Token Plan Key>
 | API-vlm（多模态理解） | 同文本模型 | 每次请求扣除 3 次 M2.7 请求 |
 | Credits | 按量补充 | 超出 Token Plan 额度部分由 Credits 自动支付 |
 
+**响应格式**（已验证）：
+
+响应体是一个 `model_remains` 数组，每个元素代表一个模型的配额状态。**每个模型都是独立的监控维度**，用户可按需选择要监控的模型。
+
+```json
+{
+  "model_remains": [
+    {
+      "model_name": "MiniMax-M2.7",
+      "current_interval_total_count": 600,
+      "current_interval_usage_count": 57,
+      "start_time": 1779174000000,
+      "end_time": 1779192000000,
+      "remains_time": 5024998,
+      "current_weekly_total_count": 0,
+      "current_weekly_usage_count": 0,
+      "weekly_start_time": 1779033600000,
+      "weekly_end_time": 1779638400000,
+      "weekly_remains_time": 451424998
+    }
+  ],
+  "base_resp": { "status_code": 0, "status_msg": "success" }
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `model_name` | string | 模型名称，如 `"MiniMax-M2.7"`、`"speech-hd"`、`"music-2.6"` 等。每个值对应一个独立维度 |
+| `current_interval_total_count` | int | 当前周期配额数（如 600 次 / 5小时窗口）。**为 0 表示该模型无配额限制**，不显示百分比 |
+| `current_interval_usage_count` | int | 当前周期已用次数 |
+| `start_time` / `end_time` | int64 | 当前周期时间窗口（毫秒时间戳） |
+| `remains_time` | int64 | 周期内剩余时间（毫秒） |
+| `current_weekly_total_count` | int | 本周总配额数。为 0 表示无周限额 |
+| `current_weekly_usage_count` | int | 本周已用次数 |
+| `weekly_start_time` / `weekly_end_time` | int64 | 本周时间窗口（毫秒时间戳） |
+
+**百分比计算规则**：
+
+- `current_interval_total_count > 0` 时：`百分比 = current_interval_usage_count / current_interval_total_count * 100`
+- `current_interval_total_count == 0` 时：该模型无配额限制，不显示百分比（或显示 `NO_LIMIT`）
+
+**内部维度标识符**：
+
+每个 `model_name` 值直接作为 `Instance.dimension` 使用，不再使用固定的 `text_model_5h` / `non_text_daily` 等枚举值。
+
 > **注意**：MiniMax Token Plan 面向个人开发者的交互式使用场景，生产环境建议使用按量付费。
->
-> **响应格式**：待实现时拉取实际接口文档确认，不在此 PRD 中预先定义。
 
 ---
 

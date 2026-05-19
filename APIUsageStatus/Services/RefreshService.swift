@@ -1,0 +1,342 @@
+import Foundation
+
+// MARK: - RefreshService
+
+actor RefreshService {
+    private let persistenceService: PersistenceService
+    private let appState: AppState
+    private var refreshTask: Task<Void, Never>?
+    private var refreshInterval: TimeInterval = 300 // 5 minutes default
+    private var lastRefreshAt: Date?
+
+    private let logger = AppLogger(category: "refresh")
+
+    init(persistenceService: PersistenceService, appState: AppState) {
+        self.persistenceService = persistenceService
+        self.appState = appState
+    }
+
+    // MARK: - Timer Control
+
+    func start(interval: TimeInterval? = nil) {
+        if let interval = interval {
+            refreshInterval = interval * 60 // Convert minutes to seconds
+        }
+
+        stop() // Cancel any existing task
+
+        refreshTask = Task {
+            // Perform initial refresh immediately
+            await performRefresh()
+
+            // Then loop with timer
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(refreshInterval))
+                if !Task.isCancelled {
+                    await performRefresh()
+                }
+            }
+        }
+
+        logger.info("RefreshService started with interval: \(self.refreshInterval)s")
+    }
+
+    func stop() {
+        refreshTask?.cancel()
+        refreshTask = nil
+        logger.info("RefreshService stopped")
+    }
+
+    func restartTimer(interval: TimeInterval) {
+        refreshInterval = interval * 60
+        start() // Will stop existing and restart
+    }
+
+    // MARK: - Manual Trigger
+
+    func triggerManualRefresh() async {
+        await performRefresh()
+    }
+
+    // MARK: - Core Refresh Logic
+
+    private func performRefresh() async {
+        logger.info("Starting refresh cycle")
+
+        // 1. Set refresh state to refreshing
+        await appState.setRefreshState(.refreshing)
+
+        let instances = await appState.getInstances()
+        let enabledInstances = instances.filter { $0.enabled }
+
+        if enabledInstances.isEmpty {
+            // No enabled instances - update state and finish
+            await appState.updateSlotData([])
+            await appState.setRefreshState(.idle)
+            lastRefreshAt = Date()
+            logger.info("No enabled instances, refresh skipped")
+            return
+        }
+
+        // 2. Group instances by api_key_ref
+        let groupedByKeyRef = Dictionary(grouping: enabledInstances) { $0.apiKeyRef }
+        var allSlotData: [SlotViewData] = []
+        var errorSummaries: [ErrorSummary] = []
+
+        // 3. Process each api_key_ref group serially
+        for (apiKeyRef, instancesInGroup) in groupedByKeyRef {
+            // 3a. Get API key from Keychain
+            guard let apiKey = await persistenceService.getApiKey(for: apiKeyRef) else {
+                // No API key - mark all instances in this group as error
+                for instance in instancesInGroup {
+                    let error = ErrorSummary(
+                        id: instance.uuid,
+                        displayName: instance.displayName.isEmpty ? instance.shortName : instance.displayName,
+                        errorType: .authFailed
+                    )
+                    errorSummaries.append(error)
+                }
+                logger.warning("No API key found for ref: \(apiKeyRef)")
+                continue
+            }
+
+            // 3b. Get supplier for the first instance's provider
+            guard let supplier = SupplierRegistry.getSupplier(for: instancesInGroup[0].provider) else {
+                for instance in instancesInGroup {
+                    let error = ErrorSummary(
+                        id: instance.uuid,
+                        displayName: instance.displayName.isEmpty ? instance.shortName : instance.displayName,
+                        errorType: .apiError(code: 0)
+                    )
+                    errorSummaries.append(error)
+                }
+                continue
+            }
+
+            // 3c. Fetch usage with retry
+            do {
+                let response = try await RetryPolicy.shared.withRetry {
+                    try await supplier.fetchUsage(apiKey: apiKey)
+                }
+
+                // 3d. Map response to each instance's SlotViewData
+                for instance in instancesInGroup {
+                    let slotData = mapInstanceToSlotData(instance: instance, response: response)
+                    allSlotData.append(slotData)
+                }
+            } catch let error as RefreshError {
+                // Handle fetch error - mark all instances in this group as error
+                let errorType = error.errorType
+                for instance in instancesInGroup {
+                    let summary = ErrorSummary(
+                        id: instance.uuid,
+                        displayName: instance.displayName.isEmpty ? instance.shortName : instance.displayName,
+                        errorType: errorType
+                    )
+                    errorSummaries.append(summary)
+                }
+                logger.error("Refresh failed for \(apiKeyRef): \(error)")
+            } catch {
+                // Unknown error
+                for instance in instancesInGroup {
+                    let summary = ErrorSummary(
+                        id: instance.uuid,
+                        displayName: instance.displayName.isEmpty ? instance.shortName : instance.displayName,
+                        errorType: .apiError(code: 0)
+                    )
+                    errorSummaries.append(summary)
+                }
+                logger.error("Unexpected error during refresh: \(error.localizedDescription)")
+            }
+        }
+
+        // 5. For balance-type instances, integrate balance tracking
+        let instancesWithBalance = enabledInstances.filter { !$0.isQuotaType }
+        for instance in instancesWithBalance {
+            // Find the corresponding slot data
+            if let index = allSlotData.firstIndex(where: { $0.uuid == instance.uuid }) {
+                let slot = allSlotData[index]
+                if case .balance(let amount, let isAvailable, _) = slot.instanceType {
+                    // Load balance snapshot
+                    var snapshot = await persistenceService.loadBalanceSnapshot(for: instance.uuid)
+
+                    // Get daily averages for periods configured in thresholds
+                    var dailyAverages: [AvgDailyPeriod: Decimal] = [:]
+                    if case .balance(_, _, let periods, _) = instance.thresholds {
+                        // Calculate daily averages from history
+                        if let history = snapshot?.history {
+                            dailyAverages = calculateDailyAverages(history: history, periods: periods)
+                        }
+                    }
+
+                    var updatedSlot = SlotViewData(
+                        uuid: slot.uuid,
+                        shortName: slot.shortName,
+                        instanceType: .balance(amount: amount, isAvailable: isAvailable, currency: instance.currency),
+                        sortOrder: slot.sortOrder,
+                        colorState: slot.colorState,
+                        todayUsage: snapshot?.todayUsage,
+                        dailyAverages: dailyAverages
+                    )
+                    allSlotData[index] = updatedSlot
+
+                    // Auto-correct currency if response has currency
+                    if let responseCurrency = getCurrencyFromSlotData(allSlotData, instanceUUID: instance.uuid) {
+                        if instance.currency != responseCurrency {
+                            var updatedInstance = instance
+                            updatedInstance.currency = responseCurrency
+                            await appState.updateInstance(updatedInstance)
+                            logger.info("Auto-corrected currency from \(instance.currency ?? "nil") to \(responseCurrency)")
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Calculate time-derived fields for quota-type instances
+        for (index, slot) in allSlotData.enumerated() {
+            if case .quota(_, _, _, _, _) = slot.instanceType {
+                let nextRefreshMinutes = calculateNextRefreshMinutes()
+                let cycleRemainingDays = 0 // Will be computed in Phase 2
+
+                if case .quota(let percent, let usageValue, let limitValue, _, _) = slot.instanceType {
+                    let updatedType = InstanceType.quota(
+                        percent: percent,
+                        usageValue: usageValue,
+                        limitValue: limitValue,
+                        nextRefreshMinutes: nextRefreshMinutes,
+                        cycleRemainingDays: cycleRemainingDays
+                    )
+                    allSlotData[index] = SlotViewData(
+                        uuid: slot.uuid,
+                        shortName: slot.shortName,
+                        instanceType: updatedType,
+                        sortOrder: slot.sortOrder,
+                        colorState: slot.colorState,
+                        todayUsage: slot.todayUsage,
+                        dailyAverages: slot.dailyAverages
+                    )
+                }
+            }
+        }
+
+        // Sort by sortOrder
+        allSlotData.sort { $0.sortOrder < $1.sortOrder }
+
+        // 6. Update AppState
+        await appState.updateSlotData(allSlotData)
+        await appState.setErrorSummaries(errorSummaries)
+        await appState.setRefreshState(.idle)
+
+        lastRefreshAt = Date()
+        logger.info("Refresh cycle completed: \(allSlotData.count) slots, \(errorSummaries.count) errors")
+    }
+
+    // MARK: - Helper Methods
+
+    private func mapInstanceToSlotData(instance: Instance, response: SupplierResponse) -> SlotViewData {
+        let instanceType: InstanceType
+        let colorState: ColorState
+
+        if instance.isQuotaType {
+            // Quota-type instance
+            let valueString = response.value(forDimension: instance.dimension) ?? "0"
+            let percent = parsePercent(from: valueString)
+
+            instanceType = .quota(
+                percent: percent,
+                usageValue: valueString,
+                limitValue: "100",
+                nextRefreshMinutes: calculateNextRefreshMinutes(),
+                cycleRemainingDays: nil
+            )
+
+            colorState = determineColorState(percent: percent, thresholds: instance.thresholds)
+        } else {
+            // Balance-type instance
+            let balance = response.value(forDimension: "balance") ?? "0"
+
+            if !response.isAvailable {
+                instanceType = .balance(amount: balance, isAvailable: false, currency: response.currency)
+                colorState = .unavailable
+            } else {
+                instanceType = .balance(amount: balance, isAvailable: true, currency: response.currency)
+                colorState = determineBalanceColorState(balance: balance, thresholds: instance.thresholds)
+            }
+        }
+
+        return SlotViewData(
+            uuid: instance.uuid,
+            shortName: instance.shortName,
+            instanceType: instanceType,
+            sortOrder: instance.sortOrder,
+            colorState: colorState
+        )
+    }
+
+    private func parsePercent(from value: String) -> Double {
+        // Handle formats like "85", "85.5", "85.5%"
+        let cleaned = value.replacingOccurrences(of: "%", with: "").trimmed
+        return Double(cleaned) ?? 0.0
+    }
+
+    private func calculateNextRefreshMinutes() -> Int {
+        guard let lastRefresh = lastRefreshAt else {
+            return Int(refreshInterval / 60)
+        }
+        let elapsed = Date().timeIntervalSince(lastRefresh)
+        let remaining = refreshInterval - elapsed
+        return max(0, Int(remaining / 60))
+    }
+
+    private func determineColorState(percent: Double, thresholds: Thresholds) -> ColorState {
+        switch thresholds {
+        case .quota(let warningPercent, let criticalPercent):
+            if percent >= Double(criticalPercent) {
+                return .critical
+            } else if percent >= Double(warningPercent) {
+                return .warning
+            }
+            return .normal
+        case .balance:
+            return .normal
+        }
+    }
+
+    private func determineBalanceColorState(balance: String, thresholds: Thresholds) -> ColorState {
+        guard case .balance(let warning, let critical, _, _) = thresholds else {
+            return .normal
+        }
+
+        guard let balanceDecimal = Decimal(string: balance) else {
+            return .normal
+        }
+
+        if balanceDecimal < critical {
+            return .critical
+        } else if balanceDecimal < warning {
+            return .warning
+        }
+        return .normal
+    }
+
+    private func calculateDailyAverages(history: [DailyUsageEntry], periods: [AvgDailyPeriod]) -> [AvgDailyPeriod: Decimal] {
+        var result: [AvgDailyPeriod: Decimal] = [:]
+
+        for period in periods {
+            let avg = BalanceCalculator.average(for: period, from: history)
+            result[period] = avg
+        }
+
+        return result
+    }
+
+    private func getCurrencyFromSlotData(_ slots: [SlotViewData], instanceUUID: String) -> String? {
+        slots.first { $0.uuid == instanceUUID }.flatMap { slot in
+            if case .balance(_, _, let currency) = slot.instanceType {
+                return currency
+            }
+            return nil
+        }
+    }
+}

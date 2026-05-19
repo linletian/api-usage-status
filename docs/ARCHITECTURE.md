@@ -211,11 +211,11 @@ protocol Supplier {
 }
 
 struct SupplierResponse {
-    let rawData: [String: Any]  // dimension → value 映射
+    let rawData: [String: String]  // dimension → value 映射
 }
 ```
 
-- `MiniMaxSupplier`：实现 `Supplier`。一次 HTTP 调用 `GET /v1/token_plan/remains` 返回 Token Plan 用量数据。实际响应格式待实现时确认（PRD 附录 B 注明官方文档未公开响应结构），`MiniMaxResponseParser` 作为适配层，将 API 响应字段映射为内部维度标识符（`text_model_5h` / `non_text_daily` / `weekly_total`）。解析逻辑实现前需先拉取实际 API 响应确认字段名与结构。
+- `MiniMaxSupplier`：实现 `Supplier`。一次 HTTP 调用 `GET /v1/token_plan/remains` 返回 Token Plan 用量数据。响应格式见 PRD 附录 B。`MiniMaxResponseParser` 作为适配层，将 API 响应字段映射为内部维度标识符（每个 `model_name` 作为独立维度）。
 - `DeepSeekSupplier`：实现 `Supplier`。一次 HTTP 调用 `GET /user/balance` 返回余额信息。响应格式已在 PRD 附录 A 中明确定义。
 
 ### 2.9 持久化服务（`PersistenceService.swift`）
@@ -350,9 +350,9 @@ RefreshService.performRefresh()
     │     ├──▶ nextRefreshMinutes = refreshInterval - 上次刷新至今已过秒数 ÷ 60
     │     │
     │     └──▶ 按维度计算 cycleRemainingDays：
-    │           - text_model_5h → nil（5h 滚动窗口无天概念）
-    │           - non_text_daily → 距今日 23:59:59 天数（即 0 或 1）
-    │           - weekly_total → 距本周日 23:59:59 天数
+    │           - 5 小时滚动窗口（如 MiniMax-M2.7）→ nil（滚动窗口无天概念）
+    │           - 每日配额型（如 speech-hd）→ 距今日 23:59:59 天数（即 0 或 1）
+    │           - 周累计型（current_weekly_total_count > 0 时）→ 距本周日 23:59:59 天数
     │
     ├──▶ AppState.updateSlotData(slotViewDataList)
     │
@@ -449,8 +449,7 @@ SettingsViewModel.save()
 struct Instance: Codable, Identifiable {
     let uuid: String            // UUID v4，不可变
     var provider: String        // "minimax" | "deepseek"
-    var dimension: String       // 内部维度标识符："text_model_5h" | "non_text_daily" | "weekly_total" | "balance"
-                                 // 注：与 API 响应字段名不一定相同，由 Parser 负责映射
+    var dimension: String       // MiniMax: model_name 值（如 "MiniMax-M2.7"、"speech-hd"）；DeepSeek: "balance"
     var displayName: String     // 用户自定义，如「MiniMax-文字」
     var shortName: String       // 2 个大写字母，用于菜单栏
     var apiKeyRef: String       // 引用 Keychain 条目；同 Key 的实例共享
@@ -720,13 +719,15 @@ struct MiniMaxSupplier: Supplier {
 
 解析后的响应由 `MiniMaxResponseParser` 映射到内部维度标识符：
 
-> **注意**：MiniMax 官方文档未公开 `GET /v1/token_plan/remains` 的响应体结构（PRD 附录 B）。实际字段名、嵌套层级、数据类型均需在实现时拉取 API 响应后确认。以下映射关系仅为规划性示意，不代表 API 真实字段：
+每个 `model_name` 条目映射为一个独立的维度，百分比计算规则：
 
-| 内部维度标识符 | 含义 |
-|---------------|------|
-| `text_model_5h` | 文本模型 5 小时滚动窗口用量 |
-| `non_text_daily` | 非文本模型每日配额用量 |
-| `weekly_total` | 周累计请求数 |
+| 模型 | 计算规则 |
+|------|----------|
+| `current_interval_total_count > 0` | `percent = current_interval_usage_count / current_interval_total_count * 100` |
+| `current_interval_total_count == 0` | 无配额限制，不显示百分比（或显示 `NO_LIMIT`） |
+| `current_weekly_total_count > 0` | 额外计算周累计百分比 |
+
+`rawData` 中每个 model_name 作为 key，存储百分比字符串（如 `"9.5"`），辅助字段用 `model_name:total`、`model_name:used`、`model_name:weekly_total` 等格式。
 
 `MiniMaxResponseParser` 的职责：接收原始 JSON → 提取对应字段值 → 分配至各维度实例。若 API 实际返回格式与预期不同，仅需修改此 Parser，不影响上游调用方。
 
@@ -1310,7 +1311,7 @@ APIUsageStatus/
 │   │   ├── SupplierRegistry.swift        # 可用供应商注册表
 │   │   ├── MiniMaxSupplier.swift         # MiniMax /v1/token_plan/remains
 │   │   ├── DeepSeekSupplier.swift        # DeepSeek /user/balance
-│   │   ├── MiniMaxResponseParser.swift   # API 响应 → 内部维度标识符映射（字段待实现时确认）
+│   │   ├── MiniMaxResponseParser.swift   # API 响应 → 内部维度标识符映射（每个 model_name 独立维度）
 │   │   └── DeepSeekResponseParser.swift  # 解析原始 JSON → 余额信息
 │   │
 │   ├── Balance/

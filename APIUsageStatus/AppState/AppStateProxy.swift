@@ -46,6 +46,13 @@ final class AppStateProxy: ObservableObject {
         await appState.setInstances(loadedInstances)
         await appState.updateSettings(loadedSettings)
 
+        // Inject sync closure so RefreshService can push updates directly
+        // — eliminates the race window between refresh finish and UI sync
+        await refreshService.setOnRefreshComplete { [weak self] in
+            guard let self = self else { return }
+            await self.syncFromState()
+        }
+
         // Sync to @Published properties for initial UI render
         await syncFromState()
 
@@ -80,7 +87,7 @@ final class AppStateProxy: ObservableObject {
 
     func triggerManualRefresh() async {
         await refreshService.triggerManualRefresh()
-        await syncFromState()
+        // syncFromState() is automatically invoked via onRefreshComplete
     }
 
     // MARK: - Computed Properties

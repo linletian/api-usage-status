@@ -8,12 +8,19 @@ actor RefreshService {
     private var refreshTask: Task<Void, Never>?
     private var refreshInterval: TimeInterval = 300 // 5 minutes default
     private var lastRefreshAt: Date?
+    private var onRefreshComplete: (@Sendable () async -> Void)?
 
     private let logger = AppLogger(category: "refresh")
 
     init(persistenceService: PersistenceService, appState: AppState) {
         self.persistenceService = persistenceService
         self.appState = appState
+    }
+
+    /// Inject a closure to be called after every refresh cycle completes.
+    /// Used by AppStateProxy to sync @Published properties immediately.
+    func setOnRefreshComplete(_ handler: (@Sendable () async -> Void)?) {
+        self.onRefreshComplete = handler
     }
 
     // MARK: - Timer Control
@@ -75,6 +82,7 @@ actor RefreshService {
             await appState.setRefreshState(.idle)
             lastRefreshAt = Date()
             logger.info("No enabled instances, refresh skipped")
+            await onRefreshComplete?()
             return
         }
 
@@ -150,7 +158,7 @@ actor RefreshService {
             }
         }
 
-        // 5. For balance-type instances, integrate balance tracking
+        // 4. For balance-type instances, integrate balance tracking
         let instancesWithBalance = enabledInstances.filter { !$0.isQuotaType }
         for instance in instancesWithBalance {
             // Find the corresponding slot data
@@ -193,7 +201,7 @@ actor RefreshService {
             }
         }
 
-        // 4. Calculate time-derived fields for quota-type instances
+        // 5. Calculate time-derived fields for quota-type instances
         for (index, slot) in allSlotData.enumerated() {
             if case .quota(_, _, _, _, _) = slot.instanceType {
                 let nextRefreshMinutes = calculateNextRefreshMinutes()
@@ -230,6 +238,9 @@ actor RefreshService {
 
         lastRefreshAt = Date()
         logger.info("Refresh cycle completed: \(allSlotData.count) slots, \(errorSummaries.count) errors")
+
+        // Sync UI immediately — no race window because the closure is awaited directly
+        await onRefreshComplete?()
     }
 
     // MARK: - Helper Methods

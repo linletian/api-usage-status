@@ -7,7 +7,14 @@ final class MenuBarController: NSObject, ObservableObject {
     private var popover: NSPopover?
     private var rightClickMenu: NSMenu?
     private var appStateProxy: AppStateProxy?
+    private var iconRenderer: MenuBarIconRenderer?
     private var cancellables = Set<AnyCancellable>()
+
+    // Cached latest data for re-rendering (e.g. during flashing animation)
+    private var latestSlotData: [SlotViewData] = []
+    private var latestRefreshState: RefreshState = .idle
+    private var latestInstances: [Instance] = []
+    private var latestSettings: GlobalSettings = .default
 
     init(appStateProxy: AppStateProxy) {
         self.appStateProxy = appStateProxy
@@ -15,13 +22,16 @@ final class MenuBarController: NSObject, ObservableObject {
         setupStatusItem()
         setupPopover()
         setupRightClickMenu()
+        setupRenderer()
         observeAppState()
     }
+
+    // MARK: - Setup
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem?.button {
-            button.title = "?"
+            button.title = ""  // Pixel font uses image, not title
             button.target = self
             button.action = #selector(handleStatusItemClick(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -63,16 +73,25 @@ final class MenuBarController: NSObject, ObservableObject {
         rightClickMenu = menu
     }
 
+    private func setupRenderer() {
+        let renderer = MenuBarIconRenderer()
+        renderer.onNeedsDisplay = { [weak self] in
+            self?.renderIcon()
+        }
+        iconRenderer = renderer
+    }
+
+    // MARK: - AppState observation
+
     private func observeAppState() {
         guard let proxy = appStateProxy else { return }
 
-        // Observe slot data changes to update menu bar icon
         proxy.$slotViewDataList
             .combineLatest(proxy.$refreshState, proxy.$instances, proxy.$globalSettings)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] slotDataList, refreshState, instances, settings in
-                self?.updateMenuBarIcon(
-                    slotDataList: slotDataList,
+            .sink { [weak self] slotViewDataList, refreshState, instances, settings in
+                self?.updateCachedData(
+                    slotDataList: slotViewDataList,
                     refreshState: refreshState,
                     instances: instances,
                     settings: settings
@@ -81,42 +100,44 @@ final class MenuBarController: NSObject, ObservableObject {
             .store(in: &cancellables)
     }
 
-    private func updateMenuBarIcon(
+    private func updateCachedData(
         slotDataList: [SlotViewData],
         refreshState: RefreshState,
         instances: [Instance],
         settings: GlobalSettings
     ) {
+        latestSlotData = slotDataList
+        latestRefreshState = refreshState
+        latestInstances = instances
+        latestSettings = settings
+
+        // Update flashing state based on new data
+        iconRenderer?.updateFlashingState(slotViewDataList: slotDataList)
+
+        renderIcon()
+    }
+
+    private func renderIcon() {
         guard let button = statusItem?.button else { return }
+        guard let renderer = iconRenderer else { return }
 
-        let enabledCount = instances.filter { $0.enabled }.count
-        let totalCount = instances.count
+        let enabledCount = latestInstances.filter { $0.enabled }.count
+        let totalCount = latestInstances.count
 
-        if totalCount == 0 {
-            button.title = "?"
-        } else if enabledCount == 0 {
-            button.title = "NO API"
-        } else if refreshState == .refreshing {
-            button.title = "..."
-        } else {
-            // Normal state - render slots
-            // For Phase 1, just show the count as a simple indicator
-            // Full pixel rendering will be implemented in Phase 2
-            let enabledSlots = slotDataList.filter { data in
-                instances.contains { $0.uuid == data.uuid && $0.enabled }
-            }
+        let image = renderer.render(
+            slotViewDataList: latestSlotData,
+            colorMode: latestSettings.colorMode,
+            refreshState: latestRefreshState,
+            instancesCount: totalCount,
+            enabledCount: enabledCount
+        )
 
-            if enabledSlots.isEmpty {
-                button.title = "?"
-            } else {
-                // Show first 2 short names concatenated
-                let displayText = enabledSlots.prefix(2).map { $0.shortName.isEmpty ? "??" : $0.shortName }.joined(separator: " ")
-                button.title = displayText
-            }
-        }
-
+        button.image = image
+        button.imagePosition = .imageOnly
         button.needsDisplay = true
     }
+
+    // MARK: - Interaction
 
     @objc private func handleStatusItemClick(_ sender: NSStatusBarButton) {
         guard let event = NSApp.currentEvent else { return }

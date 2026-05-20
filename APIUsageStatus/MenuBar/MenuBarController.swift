@@ -9,6 +9,7 @@ final class MenuBarController: NSObject, ObservableObject {
     private var appStateProxy: AppStateProxy?
     private var iconRenderer: MenuBarIconRenderer?
     private var cancellables = Set<AnyCancellable>()
+    private var openSettings: () -> Void
 
     // Cached latest data for re-rendering (e.g. during flashing animation)
     private var latestSlotData: [SlotViewData] = []
@@ -16,8 +17,9 @@ final class MenuBarController: NSObject, ObservableObject {
     private var latestInstances: [Instance] = []
     private var latestSettings: GlobalSettings = .default
 
-    init(appStateProxy: AppStateProxy) {
+    init(appStateProxy: AppStateProxy, openSettings: @escaping () -> Void) {
         self.appStateProxy = appStateProxy
+        self.openSettings = openSettings
         super.init()
         setupStatusItem()
         setupPopover()
@@ -44,7 +46,7 @@ final class MenuBarController: NSObject, ObservableObject {
         popover?.contentSize = NSSize(width: 300, height: 400)
 
         if let proxy = appStateProxy {
-            let contentView = UsagePanelView(appStateProxy: proxy)
+            let contentView = UsagePanelView(appStateProxy: proxy, openSettings: openSettings)
             let hostingView = NSHostingView(rootView: contentView)
             popover?.contentViewController = NSViewController()
             popover?.contentViewController?.view = hostingView
@@ -165,7 +167,7 @@ final class MenuBarController: NSObject, ObservableObject {
     }
 
     @objc private func handleOpenSettings(_ sender: Any?) {
-        // Settings window will be implemented in Phase 4
+        openSettings()
     }
 
     deinit {

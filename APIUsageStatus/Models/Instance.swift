@@ -55,4 +55,6 @@ struct Instance: Codable, Identifiable, Equatable {
         case .balance: return false
         }
     }
+
+    var id: String { uuid }
 }

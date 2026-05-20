@@ -13,6 +13,7 @@ struct APIUsageStatusApp {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarController: MenuBarController?
     private var appStateProxy: AppStateProxy?
+    private var settingsWindow: SettingsWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Set activation policy to accessory (no Dock icon, pure menu bar app)
@@ -31,8 +32,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             persistenceService: persistenceService
         )
 
+        // Create SettingsWindow (singleton, reused on open/close)
+        settingsWindow = SettingsWindow(
+            persistenceService: persistenceService,
+            appState: appState,
+            appStateProxy: appStateProxy!,
+            refreshService: refreshService
+        )
+
         // Initialize MenuBarController with AppStateProxy
-        menuBarController = MenuBarController(appStateProxy: appStateProxy!)
+        menuBarController = MenuBarController(
+            appStateProxy: appStateProxy!,
+            openSettings: { [weak self] in
+                self?.settingsWindow?.open()
+            }
+        )
 
         // Start the app
         Task { @MainActor in

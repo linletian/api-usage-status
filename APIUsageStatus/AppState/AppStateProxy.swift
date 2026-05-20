@@ -42,7 +42,7 @@ final class AppStateProxy: ObservableObject {
         logger.info("AppStateProxy initializing")
 
         // Load from disk
-        let (loadedInstances, loadedSettings) = persistenceService.loadInstances()
+        let (loadedInstances, loadedSettings) = await persistenceService.loadInstances()
         await appState.setInstances(loadedInstances)
         await appState.updateSettings(loadedSettings)
 

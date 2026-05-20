@@ -4,6 +4,7 @@ import SwiftUI
 
 struct UsagePanelView: View {
     @ObservedObject var appStateProxy: AppStateProxy
+    var openSettings: () -> Void
 
     var body: some View {
         VStack(spacing: 12) {
@@ -18,7 +19,7 @@ struct UsagePanelView: View {
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                     Button("Add First Service") {
-                        // Will open settings in Phase 4
+                        openSettings()
                     }
                     .buttonStyle(.borderedProminent)
                     Spacer()
@@ -53,7 +54,7 @@ struct UsagePanelView: View {
                     Spacer()
 
                     Button("Settings") {
-                        // Settings window in Phase 4
+                        openSettings()
                     }
                 }
                 .padding(.horizontal)

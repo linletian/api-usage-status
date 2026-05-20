@@ -27,4 +27,11 @@ extension String {
     var isBlank: Bool {
         trimmed.isEmpty
     }
+
+    /// Validates if the string is a valid 2-letter uppercase short name (e.g. "MX").
+    var isValidShortName: Bool {
+        guard let regex = try? NSRegularExpression(pattern: "^[A-Z]{2}$") else { return false }
+        let range = NSRange(startIndex..., in: self)
+        return regex.firstMatch(in: self, options: [], range: range) != nil
+    }
 }

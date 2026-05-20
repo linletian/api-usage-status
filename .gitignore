@@ -1,0 +1,29 @@
+# Xcode
+*.xcuserdata
+*.xcworkspace/xcuserdata
+*.xcuserstate
+DerivedData/
+Build/
+
+# Xcode project workspace (user-specific)
+*.xcworkspace/
+xcuserdata/
+
+# CocoaPods
+Pods/
+
+# Swift Package Manager
+.build/
+Package.resolved
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude / AI tool configs
+.claude/
+
+# Sensitive
+*.plist.keys
+*.entitlements.keys
+**/APIKeys/

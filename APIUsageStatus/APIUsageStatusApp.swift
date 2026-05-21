@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let persistenceService = PersistenceService(keychainService: keychainService)
         let appState = AppState()
         let refreshService = RefreshService(persistenceService: persistenceService, appState: appState)
+        let appLaunchService = AppLaunchService()
 
         // Create AppStateProxy
         appStateProxy = AppStateProxy(
@@ -52,7 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             appState: appState,
             appStateProxy: proxy,
             refreshService: refreshService,
-            notificationManager: manager
+            notificationManager: manager,
+            appLaunchService: appLaunchService
         )
 
         // Initialize MenuBarController with AppStateProxy
@@ -75,7 +77,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 3. Initialize loads persisted state and triggers the first refresh
             await proxy.initialize()
 
-            // 4. If the user has never been prompted (status == .notDetermined),
+            // 4. Ensure launch-at-login registration state is consistent
+            if proxy.globalSettings.launchAtLogin {
+                appLaunchService.register()
+            }
+
+            // 5. If the user has never been prompted (status == .notDetermined),
             //    request permission when the setting is enabled.
             if proxy.globalSettings.notificationsEnabled {
                 manager.requestPermission()

@@ -13,6 +13,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var instanceToDelete: Instance?
     @Published var saveError: String?
     @Published var isSaving = false
+    @Published var launchAtLoginError: String?
 
     private var originalInstances: [Instance] = []
     private var originalSettings: GlobalSettings = .default
@@ -23,6 +24,7 @@ final class SettingsViewModel: ObservableObject {
     private let appStateProxy: AppStateProxy
     private let refreshService: RefreshService
     private let notificationManager: NotificationManager
+    private let appLaunchService: AppLaunchService
     private let logger = AppLogger(category: "settings")
 
     init(
@@ -30,13 +32,15 @@ final class SettingsViewModel: ObservableObject {
         appState: AppState,
         appStateProxy: AppStateProxy,
         refreshService: RefreshService,
-        notificationManager: NotificationManager
+        notificationManager: NotificationManager,
+        appLaunchService: AppLaunchService
     ) {
         self.persistenceService = persistenceService
         self.appState = appState
         self.appStateProxy = appStateProxy
         self.refreshService = refreshService
         self.notificationManager = notificationManager
+        self.appLaunchService = appLaunchService
     }
 
     // MARK: - Load / Save
@@ -54,6 +58,7 @@ final class SettingsViewModel: ObservableObject {
         originalSettings = loadedSettings
         apiKeys = [:]
         saveError = nil
+        launchAtLoginError = nil
         logger.info("SettingsViewModel loaded \(sortedInstances.count) instances")
     }
 
@@ -62,6 +67,7 @@ final class SettingsViewModel: ObservableObject {
         settings = originalSettings
         apiKeys = [:]
         saveError = nil
+        launchAtLoginError = nil
         logger.info("SettingsViewModel discarded unsaved changes")
     }
 
@@ -117,6 +123,19 @@ final class SettingsViewModel: ObservableObject {
             // Restart refresh timer if interval changed
             if settings.refreshIntervalMinutes != originalSettings.refreshIntervalMinutes {
                 await refreshService.restartTimer(interval: TimeInterval(settings.refreshIntervalMinutes))
+            }
+
+            // Sync launch-at-login registration if changed
+            if settings.launchAtLogin != originalSettings.launchAtLogin {
+                if settings.launchAtLogin {
+                    if !appLaunchService.register() {
+                        launchAtLoginError = "Could not enable launch at login. You may need to add it manually in System Settings."
+                    }
+                } else {
+                    if !appLaunchService.unregister() {
+                        launchAtLoginError = "Could not disable launch at login. You may need to remove it manually in System Settings."
+                    }
+                }
             }
 
             originalInstances = instances

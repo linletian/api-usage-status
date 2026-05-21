@@ -12,19 +12,22 @@ final class SettingsWindow: NSObject {
     private let appStateProxy: AppStateProxy
     private let refreshService: RefreshService
     private let notificationManager: NotificationManager
+    private let appLaunchService: AppLaunchService
 
     init(
         persistenceService: PersistenceService,
         appState: AppState,
         appStateProxy: AppStateProxy,
         refreshService: RefreshService,
-        notificationManager: NotificationManager
+        notificationManager: NotificationManager,
+        appLaunchService: AppLaunchService
     ) {
         self.persistenceService = persistenceService
         self.appState = appState
         self.appStateProxy = appStateProxy
         self.refreshService = refreshService
         self.notificationManager = notificationManager
+        self.appLaunchService = appLaunchService
         super.init()
     }
 
@@ -38,7 +41,8 @@ final class SettingsWindow: NSObject {
                     appState: appState,
                     appStateProxy: appStateProxy,
                     refreshService: refreshService,
-                    notificationManager: notificationManager
+                    notificationManager: notificationManager,
+                    appLaunchService: appLaunchService
                 )
                 self.viewModel = vm
 

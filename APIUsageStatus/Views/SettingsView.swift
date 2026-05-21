@@ -194,10 +194,17 @@ struct SettingsView: View {
             }
 
             Section("System") {
-                Toggle("Launch at login", isOn: Binding(
-                    get: { viewModel.settings.launchAtLogin },
-                    set: { viewModel.settings.launchAtLogin = $0 }
-                ))
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Launch at login", isOn: Binding(
+                        get: { viewModel.settings.launchAtLogin },
+                        set: { viewModel.settings.launchAtLogin = $0 }
+                    ))
+                    if let error = viewModel.launchAtLoginError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                }
 
                 Toggle("Enable notifications", isOn: Binding(
                     get: { viewModel.settings.notificationsEnabled },

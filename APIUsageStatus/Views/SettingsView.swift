@@ -201,7 +201,10 @@ struct SettingsView: View {
 
                 Toggle("Enable notifications", isOn: Binding(
                     get: { viewModel.settings.notificationsEnabled },
-                    set: { viewModel.settings.notificationsEnabled = $0 }
+                    set: {
+                        viewModel.settings.notificationsEnabled = $0
+                        viewModel.onNotificationsEnabledChanged($0)
+                    }
                 ))
             }
         }

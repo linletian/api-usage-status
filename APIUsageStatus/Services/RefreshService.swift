@@ -5,6 +5,7 @@ import Foundation
 actor RefreshService {
     private let persistenceService: PersistenceService
     private let appState: AppState
+    private var notificationManager: NotificationManager?
     private var refreshTask: Task<Void, Never>?
     private var refreshInterval: TimeInterval = 300 // 5 minutes default
     private var lastRefreshAt: Date?
@@ -15,6 +16,12 @@ actor RefreshService {
     init(persistenceService: PersistenceService, appState: AppState) {
         self.persistenceService = persistenceService
         self.appState = appState
+    }
+
+    /// Injects the notification manager so threshold alerts can be dispatched
+    /// after each refresh cycle. Setter avoids circular dependency during init.
+    func setNotificationManager(_ manager: NotificationManager) {
+        self.notificationManager = manager
     }
 
     /// Inject a closure to be called after every refresh cycle completes.
@@ -266,7 +273,15 @@ actor RefreshService {
         // Sort by sortOrder
         allSlotData.sort { $0.sortOrder < $1.sortOrder }
 
-        // 6. Update AppState
+        // 6. Evaluate thresholds and send notifications
+        let globalSettings = await appState.getGlobalSettings()
+        await notificationManager?.evaluateThresholds(
+            instances: await appState.getInstances(),
+            slotData: allSlotData,
+            settings: globalSettings
+        )
+
+        // 7. Update AppState
         await appState.updateSlotData(allSlotData)
         await appState.setErrorSummaries(errorSummaries)
         await appState.setRefreshState(.idle)

@@ -22,18 +22,21 @@ final class SettingsViewModel: ObservableObject {
     private let appState: AppState
     private let appStateProxy: AppStateProxy
     private let refreshService: RefreshService
+    private let notificationManager: NotificationManager
     private let logger = AppLogger(category: "settings")
 
     init(
         persistenceService: PersistenceService,
         appState: AppState,
         appStateProxy: AppStateProxy,
-        refreshService: RefreshService
+        refreshService: RefreshService,
+        notificationManager: NotificationManager
     ) {
         self.persistenceService = persistenceService
         self.appState = appState
         self.appStateProxy = appStateProxy
         self.refreshService = refreshService
+        self.notificationManager = notificationManager
     }
 
     // MARK: - Load / Save
@@ -172,6 +175,16 @@ final class SettingsViewModel: ObservableObject {
     func setInstanceEnabled(uuid: String, enabled: Bool) {
         if let index = instances.firstIndex(where: { $0.uuid == uuid }) {
             instances[index].enabled = enabled
+        }
+    }
+
+    // MARK: - Notifications
+
+    /// Called when the notifications toggle changes in the UI.
+    /// Requests permission immediately when the user turns notifications on.
+    func onNotificationsEnabledChanged(_ enabled: Bool) {
+        if enabled {
+            notificationManager.requestPermission()
         }
     }
 

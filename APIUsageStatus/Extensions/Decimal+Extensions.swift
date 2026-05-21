@@ -1,23 +1,6 @@
 import Foundation
 
 extension Decimal {
-    /// Initialize Decimal from a string safely, returning nil on failure.
-    init?(string: String) {
-        guard let value = Decimal(string: string) else {
-            // Try removing trailing zeros
-            var trimmed = string.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty {
-                return nil
-            }
-            guard let value = Decimal(string: trimmed) else {
-                return nil
-            }
-            self = value
-            return
-        }
-        self = value
-    }
-
     /// Returns a string formatted to the specified decimal places.
     func formatted(decimalPlaces: Int) -> String {
         let formatter = NumberFormatter()
@@ -63,31 +46,23 @@ extension Decimal {
         return result
     }
 
-    /// Comparison: self < other
     func isLess(than other: Decimal) -> Bool {
-        var result = NSDecimalCompare(self as NSDecimalNumber, other as NSDecimalNumber)
-        return result == .orderedAscending
+        self < other
     }
 
-    /// Comparison: self > other
     func isGreater(than other: Decimal) -> Bool {
-        var result = NSDecimalCompare(self as NSDecimalNumber, other as NSDecimalNumber)
-        return result == .orderedDescending
+        self > other
     }
 
-    /// Comparison: self == other
     func isEqual(to other: Decimal) -> Bool {
-        var result = NSDecimalCompare(self as NSDecimalNumber, other as NSDecimalNumber)
-        return result == .orderedSame
+        self == other
     }
 
-    /// Is negative
     var isNegative: Bool {
-        NSDecimalCompare(self as NSDecimalNumber, 0 as NSDecimalNumber) == .orderedAscending
+        self < 0
     }
 
-    /// Is zero
     var isZero: Bool {
-        NSDecimalCompare(self as NSDecimalNumber, 0 as NSDecimalNumber) == .orderedSame
+        self == 0
     }
 }

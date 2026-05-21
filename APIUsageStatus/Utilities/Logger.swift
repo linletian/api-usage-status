@@ -30,19 +30,6 @@ struct AppLogger {
         logger.fault("\(message)")
     }
 
-    // MARK: - Convenience with privacy
-
-    func debug(_ message: String, privacy: os.Logger.Privacy) {
-        logger.debug("\(message, privacy: privacy)")
-    }
-
-    func info(_ message: String, privacy: os.Logger.Privacy) {
-        logger.info("\(message, privacy: privacy)")
-    }
-
-    func error(_ message: String, privacy: os.Logger.Privacy) {
-        logger.error("\(message, privacy: privacy)")
-    }
 }
 
 // MARK: - Module Loggers

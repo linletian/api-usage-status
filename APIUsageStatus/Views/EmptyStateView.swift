@@ -33,7 +33,7 @@ struct EmptyStateView: View {
             Spacer()
         }
         .padding(24)
-        .frame(width: 300, minHeight: 220)
+        .frame(minWidth: 300, minHeight: 220)
     }
 }
 

@@ -59,7 +59,7 @@ final class InstanceDetailPanelController: NSObject {
         panel.makeKeyAndOrderFront(nil)
 
         currentPanel = panel
-        logger.info("Opened detail panel for \(panel.title ?? "unknown")")
+        logger.info("Opened detail panel for \(panel.title)")
     }
 }
 

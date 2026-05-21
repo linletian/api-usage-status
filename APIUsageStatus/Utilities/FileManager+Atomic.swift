@@ -7,6 +7,6 @@ extension FileManager {
         let tempURL = url.deletingPathExtension()
             .appendingPathExtension("tmp")
         try data.write(to: tempURL, options: .atomic)
-        try replaceItemAt(url, withItemAt: tempURL)
+        _ = try replaceItemAt(url, withItemAt: tempURL)
     }
 }

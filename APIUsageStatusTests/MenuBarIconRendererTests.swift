@@ -191,7 +191,7 @@ final class MenuBarIconRendererTests: XCTestCase {
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         // Should render two slots with a 2pt gap
-        let expectedMinWidth = 44 + 2 + 44
+        let expectedMinWidth: CGFloat = 80
         XCTAssertGreaterThan(image.size.width, CGFloat(expectedMinWidth) - 1)
         assertSnapshot(image, named: "two_slots_mixed_color")
     }

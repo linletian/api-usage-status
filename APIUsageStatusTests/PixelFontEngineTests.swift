@@ -54,7 +54,7 @@ final class PixelFontEngineTests: XCTestCase {
     }
 
     func testUnknownCharacterReturnsNil() {
-        XCTAssertNil(PixelFontEngine.bitmap(for: "a", size: .letter))
+        XCTAssertNil(PixelFontEngine.bitmap(for: "1", size: .letter))
         XCTAssertNil(PixelFontEngine.bitmap(for: "@", size: .letter))
         XCTAssertNil(PixelFontEngine.bitmap(for: "A", size: .digit))
     }
@@ -317,14 +317,15 @@ final class PixelFontEngineTests: XCTestCase {
         }
 
         // Verify every expected pixel is white
-        for (row, line) in bitmap.enumerated() {
-            for (col, isLit) in line.enumerated() where isLit {
+        for (row, bitmapRow) in bitmap.enumerated() {
+            for (col, isLit) in bitmapRow.enumerated() where isLit {
                 for dy in 0..<Int(scale) {
                     for dx in 0..<Int(scale) {
                         let x = 2 + col * Int(scale) + dx
-                        let y = 2 + Int(baseY) + (rows - 1 - row) * Int(scale) + dy
-                        let idx = (y * contextWidth + x) * 4
-                        XCTAssertGreaterThan(ptr[idx], 200, "Expected white pixel at (\(x),\(y)) for '\(char)'", file: file, line: line)
+                        let drawY = 2 + Int(baseY) + (rows - 1 - row) * Int(scale) + dy
+                        let dataY = (contextHeight - 1) - drawY
+                        let idx = (dataY * contextWidth + x) * 4
+                        XCTAssertGreaterThan(ptr[idx], 200, "Expected white pixel at (\(x),\(drawY)) for '\(char)'", file: file, line: line)
                     }
                 }
             }

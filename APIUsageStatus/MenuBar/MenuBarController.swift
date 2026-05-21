@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Combine
 
+@MainActor
 final class MenuBarController: NSObject, ObservableObject {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
@@ -144,7 +145,7 @@ final class MenuBarController: NSObject, ObservableObject {
         if let view = hostingView {
             // Ensure the view has laid out with the latest data so that
             // fittingSize reflects the current intrinsic content size.
-            view.setNeedsLayout()
+            view.needsLayout = true
             view.layoutSubtreeIfNeeded()
             let measured = view.fittingSize.height
             if measured > 0 {

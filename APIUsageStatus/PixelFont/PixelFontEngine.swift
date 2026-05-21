@@ -151,12 +151,13 @@ enum PixelFontEngine {
         }
 
         if fillRatio > 0 {
-            let fillHeight = barFrame.height * fillRatio
+            let interiorHeight = barFrame.height - 2
+            let fillHeight = interiorHeight * fillRatio
             let fillRect = CGRect(
                 x: barFrame.minX + 1,
                 y: barFrame.minY + 1,
                 width: max(0, barFrame.width - 2),
-                height: max(0, fillHeight - 2)
+                height: max(0, fillHeight)
             )
             context.setFillColor(color.cgColor)
             context.fill(fillRect)

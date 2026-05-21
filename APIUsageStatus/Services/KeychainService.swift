@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import os
 
 // MARK: - KeychainError
 
@@ -45,7 +46,7 @@ actor KeychainService {
 
         if existingStatus == errSecSuccess {
             // Item exists, update it
-            var updateQuery: [String: Any] = [
+            let updateQuery: [String: Any] = [
                 kSecValueData as String: keyData
             ]
 
@@ -57,7 +58,7 @@ actor KeychainService {
             logger.debug("Updated Keychain item for ref: \(apiKeyRef, privacy: .private)")
         } else if existingStatus == errSecItemNotFound {
             // Item does not exist, add new one
-            var addQuery: [String: Any] = [
+            let addQuery: [String: Any] = [
                 kSecClass as String: kSecClassInternetPassword,
                 kSecAttrServer as String: Self.service,
                 kSecAttrAccount as String: apiKeyRef,

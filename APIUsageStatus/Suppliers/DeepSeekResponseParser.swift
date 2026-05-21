@@ -52,7 +52,7 @@ struct DeepSeekResponseParser {
         let grantedBalance = stringValue(record["granted_balance"])
         let currency = record["currency"] as? String
 
-        var rawData: [String: String] = [
+        let rawData: [String: String] = [
             "balance": toppedUpBalance,
             "total_balance": totalBalance,
             "granted_balance": grantedBalance,

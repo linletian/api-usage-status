@@ -193,7 +193,7 @@ final class MenuBarController: NSObject, ObservableObject {
             let contentHeight: CGFloat = 40
             return headerHeight + contentHeight + padding
 
-        case .balance(_, let isAvailable, _):
+        case .balance(_, let totalBalance, let grantedBalance, let isAvailable, _):
             if !isAvailable {
                 return headerHeight + 16 + padding
             }
@@ -205,6 +205,13 @@ final class MenuBarController: NSObject, ObservableObject {
                 contentHeight += 14
                 contentHeight += CGFloat(averages.count) * 12
             }
+            // Balance breakdown section
+            contentHeight += 8
+            contentHeight += 10 // Topped Up
+            if !grantedBalance.isEmpty && grantedBalance != "0" && grantedBalance != "0.00" {
+                contentHeight += 10 // Granted
+            }
+            contentHeight += 10 // Total
             return headerHeight + contentHeight + padding
         }
     }

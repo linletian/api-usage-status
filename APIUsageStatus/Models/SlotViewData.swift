@@ -23,7 +23,9 @@ enum InstanceType: Equatable {
         cycleRemainingDays: Int?
     )
     case balance(
-        amount: String,
+        amount: String,            // topped_up_balance (primary display amount)
+        totalBalance: String,      // total_balance (for display breakdown)
+        grantedBalance: String,    // granted_balance (for display breakdown)
         isAvailable: Bool,
         currency: String? = nil
     )

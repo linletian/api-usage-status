@@ -32,9 +32,11 @@ struct UsageCardView: View {
                     nextMinutes: nextMinutes,
                     cycleDays: cycleDays
                 )
-            case .balance(let amount, let isAvailable, let currency):
+            case .balance(let amount, let totalBalance, let grantedBalance, let isAvailable, let currency):
                 balanceContent(
                     amount: amount,
+                    totalBalance: totalBalance,
+                    grantedBalance: grantedBalance,
                     isAvailable: isAvailable,
                     currency: currency
                 )
@@ -117,11 +119,14 @@ struct UsageCardView: View {
     @ViewBuilder
     private func balanceContent(
         amount: String,
+        totalBalance: String,
+        grantedBalance: String,
         isAvailable: Bool,
         currency: String?
     ) -> some View {
         if isAvailable {
             VStack(alignment: .leading, spacing: 4) {
+                // Primary balance (topped_up_balance)
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text(currency?.currencySymbol ?? "¥")
                         .font(.system(size: 12, weight: .medium))
@@ -130,12 +135,14 @@ struct UsageCardView: View {
                     Spacer()
                 }
 
+                // Today usage
                 if let today = slot.todayUsage, !today.isEmpty {
                     Text("约 \(currency?.currencySymbol ?? "¥")\(today) today")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
 
+                // Daily averages
                 if let averages = slot.dailyAverages, !averages.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Daily avg")
@@ -159,6 +166,40 @@ struct UsageCardView: View {
                         }
                     }
                 }
+
+                // Balance breakdown: topped_up vs total
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack {
+                        Text("Topped Up")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text((currency?.currencySymbol ?? "¥") + amount)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                    if !grantedBalance.isEmpty && grantedBalance != "0" && grantedBalance != "0.00" {
+                        HStack {
+                            Text("Granted")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text((currency?.currencySymbol ?? "¥") + grantedBalance)
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    HStack {
+                        Text("Total")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text((currency?.currencySymbol ?? "¥") + totalBalance)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.top, 2)
             }
         } else {
             HStack {

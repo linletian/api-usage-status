@@ -56,5 +56,12 @@ struct Instance: Codable, Identifiable, Equatable {
         }
     }
 
+    var isBalanceType: Bool {
+        switch thresholds {
+        case .quota: return false
+        case .balance: return true
+        }
+    }
+
     var id: String { uuid }
 }

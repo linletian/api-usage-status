@@ -207,7 +207,7 @@ enum PixelFontEngine {
             renderChar("%", size: .letter, at: CGPoint(x: cursorX, y: origin.y), color: color, scale: scale, in: context)
             cursorX += CGFloat(CharSize.letter.cols) * scale
 
-        case .balance(let amount, _, let currency):
+        case .balance(let amount, _, _, _, let currency):
             // Currency symbol (5×7 letter) + amount digits (3×5)
             let symbol = currency?.currencySymbol ?? "¥"
             let balanceText = symbol + amount

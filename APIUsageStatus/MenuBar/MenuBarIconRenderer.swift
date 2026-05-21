@@ -160,7 +160,7 @@ final class MenuBarIconRenderer {
             width += PixelFontEngine.textWidth(percentText, scale: scale)
             width += CGFloat(CharSize.letter.cols) * scale // % sign
 
-        case .balance(let amount, _, let currency):
+        case .balance(let amount, _, _, _, let currency):
             let symbol = currency?.currencySymbol ?? "¥"
             let balanceText = symbol + amount
             width += PixelFontEngine.textWidth(balanceText, scale: scale)

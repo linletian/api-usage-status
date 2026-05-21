@@ -159,33 +159,66 @@ actor RefreshService {
         }
 
         // 4. For balance-type instances, integrate balance tracking
-        let instancesWithBalance = enabledInstances.filter { !$0.isQuotaType }
+        let instancesWithBalance = enabledInstances.filter { $0.isBalanceType }
         for instance in instancesWithBalance {
             // Find the corresponding slot data
             if let index = allSlotData.firstIndex(where: { $0.uuid == instance.uuid }) {
                 let slot = allSlotData[index]
-                if case .balance(let amount, let isAvailable, _) = slot.instanceType {
-                    // Load balance snapshot
-                    var snapshot = await persistenceService.loadBalanceSnapshot(for: instance.uuid)
+                if case .balance(let amount, let totalBalance, let grantedBalance, let isAvailable, _) = slot.instanceType {
+                    // Load existing balance snapshot
+                    let existingSnapshot = await persistenceService.loadBalanceSnapshot(for: instance.uuid)
 
-                    // Get daily averages for periods configured in thresholds
-                    var dailyAverages: [AvgDailyPeriod: Decimal] = [:]
+                    // Determine retention days from thresholds
+                    let retentionDays: Int
+                    if case .balance(_, _, _, let days) = instance.thresholds {
+                        retentionDays = days
+                    } else {
+                        retentionDays = 0
+                    }
+
+                    // Calculate updated snapshot and daily averages
+                    let update = BalanceCalculator.update(
+                        snapshot: existingSnapshot,
+                        currentToppedUp: amount,
+                        retentionDays: retentionDays
+                    )
+
+                    // Persist updated snapshot immediately
+                    do {
+                        try await persistenceService.saveBalanceSnapshot(update.snapshot, for: instance.uuid)
+                    } catch {
+                        logger.error("Failed to save balance snapshot for \(instance.uuid): \(error.localizedDescription)")
+                    }
+
+                    // Get configured periods for display
+                    var displayPeriods: [AvgDailyPeriod] = []
                     if case .balance(_, _, let periods, _) = instance.thresholds {
-                        // Calculate daily averages from history
-                        if let history = snapshot?.history {
-                            dailyAverages = calculateDailyAverages(history: history, periods: periods)
-                        }
+                        displayPeriods = periods
+                    }
+
+                    // Filter averages to only configured periods
+                    let displayAverages: [AvgDailyPeriod: Decimal]
+                    if displayPeriods.isEmpty {
+                        displayAverages = [:]
+                    } else {
+                        displayAverages = update.dailyAverages.filter { displayPeriods.contains($0.key) }
                     }
 
                     var updatedSlot = SlotViewData(
                         uuid: slot.uuid,
                         displayName: instance.displayName,
                         shortName: slot.shortName,
-                        instanceType: .balance(amount: amount, isAvailable: isAvailable, currency: instance.currency),
+                        instanceType: .balance(
+                            amount: amount,
+                            totalBalance: totalBalance,
+                            grantedBalance: grantedBalance,
+                            isAvailable: isAvailable,
+                            currency: instance.currency
+                        ),
                         sortOrder: slot.sortOrder,
                         colorState: slot.colorState,
-                        todayUsage: snapshot?.todayUsage,
-                        dailyAverages: dailyAverages
+                        todayUsage: update.snapshot.todayUsage,
+                        dailyAverages: displayAverages
                     )
                     allSlotData[index] = updatedSlot
 
@@ -269,12 +302,26 @@ actor RefreshService {
         } else {
             // Balance-type instance
             let balance = response.value(forDimension: "balance") ?? "0"
+            let totalBalance = response.value(forDimension: "total_balance") ?? balance
+            let grantedBalance = response.value(forDimension: "granted_balance") ?? "0"
 
             if !response.isAvailable {
-                instanceType = .balance(amount: balance, isAvailable: false, currency: response.currency)
+                instanceType = .balance(
+                    amount: balance,
+                    totalBalance: totalBalance,
+                    grantedBalance: grantedBalance,
+                    isAvailable: false,
+                    currency: response.currency
+                )
                 colorState = .unavailable
             } else {
-                instanceType = .balance(amount: balance, isAvailable: true, currency: response.currency)
+                instanceType = .balance(
+                    amount: balance,
+                    totalBalance: totalBalance,
+                    grantedBalance: grantedBalance,
+                    isAvailable: true,
+                    currency: response.currency
+                )
                 colorState = determineBalanceColorState(balance: balance, thresholds: instance.thresholds)
             }
         }
@@ -335,20 +382,9 @@ actor RefreshService {
         return .normal
     }
 
-    private func calculateDailyAverages(history: [DailyUsageEntry], periods: [AvgDailyPeriod]) -> [AvgDailyPeriod: Decimal] {
-        var result: [AvgDailyPeriod: Decimal] = [:]
-
-        for period in periods {
-            let avg = BalanceCalculator.average(for: period, from: history)
-            result[period] = avg
-        }
-
-        return result
-    }
-
     private func getCurrencyFromSlotData(_ slots: [SlotViewData], instanceUUID: String) -> String? {
         slots.first { $0.uuid == instanceUUID }.flatMap { slot in
-            if case .balance(_, _, let currency) = slot.instanceType {
+            if case .balance(_, _, _, _, let currency) = slot.instanceType {
                 return currency
             }
             return nil

@@ -5,6 +5,15 @@ enum AvgDailyPeriod: String, Codable, CaseIterable {
     case currentMonth = "current_month"
     case last7Days = "last_7_days"
     case last30Days = "last_30_days"
+
+    var displayName: String {
+        switch self {
+        case .currentWeek:   return "Current Week"
+        case .currentMonth:  return "Current Month"
+        case .last7Days:     return "Last 7 Days"
+        case .last30Days:    return "Last 30 Days"
+        }
+    }
 }
 
 enum Thresholds: Codable, Equatable {

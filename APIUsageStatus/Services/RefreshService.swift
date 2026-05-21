@@ -179,6 +179,7 @@ actor RefreshService {
 
                     var updatedSlot = SlotViewData(
                         uuid: slot.uuid,
+                        displayName: instance.displayName,
                         shortName: slot.shortName,
                         instanceType: .balance(amount: amount, isAvailable: isAvailable, currency: instance.currency),
                         sortOrder: slot.sortOrder,
@@ -217,6 +218,7 @@ actor RefreshService {
                     )
                     allSlotData[index] = SlotViewData(
                         uuid: slot.uuid,
+                        displayName: slot.displayName,
                         shortName: slot.shortName,
                         instanceType: updatedType,
                         sortOrder: slot.sortOrder,
@@ -235,6 +237,7 @@ actor RefreshService {
         await appState.updateSlotData(allSlotData)
         await appState.setErrorSummaries(errorSummaries)
         await appState.setRefreshState(.idle)
+        await appState.setLastRefreshAt(Date())
 
         lastRefreshAt = Date()
         logger.info("Refresh cycle completed: \(allSlotData.count) slots, \(errorSummaries.count) errors")
@@ -278,6 +281,7 @@ actor RefreshService {
 
         return SlotViewData(
             uuid: instance.uuid,
+            displayName: instance.displayName,
             shortName: instance.shortName,
             instanceType: instanceType,
             sortOrder: instance.sortOrder,

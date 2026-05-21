@@ -43,6 +43,7 @@ enum InstanceType: Equatable {
 
 struct SlotViewData: Identifiable, Equatable {
     let uuid: String
+    let displayName: String
     let shortName: String
     let instanceType: InstanceType
     let sortOrder: Int
@@ -56,6 +57,7 @@ struct SlotViewData: Identifiable, Equatable {
 
     init(
         uuid: String,
+        displayName: String,
         shortName: String,
         instanceType: InstanceType,
         sortOrder: Int,
@@ -64,6 +66,7 @@ struct SlotViewData: Identifiable, Equatable {
         dailyAverages: [AvgDailyPeriod: Decimal]? = nil
     ) {
         self.uuid = uuid
+        self.displayName = displayName
         self.shortName = shortName
         self.instanceType = instanceType
         self.sortOrder = sortOrder

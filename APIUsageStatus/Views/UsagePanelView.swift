@@ -2,189 +2,102 @@ import SwiftUI
 
 // MARK: - UsagePanelView
 
+/// The main content of the Popover, showing usage cards, errors and action buttons.
 struct UsagePanelView: View {
     @ObservedObject var appStateProxy: AppStateProxy
     var openSettings: () -> Void
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 0) {
+            // Error summary bar (at the top per PRD)
+            if !appStateProxy.errorSummaries.isEmpty {
+                ErrorBarView(
+                    errors: appStateProxy.errorSummaries,
+                    refreshIntervalMinutes: appStateProxy.globalSettings.refreshIntervalMinutes
+                )
+            }
+
             if appStateProxy.slotViewDataList.isEmpty && appStateProxy.instances.isEmpty {
-                // Empty state
-                VStack(spacing: 16) {
+                // Empty state — no instances configured at all
+                EmptyStateView(openSettings: openSettings)
+                    .padding(.vertical, 12)
+            } else if appStateProxy.slotViewDataList.isEmpty && !appStateProxy.instances.isEmpty {
+                // All instances failed or are disabled — show a compact prompt instead of dead white space
+                VStack(spacing: 8) {
                     Spacer()
-                    Text("No services configured")
-                        .font(.headline)
-                    Text("Click the menu bar icon to add your first service")
+                    Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+                        .font(.system(size: 28))
+                        .foregroundColor(.secondary.opacity(0.6))
+                    Text("Unable to load usage data")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.primary)
+                    Text("All instances failed to refresh. Tap Refresh to retry.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
-                    Button("Add First Service") {
-                        openSettings()
-                    }
-                    .buttonStyle(.borderedProminent)
+                        .frame(maxWidth: 240)
                     Spacer()
                 }
-                .padding(20)
-                .frame(width: 280, height: 200)
+                .padding(.vertical, 12)
             } else {
-                // Show slot data list
+                // Scrollable card list
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(appStateProxy.slotViewDataList) { slot in
-                            SlotCardView(slot: slot)
+                            UsageCardView(
+                                slot: slot,
+                                lastRefreshAt: appStateProxy.lastRefreshAt
+                            )
                         }
                     }
-                    .padding()
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
                 }
-
-                // Error summary bar
-                if !appStateProxy.errorSummaries.isEmpty {
-                    ErrorBarView(errors: appStateProxy.errorSummaries)
-                }
-
-                // Action buttons
-                HStack {
-                    Button(appStateProxy.isRefreshing ? "Refreshing..." : "Refresh") {
-                        Task {
-                            await appStateProxy.triggerManualRefresh()
-                        }
-                    }
-                    .disabled(appStateProxy.isRefreshing)
-
-                    Spacer()
-
-                    Button("Settings") {
-                        openSettings()
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
             }
-        }
-        .frame(width: 300, height: 400)
-    }
-}
 
-// MARK: - SlotCardView
+            Divider()
 
-struct SlotCardView: View {
-    let slot: SlotViewData
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(slot.shortName.isEmpty ? "??" : slot.shortName)
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+            // Action buttons
+            HStack(spacing: 12) {
+                Button {
+                    Task {
+                        await appStateProxy.triggerManualRefresh()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        if appStateProxy.isRefreshing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(width: 12, height: 12)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        Text(appStateProxy.isRefreshing ? "Refreshing..." : "Refresh")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                }
+                .disabled(appStateProxy.isRefreshing)
+                .buttonStyle(.borderless)
 
                 Spacer()
 
-                ColorStateBadge(state: slot.colorState)
-            }
-
-            switch slot.instanceType {
-            case .quota(let percent, let usageValue, let limitValue, let nextMinutes, let cycleDays):
-                VStack(alignment: .leading, spacing: 4) {
-                    ProgressView(value: min(percent / 100.0, 1.0))
-                        .progressViewStyle(.linear)
-
-                    HStack {
-                        Text("\(usageValue) / \(limitValue)")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(Int(percent))%")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        Text("~\(nextMinutes)m")
-                            .font(.system(size: 9))
-                            .foregroundColor(.secondary)
+                Button {
+                    openSettings()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "gear")
+                            .font(.system(size: 10, weight: .medium))
+                        Text("Settings")
+                            .font(.system(size: 12, weight: .medium))
                     }
                 }
-
-            case .balance(let amount, let isAvailable, let currency):
-                if isAvailable {
-                    HStack {
-                        Text("\(currency?.currencySymbol ?? "¥")\(amount)")
-                            .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        Spacer()
-                        if let todayUsage = slot.todayUsage {
-                            Text("~\(currency?.currencySymbol ?? "¥")\(todayUsage) today")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                } else {
-                    Text("N/A - Unavailable")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
+                .buttonStyle(.borderless)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
         }
-        .padding(8)
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(6)
-    }
-}
-
-// MARK: - ColorStateBadge
-
-struct ColorStateBadge: View {
-    let state: ColorState
-
-    var body: some View {
-        HStack(spacing: 2) {
-            Circle()
-                .fill(stateColor)
-                .frame(width: 8, height: 8)
-            Text(stateText)
-                .font(.system(size: 9))
-                .foregroundColor(.secondary)
-        }
-    }
-
-    private var stateColor: Color {
-        switch state {
-        case .normal: return .green
-        case .warning: return .yellow
-        case .critical: return .red
-        case .disabled, .unavailable, .loading, .error: return .gray
-        }
-    }
-
-    private var stateText: String {
-        switch state {
-        case .normal: return "OK"
-        case .warning: return "WARN"
-        case .critical: return "CRIT"
-        case .disabled: return "OFF"
-        case .unavailable: return "N/A"
-        case .loading: return "..."
-        case .error: return "ERR"
-        }
-    }
-}
-
-// MARK: - ErrorBarView
-
-struct ErrorBarView: View {
-    let errors: [ErrorSummary]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(errors) { error in
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
-                        .font(.system(size: 10))
-                    Text("\(error.displayName): \(error.errorMessage)")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color.orange.opacity(0.1))
+        .frame(width: 300)
     }
 }
 
@@ -204,3 +117,45 @@ struct PlaceholderContentView: View {
         .frame(width: 280, height: 200)
     }
 }
+
+// MARK: - ErrorBarView
+
+struct ErrorBarView: View {
+    let errors: [ErrorSummary]
+    let refreshIntervalMinutes: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(errors) { error in
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                        .font(.system(size: 10))
+                        .padding(.top, 1)
+
+                    Text("\(error.displayName): \(formattedMessage(for: error.errorType))")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.08))
+    }
+
+    private func formattedMessage(for errorType: ErrorType) -> String {
+        switch errorType {
+        case .networkTimeout, .networkUnreachable:
+            return "Network error, retrying in \(refreshIntervalMinutes) min"
+        case .authFailed:
+            return "API Key invalid, check settings"
+        case .apiError(let code):
+            return "API error (code: \(code))"
+        }
+    }
+}
+
+

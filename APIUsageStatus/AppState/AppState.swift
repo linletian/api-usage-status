@@ -8,6 +8,7 @@ actor AppState {
     private var _refreshState: RefreshState = .idle
     private var _errorSummaries: [ErrorSummary] = []
     private var _globalSettings: GlobalSettings = .default
+    private var _lastRefreshAt: Date? = nil
 
     // MARK: - Getters
 
@@ -29,6 +30,10 @@ actor AppState {
 
     func getGlobalSettings() -> GlobalSettings {
         _globalSettings
+    }
+
+    func getLastRefreshAt() -> Date? {
+        _lastRefreshAt
     }
 
     // MARK: - Setters
@@ -57,6 +62,10 @@ actor AppState {
         if let index = _instances.firstIndex(where: { $0.uuid == instance.uuid }) {
             _instances[index] = instance
         }
+    }
+
+    func setLastRefreshAt(_ date: Date?) {
+        _lastRefreshAt = date
     }
 
     // MARK: - State Query

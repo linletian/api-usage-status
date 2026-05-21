@@ -10,12 +10,14 @@ final class MenuBarController: NSObject, ObservableObject {
     private var iconRenderer: MenuBarIconRenderer?
     private var cancellables = Set<AnyCancellable>()
     private var openSettings: () -> Void
+    private var hostingView: NSView?
 
     // Cached latest data for re-rendering (e.g. during flashing animation)
     private var latestSlotData: [SlotViewData] = []
     private var latestRefreshState: RefreshState = .idle
     private var latestInstances: [Instance] = []
     private var latestSettings: GlobalSettings = .default
+    private var latestErrorSummaries: [ErrorSummary] = []
 
     init(appStateProxy: AppStateProxy, openSettings: @escaping () -> Void) {
         self.appStateProxy = appStateProxy
@@ -47,13 +49,15 @@ final class MenuBarController: NSObject, ObservableObject {
 
         if let proxy = appStateProxy {
             let contentView = UsagePanelView(appStateProxy: proxy, openSettings: openSettings)
-            let hostingView = NSHostingView(rootView: contentView)
+            let view = NSHostingView(rootView: contentView)
+            self.hostingView = view
             popover?.contentViewController = NSViewController()
-            popover?.contentViewController?.view = hostingView
+            popover?.contentViewController?.view = view
         } else {
-            let placeholderView = NSHostingView(rootView: PlaceholderContentView())
+            let view = NSHostingView(rootView: PlaceholderContentView())
+            self.hostingView = view
             popover?.contentViewController = NSViewController()
-            popover?.contentViewController?.view = placeholderView
+            popover?.contentViewController?.view = view
         }
     }
 
@@ -88,15 +92,20 @@ final class MenuBarController: NSObject, ObservableObject {
     private func observeAppState() {
         guard let proxy = appStateProxy else { return }
 
-        proxy.$slotViewDataList
+        let dataPublisher = proxy.$slotViewDataList
             .combineLatest(proxy.$refreshState, proxy.$instances, proxy.$globalSettings)
+
+        dataPublisher
+            .combineLatest(proxy.$errorSummaries)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] slotViewDataList, refreshState, instances, settings in
+            .sink { [weak self] tuple in
+                let ((slots, state, instances, settings), errors) = tuple
                 self?.updateCachedData(
-                    slotDataList: slotViewDataList,
-                    refreshState: refreshState,
+                    slotDataList: slots,
+                    refreshState: state,
                     instances: instances,
-                    settings: settings
+                    settings: settings,
+                    errorSummaries: errors
                 )
             }
             .store(in: &cancellables)
@@ -106,17 +115,98 @@ final class MenuBarController: NSObject, ObservableObject {
         slotDataList: [SlotViewData],
         refreshState: RefreshState,
         instances: [Instance],
-        settings: GlobalSettings
+        settings: GlobalSettings,
+        errorSummaries: [ErrorSummary]
     ) {
         latestSlotData = slotDataList
         latestRefreshState = refreshState
         latestInstances = instances
         latestSettings = settings
+        latestErrorSummaries = errorSummaries
 
         // Update flashing state based on new data
         iconRenderer?.updateFlashingState(slotViewDataList: slotDataList)
 
         renderIcon()
+        updatePopoverSize()
+    }
+
+    private func updatePopoverSize() {
+        // Avoid resizing while Popover is visible to prevent visible jitter.
+        guard let popover = popover, !popover.isShown else { return }
+        popover.contentSize = NSSize(width: 300, height: calculateContentHeight())
+    }
+
+    /// Attempts to measure the actual rendered height of the SwiftUI content via
+    /// `hostingView.fittingSize`. Falls back to `estimatedContentHeight()` if the
+    /// measurement is not yet available (e.g. before the first layout pass).
+    private func calculateContentHeight() -> CGFloat {
+        if let view = hostingView {
+            // Ensure the view has laid out with the latest data so that
+            // fittingSize reflects the current intrinsic content size.
+            view.setNeedsLayout()
+            view.layoutSubtreeIfNeeded()
+            let measured = view.fittingSize.height
+            if measured > 0 {
+                return min(500, max(160, measured))
+            }
+        }
+        return estimatedContentHeight()
+    }
+
+    /// Fallback estimation when actual measurement isn't ready.
+    /// Keeps the per-component breakdown so deviations are localised.
+    private func estimatedContentHeight() -> CGFloat {
+        let buttonsHeight: CGFloat = 46
+        let padding: CGFloat = 24
+
+        if latestSlotData.isEmpty && latestInstances.isEmpty {
+            return 220
+        }
+
+        // All instances failed or disabled — compact height for error bar + prompt + buttons
+        if latestSlotData.isEmpty && !latestInstances.isEmpty {
+            let promptHeight: CGFloat = 100  // icon + two lines of text
+            let errorBarHeight: CGFloat = latestErrorSummaries.isEmpty ? 0 : 36
+            return errorBarHeight + promptHeight + buttonsHeight + padding
+        }
+
+        var cardsHeight: CGFloat = 0
+        for slot in latestSlotData {
+            cardsHeight += estimatedCardHeight(for: slot)
+        }
+        if latestSlotData.count > 1 {
+            cardsHeight += CGFloat(latestSlotData.count - 1) * 8
+        }
+
+        let errorBarHeight: CGFloat = latestErrorSummaries.isEmpty ? 0 : 36
+        let total = cardsHeight + errorBarHeight + buttonsHeight + padding
+        return min(500, max(160, total))
+    }
+
+    private func estimatedCardHeight(for slot: SlotViewData) -> CGFloat {
+        let headerHeight: CGFloat = 24
+        let padding: CGFloat = 16
+
+        switch slot.instanceType {
+        case .quota:
+            let contentHeight: CGFloat = 40
+            return headerHeight + contentHeight + padding
+
+        case .balance(_, let isAvailable, _):
+            if !isAvailable {
+                return headerHeight + 16 + padding
+            }
+            var contentHeight: CGFloat = 20
+            if let today = slot.todayUsage, !today.isEmpty {
+                contentHeight += 14
+            }
+            if let averages = slot.dailyAverages, !averages.isEmpty {
+                contentHeight += 14
+                contentHeight += CGFloat(averages.count) * 12
+            }
+            return headerHeight + contentHeight + padding
+        }
     }
 
     private func renderIcon() {
@@ -156,6 +246,9 @@ final class MenuBarController: NSObject, ObservableObject {
         if let popover = popover, popover.isShown {
             popover.performClose(nil)
         } else if let button = statusItem?.button, let popover = popover {
+            // Recompute size right before showing so the Popover opens
+            // with dimensions matching the latest data.
+            popover.contentSize = NSSize(width: 300, height: calculateContentHeight())
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
     }

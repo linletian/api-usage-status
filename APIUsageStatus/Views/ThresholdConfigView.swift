@@ -216,20 +216,3 @@ struct ThresholdConfigView: View {
         )
     }
 }
-
-// MARK: - AvgDailyPeriod Display Name
-
-extension AvgDailyPeriod {
-    var displayName: String {
-        switch self {
-        case .currentWeek:
-            return "Current Week"
-        case .currentMonth:
-            return "Current Month"
-        case .last7Days:
-            return "Last 7 Days"
-        case .last30Days:
-            return "Last 30 Days"
-        }
-    }
-}

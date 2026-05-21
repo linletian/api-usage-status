@@ -17,8 +17,12 @@ final class MenuBarIconRenderer {
 
     // MARK: - Flashing state
 
-    private var flashingTimer: Timer?
-    private var flashingVisible: [Int: Bool] = [:]
+    /// Structured-concurrency replacement for Timer; cancellable automatically
+    /// when the renderer is deallocated or when no critical slots remain.
+    private var flashingTask: Task<Void, Never>?
+
+    /// Keyed by slot uuid so re-ordering / deletion never shifts state to the wrong slot.
+    private var flashingVisible: [String: Bool] = [:]
 
     /// Called whenever the renderer needs the owner to repaint the status item.
     var onNeedsDisplay: (() -> Void)?
@@ -72,8 +76,8 @@ final class MenuBarIconRenderer {
         let slotGap: CGFloat = 2
         var totalWidth: CGFloat = 0
         var slotWidths: [CGFloat] = []
-        for (index, slot) in enabledSlots.enumerated() {
-            let isVisible = flashingVisible[index] ?? true
+        for slot in enabledSlots {
+            let isVisible = flashingVisible[slot.uuid] ?? true
 
             if slot.colorState == .critical && !isVisible {
                 let w = measureSlot(slot, scale: scale)
@@ -86,8 +90,8 @@ final class MenuBarIconRenderer {
                 slotWidths.append(w)
             }
 
-            totalWidth += slotWidths[index]
-            if index < enabledSlots.count - 1 {
+            totalWidth += slotWidths[slotWidths.count - 1]
+            if slotWidths.count < enabledSlots.count {
                 totalWidth += slotGap
             }
         }
@@ -103,9 +107,8 @@ final class MenuBarIconRenderer {
         }
 
         var cursorX: CGFloat = 0
-        var slotIndex = 0
         for (slot, slotWidth) in zip(enabledSlots, slotWidths) {
-            let isVisible = flashingVisible[slotIndex] ?? true
+            let isVisible = flashingVisible[slot.uuid] ?? true
             let slotColor = colorForSlot(slot, colorMode: colorMode)
 
             if slot.colorState == .critical && !isVisible {
@@ -117,26 +120,42 @@ final class MenuBarIconRenderer {
             }
 
             cursorX += slotWidth + slotGap
-            slotIndex += 1
         }
 
         image.unlockFocus()
         return image
     }
 
-    /// Call this whenever new slot data arrives so flashing timers can start / stop.
+    /// Call this whenever new slot data arrives so flashing tasks can start / stop.
     func updateFlashingState(slotViewDataList: [SlotViewData]) {
         let enabledSlots = slotViewDataList
             .filter { $0.colorState != .disabled }
             .sorted { $0.sortOrder < $1.sortOrder }
             .prefix(2)
 
-        let hasCritical = enabledSlots.enumerated().contains { $1.colorState == .critical }
+        let currentCriticalUUIDs = Set(enabledSlots
+            .filter { $0.colorState == .critical }
+            .map { $0.uuid })
 
-        if hasCritical && flashingTimer == nil {
-            startFlashingTimer(slotCount: enabledSlots.count)
+        // 1. Remove entries for slots that are no longer critical (disabled / deleted / recovered)
+        for uuid in flashingVisible.keys {
+            if !currentCriticalUUIDs.contains(uuid) {
+                flashingVisible.removeValue(forKey: uuid)
+            }
+        }
+
+        // 2. Add entries for newly-critical slots (default visible so they appear immediately)
+        for slot in enabledSlots where slot.colorState == .critical {
+            if flashingVisible[slot.uuid] == nil {
+                flashingVisible[slot.uuid] = true
+            }
+        }
+
+        let hasCritical = !flashingVisible.isEmpty
+        if hasCritical && flashingTask == nil {
+            startFlashingTask()
         } else if !hasCritical {
-            stopFlashingTimer()
+            stopFlashingTask()
         }
     }
 
@@ -204,32 +223,31 @@ final class MenuBarIconRenderer {
         return image
     }
 
-    // MARK: - Flashing timer
+    // MARK: - Flashing task (structured-concurrency replacement for Timer)
 
-    private func startFlashingTimer(slotCount: Int) {
-        flashingTimer?.invalidate()
-        for i in 0..<slotCount {
-            flashingVisible[i] = true
-        }
-        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            for key in self.flashingVisible.keys {
-                self.flashingVisible[key]?.toggle()
+    private func startFlashingTask() {
+        flashingTask?.cancel()
+        flashingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self = self else { return }
+                // Only toggle slots that are still marked as critical in flashingVisible.
+                // If updateFlashingState removed a uuid, it simply won't be toggled any more.
+                for uuid in self.flashingVisible.keys {
+                    self.flashingVisible[uuid]?.toggle()
+                }
+                self.onNeedsDisplay?()
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
-            self.onNeedsDisplay?()
         }
-        // .common mode ensures the timer fires during menu-bar drag / event tracking
-        RunLoop.main.add(timer, forMode: .common)
-        flashingTimer = timer
     }
 
-    private func stopFlashingTimer() {
-        flashingTimer?.invalidate()
-        flashingTimer = nil
+    private func stopFlashingTask() {
+        flashingTask?.cancel()
+        flashingTask = nil
         flashingVisible.removeAll()
     }
 
     deinit {
-        flashingTimer?.invalidate()
+        flashingTask?.cancel()
     }
 }

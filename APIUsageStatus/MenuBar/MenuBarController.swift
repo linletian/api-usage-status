@@ -271,6 +271,9 @@ final class MenuBarController: NSObject, ObservableObject {
     }
 
     deinit {
+        // Explicitly nil-out the renderer so its flashing Task is cancelled
+        // before the status item is removed, avoiding any stray callbacks.
+        iconRenderer = nil
         if let statusItem = statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }

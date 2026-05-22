@@ -1,6 +1,7 @@
 # APIUsageStatus
 
 一个纯菜单栏 macOS 应用，实时监控 MiniMax / DeepSeek 的 API 用量与余额。
+**因主流同类应用不兼容 macOS13，故本项目仅为自用脚手架项目。**
 
 ## 功能概览
 

@@ -11,6 +11,17 @@ struct UsageCardView: View {
         slot.displayName.isEmpty ? slot.shortName : slot.displayName
     }
 
+    private var providerURL: URL? {
+        switch slot.provider.lowercased() {
+        case "deepseek":
+            return URL(string: "https://platform.deepseek.com/usage")
+        case "minimax":
+            return URL(string: "https://platform.minimaxi.com/user-center/payment/token-plan")
+        default:
+            return nil
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             // Header
@@ -42,10 +53,22 @@ struct UsageCardView: View {
                 )
             }
 
-            // Last refresh time
-            if let lastRefresh = lastRefreshAt {
-                HStack {
-                    Spacer()
+            // Footer: See details button + Last refresh time
+            HStack {
+                if let url = providerURL {
+                    Button {
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Text("See details")
+                            .font(.system(size: 9))
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                if let lastRefresh = lastRefreshAt {
                     Text(formattedTime(lastRefresh))
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)

@@ -112,7 +112,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             shortName: "MX",
             instanceType: .quota(percent: 45, usageValue: "450", limitValue: "1000", nextRefreshMinutes: 3, cycleRemainingDays: 5),
             sortOrder: 0,
-            colorState: .normal
+            colorState: .normal,
+            provider: Provider.minimax.rawValue
         )
         let image = renderer.render(
             slotViewDataList: [slot],
@@ -132,7 +133,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             shortName: "SP",
             instanceType: .quota(percent: 75, usageValue: "750", limitValue: "1000", nextRefreshMinutes: 3, cycleRemainingDays: nil),
             sortOrder: 0,
-            colorState: .warning
+            colorState: .warning,
+            provider: Provider.minimax.rawValue
         )
         let image = renderer.render(
             slotViewDataList: [slot],
@@ -152,7 +154,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             shortName: "DS",
             instanceType: .balance(amount: "15.20", totalBalance: "20.00", grantedBalance: "4.80", isAvailable: true, currency: "CNY"),
             sortOrder: 0,
-            colorState: .warning
+            colorState: .warning,
+            provider: Provider.deepseek.rawValue
         )
         let image = renderer.render(
             slotViewDataList: [slot],
@@ -172,7 +175,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             shortName: "MX",
             instanceType: .quota(percent: 96, usageValue: "960", limitValue: "1000", nextRefreshMinutes: 1, cycleRemainingDays: 2),
             sortOrder: 0,
-            colorState: .critical
+            colorState: .critical,
+            provider: Provider.minimax.rawValue
         )
         let balance = SlotViewData(
             uuid: "balance-normal",
@@ -180,7 +184,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             shortName: "DS",
             instanceType: .balance(amount: "88.50", totalBalance: "100.00", grantedBalance: "11.50", isAvailable: true, currency: "USD"),
             sortOrder: 1,
-            colorState: .normal
+            colorState: .normal,
+            provider: Provider.deepseek.rawValue
         )
         let image = renderer.render(
             slotViewDataList: [quota, balance],
@@ -203,7 +208,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             shortName: "DS",
             instanceType: .balance(amount: "0", totalBalance: "0", grantedBalance: "0", isAvailable: false, currency: "CNY"),
             sortOrder: 0,
-            colorState: .unavailable
+            colorState: .unavailable,
+            provider: Provider.deepseek.rawValue
         )
         let image = renderer.render(
             slotViewDataList: [slot],
@@ -223,7 +229,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             shortName: "AA",
             instanceType: .quota(percent: 10, usageValue: "10", limitValue: "100", nextRefreshMinutes: 5, cycleRemainingDays: nil),
             sortOrder: 0,
-            colorState: .normal
+            colorState: .normal,
+            provider: Provider.minimax.rawValue
         )
         let b = SlotViewData(
             uuid: "slot-b",
@@ -231,7 +238,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             shortName: "BB",
             instanceType: .quota(percent: 20, usageValue: "20", limitValue: "100", nextRefreshMinutes: 5, cycleRemainingDays: nil),
             sortOrder: 1,
-            colorState: .normal
+            colorState: .normal,
+            provider: Provider.minimax.rawValue
         )
         let c = SlotViewData(
             uuid: "slot-c",
@@ -239,7 +247,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             shortName: "CC",
             instanceType: .quota(percent: 30, usageValue: "30", limitValue: "100", nextRefreshMinutes: 5, cycleRemainingDays: nil),
             sortOrder: 2,
-            colorState: .normal
+            colorState: .normal,
+            provider: Provider.minimax.rawValue
         )
         let image = renderer.render(
             slotViewDataList: [a, b, c],
@@ -260,7 +269,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             shortName: "MX",
             instanceType: .quota(percent: 98, usageValue: "980", limitValue: "1000", nextRefreshMinutes: 1, cycleRemainingDays: 1),
             sortOrder: 0,
-            colorState: .critical
+            colorState: .critical,
+            provider: Provider.minimax.rawValue
         )
 
         // First render with flashing visible (default)

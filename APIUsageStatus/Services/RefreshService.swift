@@ -224,6 +224,7 @@ actor RefreshService {
                         ),
                         sortOrder: slot.sortOrder,
                         colorState: slot.colorState,
+                        provider: instance.provider,
                         todayUsage: update.snapshot.todayUsage,
                         dailyAverages: displayAverages
                     )
@@ -263,6 +264,7 @@ actor RefreshService {
                         instanceType: updatedType,
                         sortOrder: slot.sortOrder,
                         colorState: slot.colorState,
+                        provider: slot.provider,
                         todayUsage: slot.todayUsage,
                         dailyAverages: slot.dailyAverages
                     )
@@ -347,7 +349,8 @@ actor RefreshService {
             shortName: instance.shortName,
             instanceType: instanceType,
             sortOrder: instance.sortOrder,
-            colorState: colorState
+            colorState: colorState,
+            provider: instance.provider
         )
     }
 

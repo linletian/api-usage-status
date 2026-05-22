@@ -209,7 +209,8 @@ final class PixelFontEngineTests: XCTestCase {
             shortName: "MX",
             instanceType: .quota(percent: 82, usageValue: "820", limitValue: "1000", nextRefreshMinutes: 3, cycleRemainingDays: 5),
             sortOrder: 0,
-            colorState: .normal
+            colorState: .normal,
+            provider: Provider.minimax.rawValue
         )
 
         let (context, pixels) = makeBitmapContext(width: 80, height: 30)
@@ -228,7 +229,8 @@ final class PixelFontEngineTests: XCTestCase {
             shortName: "DS",
             instanceType: .balance(amount: "45.50", totalBalance: "50.00", grantedBalance: "4.50", isAvailable: true, currency: "CNY"),
             sortOrder: 1,
-            colorState: .warning
+            colorState: .warning,
+            provider: Provider.deepseek.rawValue
         )
 
         let (context, pixels) = makeBitmapContext(width: 80, height: 30)

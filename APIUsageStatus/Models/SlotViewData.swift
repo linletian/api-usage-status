@@ -50,6 +50,7 @@ struct SlotViewData: Identifiable, Equatable {
     let instanceType: InstanceType
     let sortOrder: Int
     let colorState: ColorState
+    let provider: String
 
     var id: String { uuid }
 
@@ -64,6 +65,7 @@ struct SlotViewData: Identifiable, Equatable {
         instanceType: InstanceType,
         sortOrder: Int,
         colorState: ColorState,
+        provider: String,
         todayUsage: String? = nil,
         dailyAverages: [AvgDailyPeriod: Decimal]? = nil
     ) {
@@ -73,6 +75,7 @@ struct SlotViewData: Identifiable, Equatable {
         self.instanceType = instanceType
         self.sortOrder = sortOrder
         self.colorState = colorState
+        self.provider = provider
         self.todayUsage = todayUsage
         self.dailyAverages = dailyAverages
     }

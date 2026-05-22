@@ -160,7 +160,7 @@
 **职责**：按实例展示用量卡片的 UI。
 
 - `UsagePanelView`：承载可滚动的卡片列表 + 错误摘要栏 + 刷新按钮 + 设置入口（窗口内）
-- `UsageCardView`：单实例卡片 —— 配额型显示进度条 + 下次刷新剩余时间（分钟数），自然天/周配额型额外显示周期剩余天数；余额型显示余额 + 每日统计
+- `UsageCardView`：单实例卡片 —— 配额型显示进度条 + 下次刷新剩余时间（分钟数），自然天/周配额型额外显示周期剩余天数；余额型显示余额 + 每日统计。卡片底部 footer 区域左侧显示「See details」按钮（仅当 provider 有对应 Web 控制台 URL 时可见），点击通过 `NSWorkspace.shared.open(_:)` 在默认浏览器打开用量详情页；右侧显示最近一次刷新时间
 - `InstanceDetailPanel`：点击通知后弹出的独立 `NSPanel`，展示单个实例的完整用量详情（与 UsageCardView 展示相同信息，但以独立窗口形式呈现，失活时自动关闭）
 - 以上均为观察 `AppStateProxy` 的 SwiftUI 视图
 
@@ -498,16 +498,23 @@ enum ColorMode: String, Codable {
 // === 运行时视图数据（不持久化） ===
 struct SlotViewData {
     let uuid: String
+    let displayName: String
     let shortName: String           // 2 字母
     let instanceType: InstanceType
     let sortOrder: Int
     let colorState: ColorState
+    let provider: String            // 供应商标识（如 "deepseek" / "minimax"），用于「See details」按钮的 URL 映射
+
+    // Balance-specific fields for usage panel
+    var todayUsage: String?
+    var dailyAverages: [AvgDailyPeriod: Decimal]?
 
     enum InstanceType {
         case quota(percent: Double, usageValue: String, limitValue: String,
                    nextRefreshMinutes: Int,          // 距下次定时刷新的分钟数
                    cycleRemainingDays: Int?)           // 自然天/周配额型的周期剩余天数；5h 滚动窗口为 nil
-        case balance(amount: String, isAvailable: Bool)
+        case balance(amount: String, totalBalance: String, grantedBalance: String,
+                   isAvailable: Bool, currency: String?)
     }
 }
 

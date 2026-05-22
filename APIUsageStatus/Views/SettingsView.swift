@@ -91,15 +91,18 @@ struct SettingsView: View {
 
     private var servicesTab: some View {
         VStack(spacing: 0) {
-            List {
-                ForEach(viewModel.instances) { instance in
-                    instanceRow(instance)
-                }
-                .onMove { fromOffsets, toOffset in
-                    viewModel.moveInstances(fromOffsets: fromOffsets, toOffset: toOffset)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(viewModel.instances) { instance in
+                        instanceRow(instance)
+                            .contentShape(Rectangle())
+                            .onDrag {
+                                NSItemProvider(object: instance.uuid as NSString)
+                            }
+                    }
                 }
             }
-            .listStyle(.inset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack {
                 Spacer()
@@ -156,7 +159,9 @@ struct SettingsView: View {
                 .foregroundColor(.red)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func providerDisplayName(_ raw: String) -> String {

@@ -1,4 +1,46 @@
 import SwiftUI
+import AppKit
+
+// MARK: - SecureInput
+
+struct SecureInput: NSViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+
+    func makeNSView(context: Context) -> NSSecureTextField {
+        let textField = NSSecureTextField()
+        textField.placeholderString = placeholder
+        textField.delegate = context.coordinator
+        textField.isBordered = true
+        textField.bezelStyle = .roundedBezel
+        textField.focusRingType = .default
+        return textField
+    }
+
+    func updateNSView(_ nsView: NSSecureTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        @Binding var text: String
+
+        init(text: Binding<String>) {
+            _text = text
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            if let textField = obj.object as? NSTextField {
+                text = textField.stringValue
+            }
+        }
+    }
+}
 
 // MARK: - InstanceEditorView
 
@@ -42,7 +84,7 @@ struct InstanceEditorView: View {
                             validationError = nil
                         }
 
-                    SecureField("API Key", text: $apiKey)
+                    SecureInput(text: $apiKey, placeholder: "API Key")
 
                     if isBalanceType {
                         Picker("Currency", selection: $currency) {

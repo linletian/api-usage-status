@@ -211,7 +211,7 @@ actor RefreshService {
                         displayAverages = update.dailyAverages.filter { displayPeriods.contains($0.key) }
                     }
 
-                    var updatedSlot = SlotViewData(
+                    let updatedSlot = SlotViewData(
                         uuid: slot.uuid,
                         displayName: instance.displayName,
                         shortName: slot.shortName,

@@ -95,7 +95,9 @@ struct SettingsView: View {
                 ForEach(viewModel.instances) { instance in
                     instanceRow(instance)
                 }
-                .onMove(perform: viewModel.moveInstances)
+                .onMove { fromOffsets, toOffset in
+                    viewModel.moveInstances(fromOffsets: fromOffsets, toOffset: toOffset)
+                }
             }
             .listStyle(.inset)
 

@@ -3,9 +3,9 @@ import SwiftUI
 import Combine
 
 @MainActor
-final class MenuBarController: NSObject, ObservableObject {
+final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
     private var statusItem: NSStatusItem?
-    private var popover: NSPopover?
+    private var usageWindow: NSWindow?
     private var rightClickMenu: NSMenu?
     private var appStateProxy: AppStateProxy?
     private var iconRenderer: MenuBarIconRenderer?
@@ -25,7 +25,7 @@ final class MenuBarController: NSObject, ObservableObject {
         self.openSettings = openSettings
         super.init()
         setupStatusItem()
-        setupPopover()
+        setupWindow()
         setupRightClickMenu()
         setupRenderer()
         observeAppState()
@@ -36,30 +36,40 @@ final class MenuBarController: NSObject, ObservableObject {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem?.button {
-            button.title = ""  // Pixel font uses image, not title
+            button.title = ""
             button.target = self
             button.action = #selector(handleStatusItemClick(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
     }
 
-    private func setupPopover() {
-        popover = NSPopover()
-        popover?.behavior = .transient
-        popover?.contentSize = NSSize(width: 300, height: 400)
+    private func setupWindow() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 400),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.isReleasedWhenClosed = false
+        window.level = .normal
+        window.collectionBehavior = [.stationary]
+        window.minSize = NSSize(width: 300, height: 160)
+        window.delegate = self
 
+        let contentView: NSView
         if let proxy = appStateProxy {
-            let contentView = UsagePanelView(appStateProxy: proxy, openSettings: openSettings)
-            let view = NSHostingView(rootView: contentView)
-            self.hostingView = view
-            popover?.contentViewController = NSViewController()
-            popover?.contentViewController?.view = view
+            contentView = NSHostingView(rootView: UsagePanelView(appStateProxy: proxy, openSettings: openSettings))
         } else {
-            let view = NSHostingView(rootView: PlaceholderContentView())
-            self.hostingView = view
-            popover?.contentViewController = NSViewController()
-            popover?.contentViewController?.view = view
+            contentView = NSHostingView(rootView: PlaceholderContentView())
         }
+        self.hostingView = contentView
+        window.contentView = contentView
+
+        usageWindow = window
     }
 
     private func setupRightClickMenu() {
@@ -125,26 +135,22 @@ final class MenuBarController: NSObject, ObservableObject {
         latestSettings = settings
         latestErrorSummaries = errorSummaries
 
-        // Update flashing state based on new data
         iconRenderer?.updateFlashingState(slotViewDataList: slotDataList)
 
         renderIcon()
-        updatePopoverSize()
+        updateWindowSize()
     }
 
-    private func updatePopoverSize() {
-        // Avoid resizing while Popover is visible to prevent visible jitter.
-        guard let popover = popover, !popover.isShown else { return }
-        popover.contentSize = NSSize(width: 300, height: calculateContentHeight())
+    private func updateWindowSize() {
+        guard let window = usageWindow, !window.isVisible else { return }
+        let height = calculateContentHeight()
+        var frame = window.frame
+        frame.size.height = height
+        window.setFrame(frame, display: false)
     }
 
-    /// Attempts to measure the actual rendered height of the SwiftUI content via
-    /// `hostingView.fittingSize`. Falls back to `estimatedContentHeight()` if the
-    /// measurement is not yet available (e.g. before the first layout pass).
     private func calculateContentHeight() -> CGFloat {
         if let view = hostingView {
-            // Ensure the view has laid out with the latest data so that
-            // fittingSize reflects the current intrinsic content size.
             view.needsLayout = true
             view.layoutSubtreeIfNeeded()
             let measured = view.fittingSize.height
@@ -155,8 +161,6 @@ final class MenuBarController: NSObject, ObservableObject {
         return estimatedContentHeight()
     }
 
-    /// Fallback estimation when actual measurement isn't ready.
-    /// Keeps the per-component breakdown so deviations are localised.
     private func estimatedContentHeight() -> CGFloat {
         let buttonsHeight: CGFloat = 46
         let padding: CGFloat = 24
@@ -165,9 +169,8 @@ final class MenuBarController: NSObject, ObservableObject {
             return 220
         }
 
-        // All instances failed or disabled — compact height for error bar + prompt + buttons
         if latestSlotData.isEmpty && !latestInstances.isEmpty {
-            let promptHeight: CGFloat = 100  // icon + two lines of text
+            let promptHeight: CGFloat = 100
             let errorBarHeight: CGFloat = latestErrorSummaries.isEmpty ? 0 : 36
             return errorBarHeight + promptHeight + buttonsHeight + padding
         }
@@ -194,7 +197,7 @@ final class MenuBarController: NSObject, ObservableObject {
             let contentHeight: CGFloat = 40
             return headerHeight + contentHeight + padding
 
-        case .balance(_, let totalBalance, let grantedBalance, let isAvailable, _):
+        case .balance(_, _, let grantedBalance, let isAvailable, _):
             if !isAvailable {
                 return headerHeight + 16 + padding
             }
@@ -206,13 +209,12 @@ final class MenuBarController: NSObject, ObservableObject {
                 contentHeight += 14
                 contentHeight += CGFloat(averages.count) * 12
             }
-            // Balance breakdown section
             contentHeight += 8
-            contentHeight += 10 // Topped Up
+            contentHeight += 10
             if !grantedBalance.isEmpty && grantedBalance != "0" && grantedBalance != "0.00" {
-                contentHeight += 10 // Granted
+                contentHeight += 10
             }
-            contentHeight += 10 // Total
+            contentHeight += 10
             return headerHeight + contentHeight + padding
         }
     }
@@ -246,20 +248,39 @@ final class MenuBarController: NSObject, ObservableObject {
             guard let button = statusItem?.button, let menu = rightClickMenu else { return }
             menu.popUp(positioning: menu.items.first, at: CGPoint(x: 0, y: -2), in: button)
         } else {
-            togglePopover()
+            toggleWindow()
         }
     }
 
-    private func togglePopover() {
-        if let popover = popover, popover.isShown {
-            popover.performClose(nil)
-        } else if let button = statusItem?.button, let popover = popover {
-            // Recompute size right before showing so the Popover opens
-            // with dimensions matching the latest data.
-            popover.contentSize = NSSize(width: 300, height: calculateContentHeight())
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    private func toggleWindow() {
+        guard let window = usageWindow, let button = statusItem?.button else { return }
+
+        if window.isVisible {
+            window.close()
+        } else {
+            let height = calculateContentHeight()
+            var frame = window.frame
+            frame.size.width = 300
+            frame.size.height = height
+
+            let buttonFrame = button.window?.convertToScreen(button.convert(button.bounds, to: nil)) ?? .zero
+            let originX = buttonFrame.midX - frame.width / 2
+            let originY = buttonFrame.minY - frame.height - 4
+            frame.origin = CGPoint(x: originX, y: originY)
+
+            window.setFrame(frame, display: false)
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
+
+    // MARK: - NSWindowDelegate
+
+    func windowDidResignKey(_ notification: Notification) {
+        usageWindow?.close()
+    }
+
+    // MARK: - Actions
 
     @objc private func handleRefresh(_ sender: Any?) {
         Task { @MainActor in
@@ -272,8 +293,6 @@ final class MenuBarController: NSObject, ObservableObject {
     }
 
     deinit {
-        // Explicitly nil-out the renderer so its flashing Task is cancelled
-        // before the status item is removed, avoiding any stray callbacks.
         iconRenderer = nil
         if let statusItem = statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)

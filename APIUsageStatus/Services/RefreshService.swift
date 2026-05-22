@@ -139,6 +139,13 @@ actor RefreshService {
                     let slotData = mapInstanceToSlotData(instance: instance, response: response)
                     allSlotData.append(slotData)
                 }
+
+                // 3e. For MiniMax, extract model names for InstanceEditorView dimension picker
+                if instancesInGroup[0].provider == "minimax",
+                   let modelNamesStr = response.rawData["_model_names"] {
+                    let names = modelNamesStr.split(separator: ",").map(String.init)
+                    await appState.setMiniMaxModelNames(names)
+                }
             } catch let error as RefreshError {
                 // Handle fetch error - mark all instances in this group as error
                 let errorType = error.errorType

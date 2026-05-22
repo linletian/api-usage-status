@@ -49,6 +49,10 @@ final class SettingsViewModel: ObservableObject {
         instances != originalInstances || settings != originalSettings || !apiKeys.isEmpty
     }
 
+    var miniMaxModelNames: [String] {
+        appStateProxy.minimaxModelNames
+    }
+
     func load() async {
         let (loadedInstances, loadedSettings) = await persistenceService.loadInstances()
         let sortedInstances = loadedInstances.sorted { $0.sortOrder < $1.sortOrder }

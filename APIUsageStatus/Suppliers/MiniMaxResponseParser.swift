@@ -95,6 +95,9 @@ struct MiniMaxResponseParser {
             }
         }
 
+        let modelNames = modelRemains.compactMap { $0["model_name"] as? String }
+        rawData["_model_names"] = modelNames.joined(separator: ",")
+
         return SupplierResponse(rawData: rawData, currency: nil, isAvailable: true)
     }
 

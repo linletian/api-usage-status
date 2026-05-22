@@ -8,6 +8,7 @@ actor AppState {
     private var _refreshState: RefreshState = .idle
     private var _errorSummaries: [ErrorSummary] = []
     private var _globalSettings: GlobalSettings = .default
+    private var _miniMaxModelNames: [String] = []
     private var _lastRefreshAt: Date? = nil
 
     // MARK: - Getters
@@ -30,6 +31,14 @@ actor AppState {
 
     func getGlobalSettings() -> GlobalSettings {
         _globalSettings
+    }
+
+    func getMiniMaxModelNames() -> [String] {
+        _miniMaxModelNames
+    }
+
+    func setMiniMaxModelNames(_ names: [String]) {
+        _miniMaxModelNames = names
     }
 
     func getLastRefreshAt() -> Date? {

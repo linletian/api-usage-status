@@ -33,6 +33,7 @@ final class MiniMaxResponseParserTests: XCTestCase {
         XCTAssertEqual(response.rawData["MiniMax-M2.7"], "9.5")
         XCTAssertEqual(response.rawData["MiniMax-M2.7:total"], "600")
         XCTAssertEqual(response.rawData["MiniMax-M2.7:used"], "57")
+        XCTAssertEqual(response.rawData["_model_names"], "MiniMax-M2.7")
     }
 
     func testMultipleModels() throws {
@@ -64,6 +65,7 @@ final class MiniMaxResponseParserTests: XCTestCase {
         XCTAssertEqual(response.rawData["Model-B"], "40.0")
         XCTAssertEqual(response.rawData["Model-A:total"], "100")
         XCTAssertEqual(response.rawData["Model-B:total"], "200")
+        XCTAssertEqual(response.rawData["_model_names"], "Model-A,Model-B")
     }
 
     func testMissingModelRemains() {
@@ -193,7 +195,8 @@ final class MiniMaxResponseParserTests: XCTestCase {
 
         let response = try parser.parse(json)
 
-        XCTAssertEqual(response.rawData.count, 5)
+        XCTAssertEqual(response.rawData.count, 6)
         XCTAssertEqual(response.rawData["Valid-Model"], "30.0")
+        XCTAssertEqual(response.rawData["_model_names"], "Valid-Model")
     }
 }

@@ -46,6 +46,7 @@ struct SecureInput: NSViewRepresentable {
 
 struct InstanceEditorView: View {
     let existingInstance: Instance?
+    let miniMaxModelNames: [String]
     let onSave: (Instance, String) -> Void
     let onCancel: () -> Void
 
@@ -71,8 +72,14 @@ struct InstanceEditorView: View {
                     }
 
                     Picker("Dimension", selection: $dimension) {
-                        ForEach(availableDimensions, id: \.self) { dim in
-                            Text(dimensionDisplayName(dim)).tag(dim)
+                        if provider == .minimax {
+                            ForEach(miniMaxDimensionOptions, id: \.self) { name in
+                                Text(name).tag(name)
+                            }
+                        } else {
+                            ForEach(availableDimensions, id: \.self) { dim in
+                                Text(dimensionDisplayName(dim)).tag(dim)
+                            }
                         }
                     }
 
@@ -142,12 +149,23 @@ struct InstanceEditorView: View {
 
     // MARK: - Helpers
 
+    private var miniMaxDimensionOptions: [String] {
+        var options = miniMaxModelNames
+        if !dimension.isEmpty && !options.contains(dimension) {
+            options.append(dimension)
+        }
+        if options.isEmpty {
+            options.append("MiniMax-M2.7")
+        }
+        return options
+    }
+
     private var availableDimensions: [String] {
         switch provider {
-        case .minimax:
-            return ["text_model_5h", "non_text_daily", "weekly_total"]
         case .deepseek:
             return ["balance"]
+        case .minimax:
+            return []
         }
     }
 
@@ -161,12 +179,6 @@ struct InstanceEditorView: View {
 
     private func dimensionDisplayName(_ dim: String) -> String {
         switch dim {
-        case "text_model_5h":
-            return "Text Model (5h rolling)"
-        case "non_text_daily":
-            return "Non-Text (Daily)"
-        case "weekly_total":
-            return "Weekly Total"
         case "balance":
             return "Account Balance"
         default:
@@ -175,7 +187,11 @@ struct InstanceEditorView: View {
     }
 
     private func updateDimensionsForProvider() {
-        dimension = availableDimensions.first ?? ""
+        if provider == .minimax {
+            dimension = miniMaxDimensionOptions.first ?? ""
+        } else {
+            dimension = availableDimensions.first ?? ""
+        }
         thresholds = isBalanceType ? .defaultBalance : .defaultQuota
     }
 

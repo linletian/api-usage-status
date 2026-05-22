@@ -55,6 +55,7 @@ struct SettingsView: View {
         .sheet(isPresented: $viewModel.isPresentingEditor) {
             InstanceEditorView(
                 existingInstance: viewModel.editingInstance,
+                miniMaxModelNames: viewModel.miniMaxModelNames,
                 onSave: { instance, apiKey in
                     if viewModel.editingInstance == nil {
                         viewModel.addInstance(instance, apiKey: apiKey)

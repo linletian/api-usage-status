@@ -15,6 +15,7 @@ final class AppStateProxy: ObservableObject {
     @Published private(set) var refreshState: RefreshState = .idle
     @Published private(set) var errorSummaries: [ErrorSummary] = []
     @Published private(set) var globalSettings: GlobalSettings = .default
+    @Published private(set) var minimaxModelNames: [String] = []
     @Published private(set) var lastRefreshAt: Date? = nil
 
     // MARK: - Internal References
@@ -72,10 +73,11 @@ final class AppStateProxy: ObservableObject {
         async let refreshTask = appState.getRefreshState()
         async let errorsTask = appState.getErrorSummaries()
         async let settingsTask = appState.getGlobalSettings()
+        async let modelsTask = appState.getMiniMaxModelNames()
         async let lastRefreshTask = appState.getLastRefreshAt()
 
-        let (loadedInstances, loadedSlots, loadedRefresh, loadedErrors, loadedSettings, loadedLastRefresh) = await (
-            instancesTask, slotsTask, refreshTask, errorsTask, settingsTask, lastRefreshTask
+        let (loadedInstances, loadedSlots, loadedRefresh, loadedErrors, loadedSettings, loadedModels, loadedLastRefresh) = await (
+            instancesTask, slotsTask, refreshTask, errorsTask, settingsTask, modelsTask, lastRefreshTask
         )
 
         self.instances = loadedInstances
@@ -83,6 +85,7 @@ final class AppStateProxy: ObservableObject {
         self.refreshState = loadedRefresh
         self.errorSummaries = loadedErrors
         self.globalSettings = loadedSettings
+        self.minimaxModelNames = loadedModels
         self.lastRefreshAt = loadedLastRefresh
     }
 

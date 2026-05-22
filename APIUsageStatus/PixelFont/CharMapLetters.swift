@@ -1,3 +1,7 @@
+// ⚠️ 本文件已弃用。原像素字模字符映射表，因状态栏改回系统字体而不再需要。
+// 代码保留供历史参考，待后续彻底删除。参见 ARCHITECTURE.md §2.11 / ADR-003。
+#if false
+
 import Foundation
 
 // MARK: - CharMapLetters
@@ -308,3 +312,5 @@ enum CharMapLetters {
         ],
     ]
 }
+
+#endif // false

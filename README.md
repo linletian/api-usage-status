@@ -4,7 +4,7 @@
 
 ## 功能概览
 
-- **菜单栏图标** — 自定义像素字体渲染，最多同时展示 2 个实例的用量状态
+- **菜单栏图标** — 系统字体（SF Pro 10pt）渲染，最多同时展示 2 个实例的用量状态
 - **用量面板** — 点击图标弹出浮动窗口，展示用量卡片、错误汇总、手动刷新和设置入口
 - **阈值告警** — 配额百分比或余额金额触发 macOS 系统通知，点击通知查看详情
 - **余额追踪** — 记录历史快照，按周/月/近7天/近30天展示日均消耗
@@ -85,7 +85,7 @@ xcodebuild -project APIUsageStatus.xcodeproj \
 | MiniMaxResponseParserTests | 8 | 正常解析、鉴权错误、业务错误、畸形 JSON、多模型 |
 | DeepSeekResponseParserTests | 8 | CNY 优先解析、降级回退、is_available=false、空数组 |
 | RetryPolicyTests | 6 | 重试行为、退避延迟、最大尝试次数 |
-| PixelFontEngineTests | 32 | 43 个字符的像素级验证、文本拼接、进度条、槽位渲染 |
+| ~~PixelFontEngineTests~~ | ~~32~~ | ~~（已弃用）原像素字模引擎测试，代码已注释~~ |
 | MenuBarIconRendererTests | 11 | 所有图标状态的快照对比测试 |
 
 ## 部署到 /Applications
@@ -113,7 +113,7 @@ APIUsageStatus/
 ├── Network/                       # HTTP 客户端 + 重试策略
 ├── Suppliers/                     # 供应商协议 + MiniMax / DeepSeek 实现
 ├── Balance/                       # 余额计算器 + 历史快照
-├── PixelFont/                     # 像素字体引擎（5×7 字母 + 3×5 数字）
+├── PixelFont/                     # ⚠️ 已弃用：原像素字体引擎（代码已注释）
 ├── Extensions/                    # Date/Decimal/String 扩展
 └── Utilities/                     # 日志 + 原子写入
 APIUsageStatusTests/
@@ -121,7 +121,7 @@ APIUsageStatusTests/
 ├── MiniMaxResponseParserTests.swift
 ├── DeepSeekResponseParserTests.swift
 ├── RetryPolicyTests.swift
-├── PixelFontEngineTests.swift
+├── ~~PixelFontEngineTests.swift~~  # 已弃用（代码已注释）
 ├── MenuBarIconRendererTests.swift
 └── ReferenceImages/               # 快照测试金标准图片
 ```

@@ -111,12 +111,12 @@
 ┌──────────────────────▼──────────────────────────┐
 │            领域 / 服务层                         │
 │  RefreshService, PersistenceService,             │
-│  PixelFontEngine, NotificationManager,           │
+│  NotificationManager,                            │
 │  Supplier 实现                                   │
 └─────────────────────────────────────────────────┘
 ```
 
-依赖方向**仅向下**。UI 层从 `AppState` 读取状态；服务层向 `AppState` 写入状态。无循环依赖。`PixelFontEngine` 为纯函数模块，不依赖任何其他模块。
+依赖方向**仅向下**。UI 层从 `AppState` 读取状态；服务层向 `AppState` 写入状态。无循环依赖。
 
 ---
 
@@ -145,10 +145,12 @@
 
 ### 2.3 菜单栏图标渲染器（`MenuBarIconRenderer.swift`）
 
-**职责**：逐像素绘制菜单栏图标。
+**职责**：使用系统字体绘制菜单栏图标。
 
 - 创建适配状态栏按钮尺寸的 `NSImage`
-- 对每个活跃槽位（最多 2 个），使用 `PixelFontEngine` 渲染槽位布局
+- 对每个活跃槽位（最多 2 个），采用**双行层叠布局**：第一行绘制服务商简称（2 字母），第二行绘制余额或百分比，每行各自水平居中
+- 字体：SF Pro Regular 8pt，配额型百分比使用等宽变体（`.monospacedSystemFont` 8pt）以保证数字对齐
+- 1 个槽位时宽度自适应内容；2 个槽位时严格 50/50 等宽
 - 支持单色与彩色两种模式
 - 处理特殊状态：`?`（无配置）、`NO API`（全部禁用）、`•••`（加载中）、`N/A`（余额不可用）
 - 实现严重阈值的 1Hz 闪烁动画
@@ -239,9 +241,13 @@ struct SupplierResponse {
 - 方法：`store(key: String, for ref: String)`、`retrieve(for ref: String) -> String?`、`delete(for ref: String)`
 - 仅被 `PersistenceService` 调用
 
-### 2.11 像素字模引擎（`PixelFontEngine.swift`）
+### 2.11 像素字模引擎（`PixelFontEngine.swift`）— **已弃用**
 
-**职责**：将文本渲染为像素位图。纯函数，无状态。
+> **状态**：代码已注释，保留文件供历史参考，待后续彻底删除。
+>
+> **弃用原因**：状态栏改回系统字体渲染（SF Pro 10 pt），像素字模在状态栏极窄空间内已不再必要，且系统字体在 Retina 屏幕下清晰度足够。参见 ADR-003 修订记录。
+
+**原职责**（归档）：将文本渲染为像素位图。纯函数，无状态。
 
 - 字符映射表：`[Character: [[Bool]]]` — 字母 5×7，数字 3×5
 - `func renderChar(_ char: Character, size: CharSize) -> [[Bool]]`
@@ -392,20 +398,21 @@ MenuBarController（观察者）
     ▼
 MenuBarIconRenderer.render()
     │
-    ├──▶ 创建 NSImage（高度 22pt × 总宽度）
+    ├──▶ 计算槽位宽度：1 槽位 = 内容宽，2 槽位 = max(宽A,宽B) × 2（50/50）
+    │
+    ├──▶ 创建 NSImage（高度 22pt × 总宽度，variableLength 自适应）
     │
     ├──▶ 对每个槽位（最多 2 个）：
     │     │
     │     ├──▶ 确定槽位颜色（基于阈值 + 色彩模式）
     │     │
-    │     ├──▶ PixelFontEngine.renderSlot(context, slotData, color)
+    │     ├──▶ 双行层叠绘制（第一行简称、第二行数值，各行在槽位内水平居中）：
     │     │     │
-    │     │     ├──▶ renderText(shortName) → 2 字符 × 5×7 网格
-    │     │     ├──▶ [配额型] renderProgressBar(percent) → 3pt × 18pt 进度条
-    │     │     ├──▶ renderText(percentStr) → "82%"
-    │     │     └──▶ [余额型] renderText(balanceStr) → "¥45"
+    │     │     ├──▶ 第一行：简称（2 字母，SF Pro Regular 8pt）
+    │     │     ├──▶ 第二行：[配额型] 百分比数字（等宽 8pt） [余额型] 余额数值
+    │     │     └──▶ 两行通过上下 margin 对称分布在 22pt 内
     │     │
-    │     └──▶ 若为严重阈值且在彩色模式下 → 启动 1Hz 闪烁 Timer
+    │     └──▶ 若为严重阈值 → 启动 1Hz 闪烁 Task
     │
     ├──▶ 设为 NSStatusBarButton.image
     │
@@ -784,29 +791,27 @@ enum RefreshError: Error {
 
 ## 7. 菜单栏渲染管线
 
-### 7.1 槽位布局（44pt × 22pt）
+### 7.1 槽位布局（variableLength × 22pt）
 
-每个槽位占据固定的 44pt × 22pt 区域（两个正方形宽度）。槽位内容以**单行水平**方式排列：
+槽位高度固定 22pt，宽度动态决定。槽位内容以**双行层叠**方式排列，每行各自水平居中：
 
 ```
-┌──────────────────────────────────────────────┐
-│  MX  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  82% │  ← 配额型     │
-│  2 字母    进度条          百分比              │
-│              (3pt×18pt)    (像素字模)          │
-└──────────────────────────────────────────────┘
+┌──────────────────┐   ┌──────────────────┐
+│       MX         │   │       DS         │ ← 第一行：简称
+│      82%         │   │      ¥45         │ ← 第二行：数值
+└──────────────────┘   └──────────────────┘
+  ← 配额型槽位 →    4pt  ← 余额型槽位 →
 
-┌──────────────────────────────────────────────┐
-│  DS  ¥45                          │  ← 余额型  │
-│  2 字母   余额数值                │            │
-│           (像素字模)              │            │
-└──────────────────────────────────────────────┘
+  1 个槽位：宽度 = max(第一行宽, 第二行宽)
+  2 个槽位：各占 50% 等宽，宽槽决定半宽，中间 4pt 间距
 ```
 
 **布局常量**：
-- 简称：2 字符 × 每字符 5px 宽 = 10px，加 1px 间距 → 占据左侧约 12pt
-- 进度条（仅配额型）：18pt 宽，3pt 高，垂直居中
-- 数值文本：右对齐，占据剩余空间
-- 槽位间间距：2pt
+- 字体：SF Pro Regular 8pt（双行在 22pt 内紧凑可读）
+- 第一行（简称）：2 字母，SF Pro Regular 8pt，槽位内水平居中
+- 第二行（数值）：配额型用等宽数字（`.monospacedSystemFont` 8pt），余额型用 SF Pro Regular 8pt，槽位内水平居中
+- 垂直居中：基于 `capHeight`（实际字形高度）计算基线，而非 `ascender`/`descender`（包含未使用的变音符号空间），使可见字形视觉居中
+- 2 槽位时：两半之间间距 4pt，与两侧边距视觉效果一致
 
 ### 7.2 槽位选择（≥3 个实例）
 
@@ -818,20 +823,17 @@ enum RefreshError: Error {
 
 | 用途 | 色值 | 说明 |
 |------|------|------|
-| 置灰色 | `#D6D0A0` | 所有非活跃状态（加载中/禁用/失败/余额不可用）统一置灰色。文字、进度条等所有槽位元素均以此色渲染 |
+| 置灰色 | `#D6D0A0` | 所有非活跃状态（加载中/禁用/失败/余额不可用）统一置灰色。文字等所有槽位元素均以此色渲染 |
 | 安全 | `#4CAF50` | 彩色模式下的正常状态 |
 | 警告 | `#FFC107` | 彩色模式下的警告阈值 |
 | 严重 | `#F44336` | 彩色模式下的严重阈值 |
 
-**置灰实现方式**：不通过 `alphaValue` 或透明度操作，而是**直接以 `#D6D0A0` 作为渲染颜色传入 `PixelFontEngine`**，替换掉正常情况下应使用的颜色（无论单色还是彩色模式）。这避免了降 alpha 在单色模式下与系统外观颜色叠加后产生不可预期的视觉效果。
+**置灰实现方式**：不通过 `alphaValue` 或透明度操作，而是**直接以 `#D6D0A0` 作为文字颜色传入 `NSAttributedString`**，替换掉正常情况下应使用的颜色（无论单色还是彩色模式）。这避免了降 alpha 在单色模式下与系统外观颜色叠加后产生不可预期的视觉效果。
 
 #### 单色模式
 - 所有文字：跟随系统菜单栏外观（浅色主题黑色，深色主题白色）
-- 进度条：填充比例编码阈值状态
-  - 0–50%：空心轮廓（1px 描边，无填充）
-  - 50–80%：下半部分实心填充
-  - 80–100%：完全实心填充
-- 严重阈值：整槽以 1Hz 频率闪烁（通过 `Timer` 切换 `NSView.alphaValue`）
+- 百分比数字本身即为用量信息载体，无需额外视觉编码
+- 严重阈值：整槽以 1Hz 频率闪烁（通过结构化并发 Task 切换可见性）
 - 余额型实例不闪烁，仅显示数值
 - **非活跃状态**：整槽以 `#D6D0A0` 渲染所有元素，不闪烁
 
@@ -864,23 +866,29 @@ func startFlashing(forSlot index: Int) {
 
 ### 7.5 特殊状态
 
-所有非活跃状态统一以**置灰色 `#D6D0A0`** 渲染槽位全部内容（文字、进度条、符号），不依赖透明度操作。单色与彩色模式下置灰效果一致。
+所有非活跃状态统一以**置灰色 `#D6D0A0`** 渲染槽位全部内容（文字、符号），不依赖透明度操作。单色与彩色模式下置灰效果一致。
 
 | 状态 | 视觉表现 | 渲染方式 |
 |------|----------|----------|
-| 无实例配置 | 单个 `?` 字符 | 以 `#D6D0A0` 渲染 |
-| 加载中（首次刷新） | `•••`，进度条 | 以 `#D6D0A0` 渲染，进度条无填充 |
-| 全部实例已禁用 | 像素字模 `NO API` | 以 `#D6D0A0` 渲染 |
-| 余额不可用（`is_available = false`） | `N/A` | 以 `#D6D0A0` 渲染 |
-| 刷新失败 | 上次成功数据照常显示，但全部元素以 `#D6D0A0` 渲染 | 以 `#D6D0A0` 替换正常颜色传入 `PixelFontEngine`，菜单栏不展示错误文字 |
+| 无实例配置 | 单个 `?` 字符 | 以 `#D6D0A0` 系统字体渲染 |
+| 加载中（首次刷新） | `•••` | 以 `#D6D0A0` 系统字体渲染 |
+| 全部实例已禁用 | `NO API` | 以 `#D6D0A0` 系统字体渲染 |
+| 余额不可用（`is_available = false`） | `N/A` | 以 `#D6D0A0` 系统字体渲染 |
+| 刷新失败 | 上次成功数据照常显示，但全部元素以 `#D6D0A0` 渲染 | 以 `#D6D0A0` 系统字体渲染，菜单栏不展示错误文字 |
 
 > **设计理由**：选择固定色值 `#D6D0A0`（低饱和暖灰）而非降低 `alphaValue` 的方式，是因为：(1) 单色模式下 alpha 叠加系统黑/白色后视觉效果不稳定；(2) 固定色值在两种色彩模式和明暗主题下均能清晰传递「非活跃」语义，且与系统菜单栏常见的灰色图标风格协调。
 
 ---
 
-## 8. 像素字模系统设计
+## 8. 像素字模系统设计 — **已弃用（归档）**
 
-### 8.1 字符集
+> **状态**：代码已注释，保留文件供历史参考，待后续彻底删除。
+>
+> **弃用原因**：状态栏改回系统字体渲染（SF Pro 10 pt），像素字模在状态栏极窄空间内已不再必要，且系统字体在 Retina 屏幕下清晰度足够。参见 ADR-003 修订记录。
+
+以下内容为原设计文档，仅作归档：
+
+### 8.1 字符集（归档）
 
 **5×7 网格（字母 A-Z、符号字符）：**
 - 5 列 × 7 行 = 每字符 35 位
@@ -891,7 +899,7 @@ func startFlashing(forSlot index: Int) {
 - 用于：百分比数字和余额金额
 - 更紧凑，在有限槽位宽度内可容纳更多数字
 
-### 8.2 数据结构
+### 8.2 数据结构（归档）
 
 ```swift
 enum CharSize {
@@ -905,22 +913,11 @@ typealias Bitmap = [[Bool]]
 let charMap: [Character: Bitmap] = [
     "A": [[false, true, true, true, false],
           [true, false, false, false, true],
-          [true, false, false, false, true],
-          [true, true, true, true, true],
-          [true, false, false, false, true],
-          [true, false, false, false, true],
-          [true, false, false, false, true]],
-
-    "0": [[true, true, true],
-          [true, false, true],
-          [true, false, true],
-          [true, false, true],
-          [true, true, true]],
-    // ... 完整字符集：A-Z, 0-9, %, ¥, $, ., ?, •, /
+          ...
 ]
 ```
 
-### 8.3 渲染算法
+### 8.3 渲染算法（归档）
 
 ```swift
 func drawChar(_ char: Character, at origin: CGPoint, scale: CGFloat,
@@ -941,14 +938,7 @@ func drawChar(_ char: Character, at origin: CGPoint, scale: CGFloat,
 }
 ```
 
-**像素缩放计算：**
-- 槽位高度 = 22pt
-- 可用垂直空间（扣除上下各 1pt 边距）= 20pt
-- 5×7 字符：`scale = 20pt / 7 ≈ 2.85pt` → 向下取整以保证清晰度：2pt（14pt 高，居中）
-- 3×5 数字：`scale = 20pt / 5 = 4pt`（但数字可能也使用相同的 2pt 缩放以保持一致性）
-- 最终缩放值将在构建时通过视觉测试确定
-
-### 8.4 文本渲染
+### 8.4 文本渲染（归档）
 
 ```swift
 func drawText(_ text: String, at origin: CGPoint, charSize: (Int, Int),
@@ -961,7 +951,7 @@ func drawText(_ text: String, at origin: CGPoint, charSize: (Int, Int),
 }
 ```
 
-槽位内容不使用任何系统字体 API（`NSFont`、`CTFont`、`attributedString`）。每个可见字符均通过 `CGContext.fill(rect:)` 调用绘制。
+原实现中槽位内容不使用任何系统字体 API，每个可见字符均通过 `CGContext.fill(rect:)` 调用绘制。
 
 ---
 
@@ -1186,7 +1176,7 @@ API Key 和敏感值以 `privacy: .private` 记录，防止出现在控制台日
 3. **`RefreshService` 是独立 Actor**：确保不会有两个刷新周期同时运行。Timer 和手动触发均调用 `performRefresh()`，由 Actor 序列化。
 4. **`PersistenceService` 是独立 Actor**：防止并发文件写入。
 5. **`KeychainService` 是 `PersistenceService` 的下属**：仅由 `PersistenceService` 调用，继承其序列化保证。
-6. **`PixelFontEngine` 无并发约束**：纯函数。可在任何上下文中调用，但实践中从 `@MainActor` 调用。
+6. **`PixelFontEngine` 已弃用**：原纯函数模块无并发约束，现代码已注释，不再参与渲染管线。
 
 ### 11.3 HTTP 请求执行策略
 
@@ -1320,10 +1310,10 @@ APIUsageStatus/
 │   │   ├── BalanceCalculator.swift       # 日用量计算、平均值、历史
 │   │   └── BalanceSnapshot.swift         # 模型：每实例余额状态
 │   │
-│   ├── PixelFont/
-│   │   ├── PixelFontEngine.swift         # 核心渲染：drawChar、drawText
-│   │   ├── CharMapLetters.swift          # 5×7 位图：A-Z 及符号
-│   │   └── CharMapDigits.swift           # 3×5 位图：0-9
+│   ├── PixelFont/                        # ⚠️ 已弃用：代码已注释，保留文件供历史参考
+│   │   ├── PixelFontEngine.swift         # 原核心渲染（已注释）
+│   │   ├── CharMapLetters.swift          # 原 5×7 位图（已注释）
+│   │   └── CharMapDigits.swift           # 原 3×5 位图（已注释）
 │   │
 │   ├── Models/
 │   │   ├── Instance.swift                # 实例配置模型
@@ -1374,12 +1364,14 @@ APIUsageStatus/
 **决策**：对 `AppState`、`RefreshService`、`PersistenceService` 和 `KeychainService` 使用 Swift Actor（`actor`）。
 **后果**：编译期数据竞争安全。序列化边界清晰。权衡：必须考虑 Actor 可重入性（Actor 内部的 `await` 会挂起，允许其他调用交错执行）。缓解措施：保持 Actor 方法简短，避免在多步变更中间使用 `await`。
 
-### ADR-003：代码绘制的像素字模而非系统字体
+### ADR-003：代码绘制的像素字模而非系统字体 — **已废弃**
 **上下文**：菜单栏空间极为有限（每槽位 44pt × 22pt）。系统字体带抗锯齿在此尺寸下不可读。PRD 明确要求像素完美渲染。
-**决策**：硬编码 5×7 / 3×5 位图，通过 `CGContext.fill(rect:)` 逐像素绘制。
+**决策（V1 早期）**：硬编码 5×7 / 3×5 位图，通过 `CGContext.fill(rect:)` 逐像素绘制。
+**修订（当前）**：改回系统字体（SF Pro 10 pt）。Retina 屏幕下 10pt 系统字体经抗锯齿处理后清晰度已足够；同时取消固定 44pt 槽位宽度限制，改用 `NSStatusItem.variableLength` 自适应比例字体宽度。
 **后果**：
-- **收益**：绝对渲染控制，无字体加载问题，无抗锯齿模糊，极小尺寸下清晰度完美。
-- **让步**：不支持硬编码字符集以外的 Unicode。不支持动态字体大小。新增字符需编辑位图常量。可接受，因为字符范围高度受限（2 字母代码、数字、符号）。
+- ~~**收益**：绝对渲染控制，无字体加载问题，无抗锯齿模糊，极小尺寸下清晰度完美。~~（已不再适用）
+- **原让步**：不支持硬编码字符集以外的 Unicode。不支持动态字体大小。新增字符需编辑位图常量。
+- **新收益**：与用量面板字体风格统一（均为系统字体 10pt）；无需维护字符映射表；支持任意 Unicode 符号；动态宽度自适应，不受固定槽位宽度约束。
 
 ### ADR-004：`kSecClassInternetPassword` 而非 `kSecClassGenericPassword`
 **上下文**：需要存储多把 API Key，每把以 `api_key_ref` 索引。
@@ -1433,7 +1425,7 @@ APIUsageStatus/
 ## 14. 质量属性分析
 
 ### 14.1 性能
-- **菜单栏渲染**：`CGContext.fill(rect:)` 调用在 macOS 上由 GPU 加速。每槽位绘制约 500 个矩形（2 字符 × 35 像素 + 进度条 + 数字）微不足道 —— 亚毫秒级。
+- **菜单栏渲染**：`NSAttributedString.draw(at:)` 在 `NSImage.lockFocus()` 上下文中由 Core Text + Core Graphics 加速，每槽位仅需数次字符串绘制调用，微不足道 —— 亚毫秒级。
 - **内存**：目标常驻 < 50MB。主要来源：AppState 模型（< 1KB）、余额历史（约 100 字节/天增长，约 36KB/年）、URLSession 缓存（瞬时）。
 - **CPU**：后台刷新受 I/O 限制（HTTP）。JSON 解析为亚毫秒级。Timer 每 1–60 分钟触发一次。空闲时 CPU 使用可忽略不计。
 
@@ -1445,7 +1437,7 @@ APIUsageStatus/
 
 ### 14.3 可维护性
 - **模块边界**：UI、状态、服务和供应商之间清晰分离。新增供应商只需实现 `Supplier` 协议并在 `SupplierRegistry` 中注册 —— 无需修改 RefreshService 或 UI。
-- **纯领域逻辑**：`BalanceCalculator` 和 `PixelFontEngine` 无副作用，天然易于测试。
+- **纯领域逻辑**：`BalanceCalculator` 无副作用，天然易于测试。
 - **类型安全**：所有领域概念使用强 Swift 类型（`ColorState`、`ErrorType`、`InstanceType`），在编译期防止非法状态。
 
 ### 14.4 可观测性
@@ -1460,7 +1452,7 @@ APIUsageStatus/
 - **无分析统计**：零数据收集。除 API 供应商外无网络请求。
 
 ### 14.6 可测试性
-- **可单元测试的模块**：`BalanceCalculator`、`PixelFontEngine`、`RetryPolicy`、`MiniMaxResponseParser`、`DeepSeekResponseParser` —— 均为纯函数或确定性逻辑。
+- **可单元测试的模块**：`BalanceCalculator`、`RetryPolicy`、`MiniMaxResponseParser`、`DeepSeekResponseParser` —— 均为纯函数或确定性逻辑。
 - **Actor 测试**：`AppState`、`RefreshService`、`PersistenceService` 可通过 await 其 async 方法并结合 mock/stub 依赖进行测试。
 - **UI 测试**：SwiftUI Previews 结合 mock `AppStateProxy` 数据实现快速视觉迭代。
 - **快照测试**：`MenuBarIconRenderer` 的输出可被捕获为 `NSImage` 并与参考图像对比。

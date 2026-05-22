@@ -1,3 +1,7 @@
+// ⚠️ 本测试文件已弃用。原像素字模引擎的单元测试，因引擎代码已注释而不再运行。
+// 代码保留供历史参考，待后续彻底删除。
+#if false
+
 import XCTest
 @testable import APIUsageStatus
 
@@ -348,3 +352,5 @@ final class PixelFontEngineTests: XCTestCase {
         XCTAssertEqual(actualCount, expectedCount, "Pixel count mismatch for '\(char)'", file: file, line: line)
     }
 }
+
+#endif // false

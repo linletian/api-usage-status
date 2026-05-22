@@ -30,7 +30,7 @@ final class MenuBarIconRenderer {
     private static let slotHeight: CGFloat = 22.0
 
     /// Gap between two slots' halves; also used as the implied side margin.
-    private static let betweenSlotGap: CGFloat = 6.0
+    private static let betweenSlotGap: CGFloat = 10.0
 
     // MARK: - Flashing state
 

@@ -124,7 +124,7 @@ struct UsageCardView: View {
             }
 
             HStack {
-                Text("Next refresh: ~\(nextMinutes)m")
+                Text("Next refresh: ≈ \(nextMinutes)m")
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
                 Spacer()
@@ -160,7 +160,7 @@ struct UsageCardView: View {
 
                 // Today usage
                 if let today = slot.todayUsage, !today.isEmpty {
-                    Text("约 \(currency?.currencySymbol ?? "¥")\(today) today")
+                    Text("≈ \(currency?.currencySymbol ?? "¥")\(today) today")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }

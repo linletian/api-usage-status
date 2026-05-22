@@ -3,13 +3,13 @@ import Foundation
 // MARK: - ColorState
 
 enum ColorState: Equatable {
-    case normal       // 安全区
-    case warning      // 超过警告阈值
-    case critical     // 超过严重阈值
-    case disabled     // 实例已禁用 → 置灰色 #D6D0A0
-    case unavailable  // 余额 is_available = false → 置灰色 #D6D0A0
-    case loading      // 首次刷新尚未完成 → 置灰色 #D6D0A0
-    case error        // 刷新失败 → 置灰色 #D6D0A0
+    case normal       // Safe zone
+    case warning      // Above warning threshold
+    case critical     // Above critical threshold
+    case disabled     // Instance disabled → dimmed #D6D0A0
+    case unavailable  // Balance is_available = false → dimmed #D6D0A0
+    case loading      // First refresh not yet completed → dimmed #D6D0A0
+    case error        // Refresh failed → dimmed #D6D0A0
 }
 
 // MARK: - InstanceType

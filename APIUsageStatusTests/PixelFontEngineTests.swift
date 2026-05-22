@@ -1,5 +1,5 @@
-// ⚠️ 本测试文件已弃用。原像素字模引擎的单元测试，因引擎代码已注释而不再运行。
-// 代码保留供历史参考，待后续彻底删除。
+// ⚠️ DEPRECATED. Original unit tests for the pixel font engine; no longer run because engine code is commented out.
+// Kept for historical reference; to be removed later.
 #if false
 
 import XCTest

@@ -100,7 +100,7 @@
 ```
 ┌─────────────────────────────────────────────────┐
 │          UI 层（SwiftUI + AppKit）              │
-│  MenuBarController, PopoverView, SettingsWindow  │
+│  MenuBarController, UsagePanelWindow, SettingsWindow  │
 └──────────────────────┬──────────────────────────┘
                        │ 依赖
 ┌──────────────────────▼──────────────────────────┐
@@ -133,13 +133,15 @@
 
 ### 2.2 菜单栏控制器（`MenuBarController.swift`）
 
-**职责**：持有 `NSStatusItem`，管理 `NSPopover`，协调图标渲染与点击处理。
+**职责**：持有 `NSStatusItem`，管理浮动用量面板窗口（`NSWindow`），协调图标渲染与点击处理。
 
 - 管理单个可变长度的 `NSStatusItem`
 - 监听 `AppState` 的槽位数据变化 → 触发重绘
-- 左键单击 → 切换 Popover（Popover 内嵌 `UsagePanelView`）
+- 左键单击 → 切换浮动用量面板（`NSWindow` 内嵌 `UsagePanelView`，窗口失焦时自动关闭，模拟 popover 行为）
 - 右键 → `NSMenu`：立即刷新 / 打开设置 / 退出
 - 通过 `MenuBarIconRenderer` 处理 `NSStatusBarButton` 的自定义绘制
+
+**为何用 `NSWindow` 替代 `NSPopover`**：`LSUIElement` 应用中的 `NSPopover` 存在已知问题 —— 键盘快捷键（Cmd+C/V 等）无法正确路由到文本输入框，影响 API Key 等输入体验。`NSWindow`（隐藏标题栏 + floating level）提供完全正常的键盘事件响应，同时通过 `NSWindowDelegate.windowDidResignKey` 实现点击外部自动关闭，行为与 popover 一致。
 
 ### 2.3 菜单栏图标渲染器（`MenuBarIconRenderer.swift`）
 
@@ -155,7 +157,7 @@
 
 **职责**：按实例展示用量卡片的 UI。
 
-- `UsagePanelView`：承载可滚动的卡片列表 + 错误摘要栏 + 刷新按钮 + 设置入口（Popover 内）
+- `UsagePanelView`：承载可滚动的卡片列表 + 错误摘要栏 + 刷新按钮 + 设置入口（窗口内）
 - `UsageCardView`：单实例卡片 —— 配额型显示进度条 + 下次刷新剩余时间（分钟数），自然天/周配额型额外显示周期剩余天数；余额型显示余额 + 每日统计
 - `InstanceDetailPanel`：点击通知后弹出的独立 `NSPanel`，展示单个实例的完整用量详情（与 UsageCardView 展示相同信息，但以独立窗口形式呈现，失活时自动关闭）
 - 以上均为观察 `AppStateProxy` 的 SwiftUI 视图
@@ -180,7 +182,7 @@
   - `instances: [Instance]` — 所有已配置实例
   - `slotViewDataList: [SlotViewData]` — 由 instances + 最新刷新结果派生的数据，供 UI 使用
   - `refreshState: RefreshState` — `.idle` 或 `.refreshing`（全局刷新进行中标志）
-  - `errorSummaries: [ErrorSummary]` — 每实例错误信息，用于 Popover 错误栏
+  - `errorSummaries: [ErrorSummary]` — 每实例错误信息，用于面板错误栏
   - `globalSettings: GlobalSettings`
 - 所有变更通过 Actor 上的 async 方法执行
 - UI 通过 `AppStateProxy`（`@MainActor ObservableObject`）桥接观察，详见 §9
@@ -376,7 +378,7 @@ RefreshService.performRefresh()
     │        （将 Actor 数据副本拉到 MainActor，触发 @Published → SwiftUI 重绘）
     │
     └──▶ MenuBarIconRenderer 触发重绘（观察 AppStateProxy）
-         Popover 更新（观察 AppStateProxy）
+         面板更新（观察 AppStateProxy）
 ```
 
 ### 3.3 菜单栏渲染流程
@@ -808,7 +810,7 @@ enum RefreshError: Error {
 
 ### 7.2 槽位选择（≥3 个实例）
 
-当启用 ≥3 个实例时，菜单栏仅显示按 `sort_order`（升序）排列的**前 2 个**。其余实例仅在 Popover 面板中可见。这防止 macOS 截断菜单栏图标。
+当启用 ≥3 个实例时，菜单栏仅显示按 `sort_order`（升序）排列的**前 2 个**。其余实例仅在用量面板中可见。这防止 macOS 截断菜单栏图标。
 
 ### 7.3 色彩模式逻辑
 
@@ -1105,7 +1107,7 @@ struct UsagePanelView: View {
 
 ### 10.2 降级策略
 
-- **保留最后已知数据**：刷新失败时，槽位显示上次成功数据，但所有元素以置灰色 `#D6D0A0` 渲染（详见 §7.3 色彩定义、§7.5 特殊状态）。Popover 显示上次成功刷新时间戳。
+- **保留最后已知数据**：刷新失败时，槽位显示上次成功数据，但所有元素以置灰色 `#D6D0A0` 渲染（详见 §7.3 色彩定义、§7.5 特殊状态）。面板显示上次成功刷新时间戳。
 - **部分成功处理**：若组 A（MiniMax）成功但组 B（DeepSeek）失败，MiniMax 实例正常更新，DeepSeek 实例单独置灰。
 - **无连锁故障**：每个 `api_key_ref` 组独立失败。一组的失败不会阻止或延迟其他组。
 
@@ -1282,11 +1284,11 @@ APIUsageStatus/
 │   │   └── AppStateProxy.swift           # @MainActor 包装器，供 SwiftUI 使用
 │   │
 │   ├── MenuBar/
-│   │   ├── MenuBarController.swift       # NSStatusItem 生命周期、Popover、菜单
+│   │   ├── MenuBarController.swift       # NSStatusItem 生命周期、用量面板（NSWindow）、菜单
 │   │   └── MenuBarIconRenderer.swift     # NSImage 生成、像素绘制编排
 │   │
 │   ├── Views/
-│   │   ├── UsagePanelView.swift          # Popover 内容 — 卡片列表 + 错误栏
+│   │   ├── UsagePanelView.swift          # 面板内容 — 卡片列表 + 错误栏
 │   │   ├── UsageCardView.swift           # 单实例用量卡片
 │   │   ├── SettingsView.swift            # 设置窗口 SwiftUI 根视图
 │   │   ├── InstanceEditorView.swift      # 添加/编辑实例表单
@@ -1409,8 +1411,8 @@ APIUsageStatus/
 **上下文**：当通知触发时（如「MiniMax-文字 at 96%」），点击应展示详情。
 **决策**：点击通知打开一个独立的、非依附的 `NSPanel`，显示该实例的用量详情。
 **后果**：
-- **收益**：用户无需打开菜单栏 Popover 即可查看详情。Panel 独立且可由系统定位。
-- **让步**：可能存在两个窗口同时显示相同数据（NSPanel + Popover）。可接受，因为它们都是只读视图，且 NSPanel 在失活时自动关闭。
+- **收益**：用户无需打开菜单栏用量面板即可查看详情。Panel 独立且可由系统定位。
+- **让步**：可能存在两个窗口同时显示相同数据（NSPanel + 用量面板）。可接受，因为它们都是只读视图，且 NSPanel 在失活时自动关闭。
 
 ### ADR-009：原子文件写入（临时文件 + 重命名）
 **上下文**：写入 JSON 文件在崩溃/断电时存在损坏风险。

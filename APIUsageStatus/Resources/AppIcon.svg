@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+
+    <!-- Top sheen for Big Sur style -->
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="45%" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Soft glow filter for the progress ring -->
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Base rounded rectangle -->
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+
+  <!-- Top highlight -->
+  <rect width="1024" height="460" rx="230" fill="url(#sheen)"/>
+
+  <!-- Inner border -->
+  <rect x="16" y="16" width="992" height="992" rx="222" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="2"/>
+
+  <!-- Background track ring -->
+  <circle cx="512" cy="500" r="300" fill="none" stroke="#ffffff" stroke-opacity="0.07" stroke-width="28"/>
+
+  <!-- Progress ring (~62% filled, teal/cyan color) -->
+  <!-- Circumference = 2 * π * 300 ≈ 1884.96 -->
+  <!-- 62% of 1884.96 ≈ 1169, offset = 1884.96 - 1169 ≈ 716 -->
+  <circle cx="512" cy="500" r="300" fill="none" stroke="#2dd4bf" stroke-width="28"
+          stroke-dasharray="1885" stroke-dashoffset="716" stroke-linecap="round"
+          transform="rotate(-90 512 500)" filter="url(#glow)"/>
+
+  <!-- Center hub circle -->
+  <circle cx="512" cy="500" r="148" fill="#ffffff" fill-opacity="0.03" stroke="#ffffff" stroke-opacity="0.12" stroke-width="3"/>
+
+  <!-- Network nodes (equilateral triangle layout) -->
+  <!-- Top node -->
+  <circle cx="512" cy="408" r="36" fill="#ffffff"/>
+  <!-- Bottom-left node -->
+  <circle cx="428" cy="554" r="36" fill="#ffffff"/>
+  <!-- Bottom-right node -->
+  <circle cx="596" cy="554" r="36" fill="#ffffff"/>
+
+  <!-- Connection lines -->
+  <line x1="512" y1="444" x2="448" y2="524" stroke="#ffffff" stroke-opacity="0.45" stroke-width="13" stroke-linecap="round"/>
+  <line x1="512" y1="444" x2="576" y2="524" stroke="#ffffff" stroke-opacity="0.45" stroke-width="13" stroke-linecap="round"/>
+  <line x1="448" y1="554" x2="576" y2="554" stroke="#ffffff" stroke-opacity="0.45" stroke-width="13" stroke-linecap="round"/>
+
+  <!-- Inner accent dots in nodes -->
+  <circle cx="512" cy="408" r="14" fill="#0f172a"/>
+  <circle cx="428" cy="554" r="14" fill="#0f172a"/>
+  <circle cx="596" cy="554" r="14" fill="#0f172a"/>
+</svg>

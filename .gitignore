@@ -23,6 +23,10 @@ Thumbs.db
 # Claude / AI tool configs
 .claude/
 
+# Build artifacts (local)
+build/
+tmp/
+
 # Sensitive
 *.plist.keys
 *.entitlements.keys

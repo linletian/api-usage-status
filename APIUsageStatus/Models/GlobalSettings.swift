@@ -6,7 +6,7 @@ enum ColorMode: String, Codable, Equatable {
     case monochrome = "monochrome"
     case color = "color"
 
-    static var defaultMode: ColorMode { .color }
+    static var defaultMode: ColorMode { .monochrome }
 }
 
 // MARK: - GlobalSettings
@@ -26,7 +26,7 @@ struct GlobalSettings: Codable, Equatable {
 
     init(
         refreshIntervalMinutes: Int = 5,
-        colorMode: ColorMode = .color,
+        colorMode: ColorMode = ColorMode.defaultMode,
         launchAtLogin: Bool = false,
         notificationsEnabled: Bool = true
     ) {

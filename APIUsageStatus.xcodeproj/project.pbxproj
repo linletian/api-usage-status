@@ -18,6 +18,7 @@
 		2D324F8A84CE5CF007DB2774 /* SettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC185733B8A8CE785827092 /* SettingsViewModel.swift */; };
 		40EE381667DE4DF4CF64013D /* APIUsageStatusApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5408EE11C15AFC05611C02A5 /* APIUsageStatusApp.swift */; };
 		43C82B54982192D27582D57E /* Date+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92758FB867464F45A1CE6E28 /* Date+Extensions.swift */; };
+		A632E1199BDD4AF7B57CC1D2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D2977874AC194070BE037EAD /* Assets.xcassets */; };
 		4DC5637237CA7B0729761A8A /* Decimal+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F806125A0A4E15F7DBEA606 /* Decimal+Extensions.swift */; };
 		4E1FB678BAF07C9F48F2B804 /* NetworkClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E708B6491DE7B48A2EF159B /* NetworkClient.swift */; };
 		518246C6BC4698D1A65CDC1D /* RetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28C1B721F4342FDAA52AB827 /* RetryPolicy.swift */; };
@@ -73,6 +74,7 @@
 
 /* Begin PBXFileReference section */
 		043E36E17FBBED80C5E98AB9 /* AppLaunchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLaunchService.swift; sourceTree = "<group>"; };
+		D2977874AC194070BE037EAD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0BDBEC8120E7D3FCC8C3DE19 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		0E00B7A50D1947AA6CBC1DE4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		16CA73AE724FE3F2A1E292D0 /* DeepSeekSupplier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekSupplier.swift; sourceTree = "<group>"; };
@@ -268,6 +270,7 @@
 				8B2F37398395345612597289 /* Suppliers */,
 				3066D60C63FA4E76345DB9A9 /* Utilities */,
 				CB40E94FF64029CAB58DDC5A /* Views */,
+				D2977874AC194070BE037EAD /* Assets.xcassets */,
 				39673FA7C9DBE3BF96F870D9 /* APIUsageStatus.entitlements */,
 				5408EE11C15AFC05611C02A5 /* APIUsageStatusApp.swift */,
 			);
@@ -348,6 +351,7 @@
 			buildConfigurationList = E80C7118B3E62F4DAF17697D /* Build configuration list for PBXNativeTarget "APIUsageStatus" */;
 			buildPhases = (
 				36E21CE4C9B5AAE8E6E32E71 /* Sources */,
+				0EDF98A6645747E289F5E226 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -403,6 +407,17 @@
 			buildActionMask = 2147483647;
 			files = (
 				A81B06B98888BBAEAE4B1A01 /* README.md in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0EDF98A6645747E289F5E226 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A632E1199BDD4AF7B57CC1D2 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

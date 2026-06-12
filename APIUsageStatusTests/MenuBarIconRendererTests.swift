@@ -75,7 +75,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             colorMode: .color,
             refreshState: .idle,
             instancesCount: 0,
-            enabledCount: 0
+            enabledCount: 0,
+            isDarkBackground: false
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         assertSnapshot(image, named: "zero_instances_question_mark")
@@ -87,7 +88,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             colorMode: .color,
             refreshState: .idle,
             instancesCount: 2,
-            enabledCount: 0
+            enabledCount: 0,
+            isDarkBackground: false
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         assertSnapshot(image, named: "all_disabled_no_api")
@@ -99,7 +101,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             colorMode: .color,
             refreshState: .refreshing,
             instancesCount: 2,
-            enabledCount: 2
+            enabledCount: 2,
+            isDarkBackground: false
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         assertSnapshot(image, named: "loading_bullets")
@@ -120,7 +123,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             colorMode: .color,
             refreshState: .idle,
             instancesCount: 1,
-            enabledCount: 1
+            enabledCount: 1,
+            isDarkBackground: false
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         assertSnapshot(image, named: "one_quota_safe_color")
@@ -141,7 +145,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             colorMode: .monochrome,
             refreshState: .idle,
             instancesCount: 1,
-            enabledCount: 1
+            enabledCount: 1,
+            isDarkBackground: false
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         assertSnapshot(image, named: "one_quota_warning_mono")
@@ -162,7 +167,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             colorMode: .color,
             refreshState: .idle,
             instancesCount: 1,
-            enabledCount: 1
+            enabledCount: 1,
+            isDarkBackground: false
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         assertSnapshot(image, named: "one_balance_warning_color")
@@ -192,7 +198,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             colorMode: .color,
             refreshState: .idle,
             instancesCount: 2,
-            enabledCount: 2
+            enabledCount: 2,
+            isDarkBackground: false
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         // Should render two slots with a 2pt gap
@@ -216,7 +223,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             colorMode: .color,
             refreshState: .idle,
             instancesCount: 1,
-            enabledCount: 1
+            enabledCount: 1,
+            isDarkBackground: false
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         assertSnapshot(image, named: "balance_unavailable_na")
@@ -255,7 +263,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             colorMode: .color,
             refreshState: .idle,
             instancesCount: 3,
-            enabledCount: 3
+            enabledCount: 3,
+            isDarkBackground: false
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         // Only first 2 slots rendered → width roughly same as two-slot scenario
@@ -280,7 +289,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             colorMode: .color,
             refreshState: .idle,
             instancesCount: 1,
-            enabledCount: 1
+            enabledCount: 1,
+            isDarkBackground: false
         )
 
         // Simulate one flash cycle → toggle off
@@ -301,7 +311,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             colorMode: .color,
             refreshState: .idle,
             instancesCount: 1,
-            enabledCount: 1
+            enabledCount: 1,
+            isDarkBackground: false
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         assertSnapshot(image, named: "empty_slots_question")

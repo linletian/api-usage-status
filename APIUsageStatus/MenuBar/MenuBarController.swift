@@ -29,6 +29,22 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
         setupRightClickMenu()
         setupRenderer()
         observeAppState()
+        observeSystemAppearance()
+    }
+
+    // MARK: - System Appearance Observation
+
+    private func observeSystemAppearance() {
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(handleAppearanceChange),
+            name: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil
+        )
+    }
+
+    @objc private func handleAppearanceChange() {
+        renderIcon()
     }
 
     // MARK: - Setup
@@ -142,11 +158,16 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     private func updateWindowSize() {
-        guard let window = usageWindow, !window.isVisible else { return }
+        guard let window = usageWindow else { return }
         let height = calculateContentHeight()
         var frame = window.frame
         frame.size.height = height
-        window.setFrame(frame, display: false)
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.25
+            context.allowsImplicitAnimation = true
+            window.animator().setFrame(frame, display: true)
+        }
     }
 
     private func calculateContentHeight() -> CGFloat {
@@ -226,12 +247,22 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
         let enabledCount = latestInstances.filter { $0.enabled }.count
         let totalCount = latestInstances.count
 
+        let isDarkBackground: Bool = {
+            if let name = statusItem?.button?.effectiveAppearance.name {
+                return name == .darkAqua || name == .vibrantDark ||
+                       name == .accessibilityHighContrastDarkAqua ||
+                       name == .accessibilityHighContrastVibrantDark
+            }
+            return false
+        }()
+
         let image = renderer.render(
             slotViewDataList: latestSlotData,
             colorMode: latestSettings.colorMode,
             refreshState: latestRefreshState,
             instancesCount: totalCount,
-            enabledCount: enabledCount
+            enabledCount: enabledCount,
+            isDarkBackground: isDarkBackground
         )
 
         button.image = image
@@ -293,6 +324,7 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     deinit {
+        DistributedNotificationCenter.default().removeObserver(self)
         iconRenderer = nil
         if let statusItem = statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)

@@ -46,7 +46,8 @@ final class MenuBarIconRenderer {
         colorMode: ColorMode,
         refreshState: RefreshState,
         instancesCount: Int,
-        enabledCount: Int
+        enabledCount: Int,
+        isDarkBackground: Bool
     ) -> NSImage {
         // Special states — single centred line
         if instancesCount == 0 {
@@ -104,7 +105,7 @@ final class MenuBarIconRenderer {
 
         for (index, slot) in enabledSlots.enumerated() {
             let isVisible = flashingVisible[slot.uuid] ?? true
-            let slotColor = colorForSlot(slot, colorMode: colorMode)
+            let slotColor = colorForSlot(slot, colorMode: colorMode, isDarkBackground: isDarkBackground)
             let slotOriginX = twoSlots ? CGFloat(index) * (slotRenderWidth + Self.betweenSlotGap) : 0
 
             if slot.colorState == .critical && !isVisible {
@@ -174,7 +175,7 @@ final class MenuBarIconRenderer {
 
     // MARK: - Private: colors
 
-    private func colorForSlot(_ slot: SlotViewData, colorMode: ColorMode) -> NSColor {
+    private func colorForSlot(_ slot: SlotViewData, colorMode: ColorMode, isDarkBackground: Bool) -> NSColor {
         switch slot.colorState {
         case .disabled, .unavailable, .loading, .error:
             return Self.dimColor
@@ -184,7 +185,7 @@ final class MenuBarIconRenderer {
 
         switch colorMode {
         case .monochrome:
-            return NSColor.labelColor
+            return isDarkBackground ? .white : .black
         case .color:
             switch slot.colorState {
             case .normal:    return Self.safeColor

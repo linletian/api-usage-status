@@ -26,12 +26,11 @@
 - 常驻 macOS 顶部菜单栏
 - **无配置状态**：未添加任何服务实例时，菜单栏显示提示符号 `?`，左键点击打开用量面板（空状态），通过面板内的入口进入设置窗口
 - **有配置状态**：按以下规则显示槽位：
-  - 每个启用的服务实例占用一个槽位，槽位高度固定 **22pt**，宽度动态决定
-  - 启用 **1 个实例**时，槽位宽度由内容决定
-  - 启用 **2 个实例**时，两个槽位**严格等宽**（各 50%），内容各自水平居中，两槽之间保留 4pt 间距
-  - 启用 **≥3 个实例**时，菜单栏**仅显示前 2 个槽位**，其余实例不显示，必须点击打开用量面板查看
+  - 每个启用的服务实例占用一个槽位，槽位高度固定 **22pt**，宽度由内容决定，**槽位数量不设上限**，所有启用实例均在菜单栏直接显示
+  - 多个槽位水平连续排列，相邻槽位之间保留 10pt 间距
   - 槽位排序按实例的 `sort_order` 字段升序排列；`sort_order` 相同时按创建时间排序
   - 同一供应商的不同统计维度可拆分为多个槽位（如 MiniMax 文本模型 5h、非文本每日配额、周累计分别独立显示），用户可选择开启/关闭每个统计维度
+  - 当启用实例过多导致菜单栏总宽度超出系统可显示区域时，macOS 系统会自行截断右侧槽位；用户可通过禁用不关注的实例控制总宽度
 - **启动刷新中状态**：应用启动后尚未完成首次刷新时，所有已启用实例的槽位以灰色系统字体显示 `•••`（3 个圆点），等待首次刷新完成后切换为实际数据
 - **全部禁用状态**：所有已配置实例均被禁用时，菜单栏以灰色系统字体显示 `NO API`，左键点击仍可打开面板进入设置
 - **余额不可用状态**：余额型实例 API 返回 `is_available = false` 时，该实例槽位置灰，以灰色系统字体显示 `N/A`；此状态在下次刷新返回 `is_available = true` 后自动恢复
@@ -89,18 +88,20 @@
 | MiniMax | 非文本模型请求数 | 周期配额型 | 同上（同一接口） | 每日配额 |
 | MiniMax | 周累计请求数 | 周期配额型 | 同上（同一接口） | 自然周 |
 | DeepSeek | 账户余额 | 余额型 | `GET /user/balance` | 无周期重置 |
+| GitHub Copilot | Premium Interactions | 周期配额型 | `GET /copilot_internal/user` | 月度配额（重置时间由 `quota_reset_date_utc` 给出） |
 
 > **说明**：MiniMax 的多个统计维度共用同一个 API 调用（`/v1/token_plan/remains`）。用户可将每个维度作为独立服务实例启用/关闭。同一 API Key 的多个 MiniMax 实例共享一次 HTTP 请求，各自提取对应字段。
+>
+> **GitHub Copilot 说明**：使用 Classic Personal Access Token（PAT，需勾选 `copilot` scope；fine-grained PAT 不支持）。`/copilot_internal/user` 为 GitHub 内部端点，未在官方文档中正式列出，存在改版风险，详见附录 D。Pro+ / Business 无限套餐返回 `unlimited: true` 时，菜单栏槽位的已用百分比统一显示为 0%（与 MiniMax 周配额未激活的处理一致）。
 
 **P2（暂不支持，无公开用量 API）**
 
 | 供应商 | 统计维度 | 类型 | API 调研结论 |
 |--------|----------|------|-------------|
-| GitHub Copilot | Pro / Pro+ Token 用量 | 周期配额型 | 无公开 API |
 | OpenCode | Go 订阅额度 | 周期配额型 | 无公开 API，仅 Web 控制台 |
 | OpenCode | Zen 余额 | 余额型 | 无公开 API，仅 Web 控制台 |
 
-> **说明**：Copilot 和 OpenCode Go/Zen 在 V1 中暂不支持。等待官方发布公开 API 后可考虑接入。
+> **说明**：OpenCode Go/Zen 在 V1 中暂不支持。等待官方发布公开 API 后可考虑接入。
 
 ### 3.4 数据刷新
 
@@ -318,11 +319,11 @@ DeepSeek 等余额型 API 仅提供剩余余额，不提供当日用量接口。
 [菜单栏图标] ──左键单击──▶ [用量面板（浮动窗口）]
   │                                  ├─ 错误摘要栏（如有刷新失败）
   │  无配置: 显示 "?"                ├─ 各服务实例用量卡片
-  │  1~2 实例: 显示对应槽位           │   ├─ 周期配额型：用量/上限
-  │  ≥3 实例: 仅显示前 2 槽位         │   └─ 余额型：余额 + 当日用量(~)
-  │  配额型槽位: 简称+百分比数字       │       + 日均消耗（可选周期）
-  │  余额型槽位: 简称+余额数字        ├─ [刷新按钮]
-  │  （单行连续，固定 44pt 宽）       └─ [设置入口] ──▶ [设置窗口]
+  │  N 实例: 顺序排列 N 个槽位        │   ├─ 周期配额型：用量/上限
+  │  配额型槽位: 简称+百分比数字       │   └─ 余额型：余额 + 当日用量(~)
+  │  余额型槽位: 简称+余额数字        │       + 日均消耗（可选周期）
+  │  （每槽宽度由内容决定，10pt 间隔）  ├─ [刷新按钮]
+  │                                  └─ [设置入口] ──▶ [设置窗口]
   ├──右键──▶ [右键菜单]                                        ├─ 服务实例管理
   │           ├─ 立即刷新                                        ├─ 配色与阈值
   │           ├─ 打开设置                                        ├─ 图标模式
@@ -347,10 +348,11 @@ DeepSeek 等余额型 API 仅提供剩余余额，不提供当日用量接口。
 | 风险 | 缓解措施 |
 |------|----------|
 | Copilot / MiniMax 用量接口可能变更 | 关注官方 API 变更日志，版本更新时快速适配 |
+| Copilot 使用的 `/copilot_internal/user` 为非官方文档端点 | parser 硬依赖核心字段（`entitlement` / `remaining` / `percent_remaining` / `unlimited` / `quota_reset_date_utc`），这些字段缺失或类型不符时**抛 `RefreshError.parsingError`**（不静默降级为 0，避免误触发 100% critical 告警）；次要字段（如 `overage_count`，目前未使用）缺失时降级为 0；如端点改版，单点修改 `CopilotResponseParser` 即可 |
 | DeepSeek 余额接口变更 | 同上，定期关注 DeepSeek 开放平台公告 |
 | macOS 沙盒限制 | 必须保留 App Sandbox，需配置以下 entitlements：`com.apple.security.network.client`（发起网络请求）、`com.apple.security.files.user-selected.read-only`（可选，读取本地配置） |
 | 用户 API 凭证安全担忧 | Keychain 存储，本地处理，计划开源 |
-| 菜单栏空间有限，多槽位可能被系统截断 | 菜单栏最多同时显示 2 个槽位（固定 44pt 宽），超出实例需在用量面板中查看；用户可手动禁用不关注的统计维度 |
+| 启用实例过多导致菜单栏总宽度超出系统可显示区域 | 不设硬性槽位数上限；当 macOS 自行截断右侧槽位时，用户可通过禁用不关注的实例缩短总宽度，或在用量面板中查看全部 |
 | 余额型当日用量统计存在误差（刷新间隔内可能发生多次消费） | 面板标注「约」字；支持用户调高刷新频率提升精度 |
 
 ---
@@ -547,4 +549,70 @@ Authorization: Bearer <Token Plan Key>
 **OpenCode Zen** 同为按量付费余额模式，亦无公开余额查询 API。
 
 > **对本项目的影响**：OpenCode Go 和 Zen 在 V1 中暂不支持。等待官方发布公开 API 后可考虑接入。
+
+---
+
+## 附录 D：GitHub Copilot 用量查询接口
+
+**来源**：`docs/provider-interfaces/copilot.md`（详细调研与设计取舍）
+
+```
+GET https://api.github.com/copilot_internal/user
+Authorization: Bearer <Classic PAT, 需要 "copilot" scope>
+Accept: application/json
+```
+
+**PAT 说明**：
+- 必须使用 **Classic** Personal Access Token，在 https://github.com/settings/tokens 创建，勾选 `copilot` scope
+- Fine-grained PAT **不支持**（该 token 类型没有 `copilot` scope）
+- 该端点不要求 username，仅凭 token 鉴权
+- `/copilot_internal/user` 为 GitHub 内部端点，未在官方文档中正式列出（详见 6 节风险表）
+
+**响应示例**：
+
+```json
+{
+  "copilot_plan": "pro",
+  "quota_reset_date_utc": "2026-07-01T00:00:00Z",
+  "quota_snapshots": {
+    "premium_interactions": {
+      "entitlement": 300,
+      "percent_remaining": 73.33,
+      "remaining": 220,
+      "unlimited": false,
+      "overage_count": 0,
+      "overage_permitted": false
+    }
+  }
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `copilot_plan` | string | 套餐名称，如 `"pro"`、`"pro_plus"`、`"business"` 等 |
+| `quota_reset_date_utc` | string (ISO 8601) | 下次配额重置时间（UTC），用于计算剩余周期 |
+| `quota_snapshots.premium_interactions.entitlement` | number | 月度配额上限 |
+| `quota_snapshots.premium_interactions.remaining` | number | 剩余次数 |
+| `quota_snapshots.premium_interactions.percent_remaining` | number | 剩余百分比（0-100，首选渲染字段） |
+| `quota_snapshots.premium_interactions.unlimited` | boolean | true 时为无限套餐，菜单栏槽位已用百分比统一显示 0% |
+| `quota_snapshots.premium_interactions.overage_count` | number | 超额次数（保留字段，目前不参与菜单栏渲染） |
+| `quota_snapshots.premium_interactions.overage_permitted` | boolean | 是否允许超额（保留字段） |
+
+**与本产品的关联**：
+
+- **统计维度**：仅暴露 `premium_interactions` 一个固定维度，作为 `Instance.dimension` 使用
+- **周期类型**：月度配额型，重置时间直接取 API 返回的 `quota_reset_date_utc`，无需本地计算
+- **百分比计算规则**：
+  - `unlimited == true` 时：菜单栏槽位已用百分比 = `0`（与 MiniMax 周配额未激活的语义一致，避免无限套餐误触发阈值）
+  - `unlimited == false` 时：已用百分比 = `100 - percent_remaining`
+- **覆盖套餐**：Free / Pro / Pro+ / Business / Enterprise 全部适用，端点对所有套餐通用
+- **不在本次实现范围**：GitHub Billing API（`/users/{username}/settings/billing/premium_request/usage`）的双探针模式，本项目自用 Personal 套餐，单 Internal API 已足够
+
+**配置流程（用户视角）**：
+
+1. 到 https://github.com/settings/tokens 生成 Classic PAT，勾选 `copilot` scope
+2. 应用 → Settings → Add Instance → Provider 选 "GitHub Copilot" → Dimension 选 "Premium Interactions" → 粘贴 PAT
+3. 菜单栏出现新条目，首次刷新后显示本月用量百分比
 

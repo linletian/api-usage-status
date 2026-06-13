@@ -2,7 +2,7 @@
 
 > 文档目的：说明 Copilot 用量数据的来源、查询方式、以及在 `Supplier` 协议下的落地设计。
 > 编写日期：2026-06-13
-> 参考实现：[tddworks/ClaudeBar](https://github.com/tddworks/ClaudeBar)
+> API 调研起点：[tddworks/ClaudeBar](https://github.com/tddworks/ClaudeBar) —— 该仓库的 Copilot 子系统是 `/copilot_internal/user` 端点和 PAT 要求的早期发现来源,但本项目实际 `Supplier` 实现与 ClaudeBar 协议不同,见第 3 节说明。
 
 ---
 
@@ -113,9 +113,14 @@ X-GitHub-Api-Version: 2022-11-28
 
 ## 3. 与现有 `Supplier` 协议的对应关系
 
-参考本项目 `Suppliers/` 目录的现有结构，`CopilotSupplier` 应该长这样：
+> ⚠️ **以下代码块为 ClaudeBar 项目的设计草案,非本项目代码,不可直接套用。**
+>
+> ClaudeBar 的 `Supplier` 协议采用实例注入 + `fetch() -> UsageSnapshot` 模式,且自带 `APIInstance` / `HTTPClient` / `KeychainService` 等类型。本项目 `Supplier` 协议签名完全不同 —— 实际是 `func fetchUsage(apiKey: String) async throws -> SupplierResponse`,`NetworkClient` 是静态单例,Keychain 在 supplier 外部解析,响应解析由独立的 `CopilotResponseParser` 负责。代码块中的 `APIInstance` / `HTTPClient` / `UsageSnapshot` / `Self.makeSnapshot(...)` 等类型/方法在本项目都不存在。
+>
+> **本项目实际实现**:见 `APIUsageStatus/Suppliers/CopilotSupplier.swift` 和 `APIUsageStatus/Suppliers/CopilotResponseParser.swift`。
 
 ```swift
+// === ClaudeBar 风格代码 —— 仅供端点行为参考,非本项目代码 ===
 struct CopilotSupplier: Supplier {
     let instance: APIInstance
     let httpClient: HTTPClient
@@ -136,10 +141,10 @@ struct CopilotSupplier: Supplier {
 }
 ```
 
-**Copilot 自身的形态特点**：
-- 只有 monthly 一窗口（`quotaType: .timeLimit("Monthly")`）
-- 重置时间用 `MonthlyResetDate.nextMonthlyResetDate()`（下月 1 日 UTC 00:00），ClaudeBar 已实现为纯函数
-- 无限套餐判定：`unlimited == true` 时走项目已有的 flowing glow bar 动画
+**本项目 `Copilot` 形态要点**(对应实际实现):
+- 只有 monthly 一窗口,**重置时间直接取 API 响应里的 `quota_reset_date_utc` 字段**(ISO 8601 字符串),不本地计算。ClaudeBar 的 `MonthlyResetDate` 纯函数在本项目不存在也不需要
+- 无限套餐判定:`unlimited == true` 时,parser 写入 `:unlimited = "true"` 副键并把已用百分比统一记为 0(与 MiniMaxParser 对 `weekly_status != 1` 的处理一致);**本项目 Copilot 不渲染 flowing glow bar 动画**,菜单栏和面板的 0% 状态直接走正常颜色
+- 凭据存储:复用现有 `KeychainService`,`service = "APIUsageStatus"`,以 `apiKeyRef`(UUID)为账号,没有 provider 专属 service 名
 
 ---
 

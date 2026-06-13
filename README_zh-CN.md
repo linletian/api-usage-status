@@ -7,7 +7,7 @@
 
 ## 功能概览
 
-- **菜单栏图标** — SF Pro 8pt 渲染，2 行堆叠布局，最多同时展示 2 个实例的用量状态
+- **菜单栏图标** — SF Pro 8pt 渲染，2 行堆叠布局，每个启用实例独立占一个槽位（数量无上限），宽度由内容决定
 - **用量面板** — 点击图标弹出浮动窗口，展示用量卡片、错误汇总、手动刷新和设置入口
 - **周配额展示** — MiniMax 实例卡片底部展示周窗口进度条；无限额计划用青蓝辉光条动画呈现
 - **阈值告警** — 配额百分比或余额金额触发 macOS 系统通知，点击通知查看详情
@@ -22,6 +22,28 @@
 |--------|---------|---------|
 | MiniMax | 每个 `model_name`（如 `general` 文本、`video` 非文本）的 5h 窗口与周窗口剩余百分比 | `www.minimaxi.com/v1/token_plan/remains` |
 | DeepSeek | 充值金额、赠送金额、总余额、货币单位 | `api.deepseek.com/user/balance` |
+| GitHub Copilot | 月度 `premium_interactions` 剩余百分比（Free / Pro / Pro+ / Business / Enterprise 全覆盖） | `api.github.com/copilot_internal/user` |
+
+### 凭据配置
+
+各供应商的认证方式不同。所有凭证均存储在 macOS Keychain（InternetPassword 类型），不会以明文落盘。
+
+- **MiniMax** — 粘贴 MiniMax 开发者控制台签发的 Token Plan Key。该 Key 与按量计费 API Key 相互独立。
+- **DeepSeek** — 粘贴 DeepSeek 开放平台账户的 API Key。
+- **GitHub Copilot** — 粘贴 **GitHub Personal Access Token (PAT)**。与前两者不同，Copilot 自身不签发 API Key，而是通过你的 GitHub 身份访问。
+
+  PAT 生成步骤：
+  1. 打开 https://github.com/settings/tokens
+  2. 点击 **Generate new token** → **Generate new token (classic)**（注意：Fine-grained PAT 不支持 `copilot` scope）
+  3. **Note**：任意备注，如 `api-usage-status-copilot`
+  4. **Expiration**：建议 90 天（或按需 `No expiration`）
+  5. **Scopes**：**只勾** `copilot` —— 最小权限原则
+  6. 点击 **Generate token**，**立即复制**（GitHub 仅展示一次）
+  7. 粘贴到本应用 Settings → Add Instance → Provider `GitHub Copilot` → API Key 框
+
+  注意事项：
+  - Token 对应的 GitHub 账号必须已开通 Copilot 订阅（Free / Pro / Pro+ / Business / Enterprise 均可）
+  - 可随时在 https://github.com/settings/tokens 撤销
 
 ## 系统要求
 
@@ -105,6 +127,8 @@ cp -R build/Release/APIUsageStatus.app /Applications/
 # 首次运行需绕过 Gatekeeper（右键 → 打开），或执行：
 xattr -cr /Applications/APIUsageStatus.app
 ```
+
+> 注意：`xattr -cr` 仅适用于从外部获取的 `.app` 包（例如从网络下载、从外接硬盘拷贝、或从 release 压缩包解压）。本地编译产物的 `.app` 不会带隔离标记，无需此命令。
 
 然后在应用的 Settings 中启用「开机自启」即可。
 

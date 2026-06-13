@@ -7,7 +7,7 @@ A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek
 
 ## Features
 
-- **Menu Bar Icon** — rendered in SF Pro 8pt, two-line stacked layout, showing usage status for up to 2 instances simultaneously
+- **Menu Bar Icon** — rendered in SF Pro 8pt, two-line stacked layout, one slot per enabled instance (unbounded), each sized by content width
 - **Usage Panel** — click the icon to pop up a floating window showing usage cards, error summary, manual refresh, and a settings entry
 - **Weekly Quota Display** — MiniMax instance card shows a weekly window progress bar at the bottom; unlimited plans display a cyan-blue flowing glow bar animation
 - **Threshold Alerts** — quota percentages or balance amounts trigger macOS system notifications; click the notification to view details
@@ -22,6 +22,28 @@ A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek
 |----------|---------------------|--------------|
 | MiniMax | Remaining percentage of the 5h window and weekly window for each `model_name` (e.g. `general` text, `video` non-text) | `www.minimaxi.com/v1/token_plan/remains` |
 | DeepSeek | Topped-up amount, gifted amount, total balance, currency unit | `api.deepseek.com/user/balance` |
+| GitHub Copilot | Monthly `premium_interactions` remaining percentage (Free / Pro / Pro+ / Business / Enterprise) | `api.github.com/copilot_internal/user` |
+
+### Authentication
+
+Each provider has a different authentication model. All credentials are stored in macOS Keychain (InternetPassword type) and never written to disk in plain text.
+
+- **MiniMax** — Paste a Token Plan Key from the MiniMax developer console. It is independent from your per-request API key.
+- **DeepSeek** — Paste the API Key from your DeepSeek open platform account.
+- **GitHub Copilot** — Paste a **GitHub Personal Access Token (PAT)**. Unlike the other two, Copilot does not issue its own API key; it is accessed via your GitHub identity.
+
+  Generate a PAT with these steps:
+  1. Open https://github.com/settings/tokens
+  2. Click **Generate new token** → **Generate new token (classic)**. Fine-grained PATs do **not** support the `copilot` scope.
+  3. **Note**: any label, e.g. `api-usage-status-copilot`.
+  4. **Expiration**: 90 days recommended (or `No expiration` if preferred).
+  5. **Scopes**: check **only** `copilot` — minimum-privilege principle.
+  6. Click **Generate token**, then **copy it immediately** (GitHub shows it only once).
+  7. Paste it into Settings → Add Instance → Provider `GitHub Copilot` → API Key field.
+
+  Caveats:
+  - The GitHub account owning the token must have an active Copilot subscription (Free / Pro / Pro+ / Business / Enterprise all work).
+  - You can revoke the token at any time at https://github.com/settings/tokens.
 
 ## System Requirements
 
@@ -105,6 +127,8 @@ cp -R build/Release/APIUsageStatus.app /Applications/
 # First launch needs to bypass Gatekeeper (right-click → Open), or run:
 xattr -cr /Applications/APIUsageStatus.app
 ```
+
+> Note: `xattr -cr` is only needed for `.app` bundles obtained from outside this build — e.g., downloaded from the web, copied from an external drive, or extracted from a release archive. Locally built `.app` files do not carry the quarantine attribute and do not need this step.
 
 Then enable "Launch at Login" in the app's Settings.
 

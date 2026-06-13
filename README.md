@@ -1,76 +1,78 @@
 # APIUsageStatus
 
-一个纯菜单栏 macOS 应用，实时监控 MiniMax / DeepSeek 的 API 用量与余额。
-**因主流同类应用不兼容 macOS13，故本项目仅为自用脚手架项目。**
+> **Languages:** English | [简体中文](README_zh-CN.md)
 
-## 功能概览
+A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek API usage and balance in real time.
+**Since mainstream similar apps don't support macOS 13, this project is only a self-use scaffold project.**
 
-- **菜单栏图标** — SF Pro 8pt 渲染，2 行堆叠布局，最多同时展示 2 个实例的用量状态
-- **用量面板** — 点击图标弹出浮动窗口，展示用量卡片、错误汇总、手动刷新和设置入口
-- **周配额展示** — MiniMax 实例卡片底部展示周窗口进度条；无限额计划用青蓝辉光条动画呈现
-- **阈值告警** — 配额百分比或余额金额触发 macOS 系统通知，点击通知查看详情
-- **余额追踪** — 记录历史快照，按周/月/近7天/近30天展示日均消耗
-- **零外部依赖** — 仅使用 AppKit、SwiftUI、Security 等系统框架
+## Features
 
-![用量面板截图](docs/README_assets/ScreenShot.png)
+- **Menu Bar Icon** — rendered in SF Pro 8pt, two-line stacked layout, showing usage status for up to 2 instances simultaneously
+- **Usage Panel** — click the icon to pop up a floating window showing usage cards, error summary, manual refresh, and a settings entry
+- **Weekly Quota Display** — MiniMax instance card shows a weekly window progress bar at the bottom; unlimited plans display a cyan-blue flowing glow bar animation
+- **Threshold Alerts** — quota percentages or balance amounts trigger macOS system notifications; click the notification to view details
+- **Balance Tracking** — records historical snapshots, displays daily averages by week / month / last 7 days / last 30 days
+- **Zero External Dependencies** — only uses system frameworks like AppKit, SwiftUI, Security
 
-### 支持的供应商
+<img src="docs/README_assets/ScreenShot.png" alt="Usage Panel Screenshot" style="max-width: 100%;">
 
-| 供应商 | 监控维度 | API 端点 |
-|--------|---------|---------|
-| MiniMax | 每个 `model_name`（如 `general` 文本、`video` 非文本）的 5h 窗口与周窗口剩余百分比 | `www.minimaxi.com/v1/token_plan/remains` |
-| DeepSeek | 充值金额、赠送金额、总余额、货币单位 | `api.deepseek.com/user/balance` |
+### Supported Providers
 
-## 系统要求
+| Provider | Monitoring Dimension | API Endpoint |
+|----------|---------------------|--------------|
+| MiniMax | Remaining percentage of the 5h window and weekly window for each `model_name` (e.g. `general` text, `video` non-text) | `www.minimaxi.com/v1/token_plan/remains` |
+| DeepSeek | Topped-up amount, gifted amount, total balance, currency unit | `api.deepseek.com/user/balance` |
 
-| 项目 | 要求 |
-|------|------|
-| macOS | ≥ 13.0（Ventura） |
-| Xcode | ≥ 14.3（Swift 5.9） |
-| 可选 | [XcodeGen](https://github.com/yonaskolb/XcodeGen)（用于重新生成 .xcodeproj） |
+## System Requirements
 
-## 构建与运行
+| Item | Requirement |
+|------|-------------|
+| macOS | ≥ 13.0 (Ventura) |
+| Xcode | ≥ 14.3 (Swift 5.9) |
+| Optional | [XcodeGen](https://github.com/yonaskolb/XcodeGen) (for regenerating .xcodeproj) |
 
-### 1. 生成 Xcode 项目（如需要）
+## Build & Run
+
+### 1. Generate Xcode Project (if needed)
 
 ```bash
 brew install xcodegen
 xcodegen generate
 ```
 
-### 2. 命令行构建
+### 2. Command Line Build
 
 ```bash
-# Debug 构建
+# Debug build
 xcodebuild -project APIUsageStatus.xcodeproj \
   -scheme APIUsageStatus \
   -configuration Debug \
   build
 
-# Release 构建（ad-hoc 签名）
+# Release build (ad-hoc signed)
 xcodebuild -project APIUsageStatus.xcodeproj \
   -scheme APIUsageStatus \
   -configuration Release \
   build
 ```
 
-### 3. Xcode 中运行
+### 3. Run in Xcode
 
 ```bash
 open APIUsageStatus.xcodeproj
 ```
 
-然后 Cmd+R 运行。应用启动后会在菜单栏显示 `?` 图标（无 Dock 图标）。
+Then press Cmd+R to run. After the app launches, a `?` icon will appear in the menu bar (no Dock icon).
 
-### 4. 首次配置
+### 4. First-time Setup
 
-1. 点击菜单栏图标 → **Settings**
-2. 点击 **+** 添加实例
-3. 选择供应商、填入维度、输入 API Key（保存在 Keychain 中）
-4. 配置告警阈值
-5. 菜单栏图标将自动刷新为用量状态
+1. Click the menu bar icon → **Settings**
+2. Click **+** to add an instance
+3. Choose the provider, fill in the dimension, enter the API Key (stored in Keychain)
+4. Configure alert thresholds
+5. The menu bar icon will automatically refresh to reflect usage status
 
-## 运行测试
+## Running Tests
 
 ```bash
 xcodebuild -project APIUsageStatus.xcodeproj \
@@ -79,51 +81,51 @@ xcodebuild -project APIUsageStatus.xcodeproj \
   test
 ```
 
-或在 Xcode 中按 Cmd+U。
+Or press Cmd+U in Xcode.
 
-### 测试套件（共 64 个用例，不含已弃用）
+### Test Suites (64 cases in total, excluding deprecated)
 
-| 套件 | 数量 | 覆盖范围 |
-|------|------|---------|
-| BalanceCalculatorTests | 14 | 消耗计算、跨日归档、充值检测、日均统计、历史裁剪 |
-| MiniMaxResponseParserTests | 10 | 正常解析、鉴权错误、业务错误、畸形 JSON、多模型、周字段 |
-| DeepSeekResponseParserTests | 8 | CNY 优先解析、降级回退、is_available=false、空数组 |
-| RetryPolicyTests | 6 | 重试行为、退避延迟、最大尝试次数 |
-| WeeklyQuotaTests | 10 | 周字段解析、isUnlimited 判定、缺失字段回退 |
-| FlowingGlowBarTests | 5 | 辉光条相位、宽度、几何约束 |
-| MenuBarIconRendererTests | 11 | 所有图标状态的快照对比测试 |
-| ~~PixelFontEngineTests~~ | ~~58~~ | ~~（已弃用）原像素字模引擎测试，代码已注释，不参与运行~~ |
+| Suite | Count | Coverage |
+|-------|-------|----------|
+| BalanceCalculatorTests | 14 | Consumption calculation, cross-day archiving, top-up detection, daily average statistics, history trimming |
+| MiniMaxResponseParserTests | 10 | Normal parsing, auth errors, business errors, malformed JSON, multiple models, weekly fields |
+| DeepSeekResponseParserTests | 8 | CNY priority parsing, fallback, `is_available=false`, empty array |
+| RetryPolicyTests | 6 | Retry behavior, backoff delay, max attempts |
+| WeeklyQuotaTests | 10 | Weekly field parsing, `isUnlimited` judgment, missing field fallback |
+| FlowingGlowBarTests | 5 | Glow bar phase, width, geometry constraints |
+| MenuBarIconRendererTests | 11 | Snapshot comparison tests for all icon states |
+| ~~PixelFontEngineTests~~ | ~~58~~ | ~~(Deprecated) Original pixel font engine tests; code is commented out and does not run~~ |
 
-## 部署到 /Applications
+## Deploy to /Applications
 
 ```bash
-# 复制 Release 包
+# Copy the Release bundle
 cp -R build/Release/APIUsageStatus.app /Applications/
 
-# 首次运行需绕过 Gatekeeper（右键 → 打开），或执行：
+# First launch needs to bypass Gatekeeper (right-click → Open), or run:
 xattr -cr /Applications/APIUsageStatus.app
 ```
 
-然后在应用的 Settings 中启用「开机自启」即可。
+Then enable "Launch at Login" in the app's Settings.
 
-## 项目结构
+## Project Structure
 
 ```
 APIUsageStatus/
-├── APIUsageStatusApp.swift        # @main 入口 + NSApplicationDelegate
-├── MenuBar/                       # 菜单栏图标与用量面板控制器
-├── Views/                         # SwiftUI 视图（面板/卡片/设置/详情）
-├── AppState/                      # 运行时状态 Actor + @MainActor 代理
-├── Models/                        # 数据模型（实例/余额/阈值/全局设置）
-├── Services/                      # 核心服务（Keychain/持久化/刷新/通知/开机自启）
-├── Network/                       # HTTP 客户端 + 重试策略
-├── Suppliers/                     # 供应商协议 + MiniMax / DeepSeek 实现
-├── Balance/                       # 余额计算器 + 历史快照
-├── PixelFont/                     # ⚠️ 已弃用：原像素字体引擎（代码已注释）
-├── Extensions/                    # Date/Decimal/String 扩展
-├── Utilities/                     # 日志 + 原子写入
-├── Resources/                     # Info.plist + AppIcon 源文件
-└── Assets.xcassets/               # 编译期 AppIcon 图标集
+├── APIUsageStatusApp.swift        # @main entry + NSApplicationDelegate
+├── MenuBar/                       # Menu bar icon and usage panel controllers
+├── Views/                         # SwiftUI views (panel/card/settings/details)
+├── AppState/                      # Runtime state Actor + @MainActor proxy
+├── Models/                        # Data models (instance/balance/threshold/global settings)
+├── Services/                      # Core services (Keychain/persistence/refresh/notification/launch at login)
+├── Network/                       # HTTP client + retry policy
+├── Suppliers/                     # Provider protocol + MiniMax / DeepSeek implementations
+├── Balance/                       # Balance calculator + history snapshots
+├── PixelFont/                     # ⚠️ Deprecated: original pixel font engine (code commented out)
+├── Extensions/                    # Date/Decimal/String extensions
+├── Utilities/                     # Logging + atomic writes
+├── Resources/                     # Info.plist + AppIcon source files
+└── Assets.xcassets/               # Compiled AppIcon asset catalog
 APIUsageStatusTests/
 ├── BalanceCalculatorTests.swift
 ├── MiniMaxResponseParserTests.swift
@@ -132,13 +134,13 @@ APIUsageStatusTests/
 ├── WeeklyQuotaTests.swift
 ├── FlowingGlowBarTests.swift
 ├── MenuBarIconRendererTests.swift
-├── ~~PixelFontEngineTests.swift~~  # 已弃用（代码已注释）
-└── ReferenceImages/               # 快照测试金标准图片
+├── ~~PixelFontEngineTests.swift~~  # Deprecated (code commented out)
+└── ReferenceImages/               # Snapshot test golden images
 ```
 
-## 安全与隐私
+## Security & Privacy
 
-- **App Sandbox** — 所有文件 I/O 限定在沙盒容器内
-- **API Key** — 存储在 Keychain（InternetPassword 类型），不落磁盘明文
-- **网络** — 仅 HTTPS 访问供应商 API，不传输任何用户数据
-- **日志** — os.Logger，生产环境自动屏蔽敏感信息
+- **App Sandbox** — all file I/O is restricted to the sandbox container
+- **API Key** — stored in Keychain (InternetPassword type), never written to disk in plain text
+- **Network** — only HTTPS access to provider APIs, no user data transmitted
+- **Logging** — os.Logger, sensitive information automatically masked in production

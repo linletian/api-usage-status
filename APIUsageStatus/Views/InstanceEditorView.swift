@@ -91,7 +91,7 @@ struct InstanceEditorView: View {
                             validationError = nil
                         }
 
-                    SecureInput(text: $apiKey, placeholder: "API Key")
+                    SecureInput(text: $apiKey, placeholder: apiKeyPlaceholder)
 
                     if isBalanceType {
                         Picker("Currency", selection: $currency) {
@@ -164,6 +164,8 @@ struct InstanceEditorView: View {
         switch provider {
         case .deepseek:
             return ["balance"]
+        case .githubCopilot:
+            return ["premium_interactions"]
         case .minimax:
             return []
         }
@@ -171,6 +173,13 @@ struct InstanceEditorView: View {
 
     private var isBalanceType: Bool {
         provider == .deepseek
+    }
+
+    private var apiKeyPlaceholder: String {
+        switch provider {
+        case .githubCopilot: return "GitHub PAT (classic, needs copilot scope)"
+        case .deepseek, .minimax: return "API Key"
+        }
     }
 
     private var isFormFilled: Bool {
@@ -181,6 +190,8 @@ struct InstanceEditorView: View {
         switch dim {
         case "balance":
             return "Account Balance"
+        case "premium_interactions":
+            return "Premium Interactions"
         default:
             return dim
         }

@@ -331,10 +331,32 @@ actor RefreshService {
                 return nil
             }()
 
+            // Provider-specific display values. By default we surface the
+            // percent directly (e.g. "72.0 / 100"). Copilot stores absolute
+            // credit counts, so the panel shows used/total credits instead.
+            let displayUsage: String
+            let displayLimit: String
+            if instance.provider == Provider.githubCopilot.rawValue {
+                let entitlement = Int(response.value(forDimension: "\(dim):entitlement") ?? "0") ?? 0
+                let remaining = Int(response.value(forDimension: "\(dim):remaining") ?? "0") ?? 0
+                let isUnlimited = response.value(forDimension: "\(dim):unlimited") == "true"
+                if isUnlimited {
+                    displayUsage = "∞"
+                    displayLimit = String(entitlement)
+                } else {
+                    let used = max(0, entitlement - remaining)
+                    displayUsage = String(used)
+                    displayLimit = String(entitlement)
+                }
+            } else {
+                displayUsage = valueString
+                displayLimit = "100"
+            }
+
             instanceType = .quota(
                 percent: percent,
-                usageValue: valueString,
-                limitValue: "100",
+                usageValue: displayUsage,
+                limitValue: displayLimit,
                 nextRefreshMinutes: calculateNextRefreshMinutes(),
                 cycleRemainingDays: cycleRemainingDays
             )

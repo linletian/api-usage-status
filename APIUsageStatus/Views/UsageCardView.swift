@@ -17,6 +17,8 @@ struct UsageCardView: View {
             return URL(string: "https://platform.deepseek.com/usage")
         case "minimax":
             return URL(string: "https://platform.minimaxi.com/user-center/payment/token-plan")
+        case "githubcopilot":
+            return URL(string: "https://github.com/settings/billing/ai_usage")
         default:
             return nil
         }
@@ -88,6 +90,21 @@ struct UsageCardView: View {
 
     // MARK: - Quota Content
 
+    private var quotaWindowLabel: String {
+        switch slot.provider {
+        case Provider.githubCopilot.rawValue: return "Monthly"
+        case Provider.minimax.rawValue: return "5h"
+        default: return ""
+        }
+    }
+
+    private var quotaUnitLabel: String {
+        switch slot.provider {
+        case Provider.githubCopilot.rawValue: return "credits"
+        default: return ""
+        }
+    }
+
     @ViewBuilder
     private func quotaContent(
         percent: Double,
@@ -97,30 +114,14 @@ struct UsageCardView: View {
         cycleDays: Int?
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            // 5h interval progress bar
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.secondary.opacity(0.15))
-                        .frame(height: 4)
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(progressColor(for: percent))
-                        .frame(
-                            width: max(0, min(geo.size.width, geo.size.width * CGFloat(percent) / 100.0)),
-                            height: 4
-                        )
-                }
-            }
-            .frame(height: 4)
-
-            HStack(spacing: 4) {
-                Text("5h · \(usageValue) / \(limitValue)")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text("\(Int(percent))%")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(percent >= 95 ? .red : (percent >= 80 ? .orange : .primary))
+            // Copilot prefers text-above-bar (matches the Weekly layout).
+            // Other providers keep the original bar-above-text.
+            if slot.provider == Provider.githubCopilot.rawValue {
+                quotaSummaryRow(usageValue: usageValue, limitValue: limitValue, percent: percent)
+                quotaProgressBar(percent: percent, height: 4)
+            } else {
+                quotaProgressBar(percent: percent, height: 4)
+                quotaSummaryRow(usageValue: usageValue, limitValue: limitValue, percent: percent)
             }
 
             // Weekly progress bar
@@ -183,6 +184,42 @@ struct UsageCardView: View {
             }
         }
         .padding(.top, 2)
+    }
+
+    // MARK: - Quota subviews
+
+    @ViewBuilder
+    private func quotaSummaryRow(usageValue: String, limitValue: String, percent: Double) -> some View {
+        HStack(spacing: 4) {
+            let summary = [quotaWindowLabel, "\(usageValue) / \(limitValue)", quotaUnitLabel]
+                .filter { !$0.isEmpty }
+                .joined(separator: " · ")
+            Text(summary)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(.secondary)
+            Spacer()
+            Text("\(Int(percent))%")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundColor(percent >= 95 ? .red : (percent >= 80 ? .orange : .primary))
+        }
+    }
+
+    @ViewBuilder
+    private func quotaProgressBar(percent: Double, height: CGFloat) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.secondary.opacity(0.15))
+                    .frame(height: height)
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(progressColor(for: percent))
+                    .frame(
+                        width: max(0, min(geo.size.width, geo.size.width * CGFloat(percent) / 100.0)),
+                        height: height
+                    )
+            }
+        }
+        .frame(height: height)
     }
 
     // MARK: - Balance Content

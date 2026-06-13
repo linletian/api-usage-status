@@ -12,6 +12,8 @@ enum SupplierRegistry {
             return MiniMaxSupplier()
         case .deepseek:
             return DeepSeekSupplier()
+        case .githubCopilot:
+            return CopilotSupplier()
         }
     }
 

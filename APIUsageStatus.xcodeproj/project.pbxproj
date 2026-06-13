@@ -60,6 +60,9 @@
 		F3AC5A1D826E691922F7792F /* FileManager+Atomic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57ED6FC692ACB2E79DD25E34 /* FileManager+Atomic.swift */; };
 		F5E0A4C29EE9AA1690A55B29 /* PixelFontEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2974C22DB75903B0A00C506 /* PixelFontEngine.swift */; };
 		FF533B21141B7E91FF494C0F /* GlobalSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C73DE7CC280E8C32B5CBEC49 /* GlobalSettings.swift */; };
+		B0FA5D5C283CA6AC8B88268D /* CopilotSupplier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7750C271C683F26694673C06 /* CopilotSupplier.swift */; };
+		2B8D51AC6C7D463E3A712340 /* CopilotResponseParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D16B145224C03775432023A1 /* CopilotResponseParser.swift */; };
+		58FE71AE6E22D92A16ABE7C4 /* CopilotResponseParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A7DA4D993A61D39B88CD119 /* CopilotResponseParserTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -130,6 +133,9 @@
 		F2DBDA65D6BD3694508CB40E /* CharMapDigits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CharMapDigits.swift; sourceTree = "<group>"; };
 		F5CFD56AEC8BF420DCA4361A /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		FC5D83D4218C5C4635B415E8 /* MiniMaxResponseParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniMaxResponseParserTests.swift; sourceTree = "<group>"; };
+		7750C271C683F26694673C06 /* CopilotSupplier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotSupplier.swift; sourceTree = "<group>"; };
+		D16B145224C03775432023A1 /* CopilotResponseParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotResponseParser.swift; sourceTree = "<group>"; };
+		2A7DA4D993A61D39B88CD119 /* CopilotResponseParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotResponseParserTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -207,6 +213,8 @@
 		8B2F37398395345612597289 /* Suppliers */ = {
 			isa = PBXGroup;
 			children = (
+				D16B145224C03775432023A1 /* CopilotResponseParser.swift */,
+				7750C271C683F26694673C06 /* CopilotSupplier.swift */,
 				8541D133C9E59DAC203B2420 /* DeepSeekResponseParser.swift */,
 				16CA73AE724FE3F2A1E292D0 /* DeepSeekSupplier.swift */,
 				20CC79379A5CEC0A1BFCC6E2 /* MiniMaxResponseParser.swift */,
@@ -246,6 +254,7 @@
 			children = (
 				01DAE70F3C9DD49A1E4CC82B /* ReferenceImages */,
 				C5E1319092BAD9B4DA448DEB /* BalanceCalculatorTests.swift */,
+				2A7DA4D993A61D39B88CD119 /* CopilotResponseParserTests.swift */,
 				2CF683BAB233440D650E0642 /* DeepSeekResponseParserTests.swift */,
 				7AA4335ECDEFC0A614346853 /* MenuBarIconRendererTests.swift */,
 				FC5D83D4218C5C4635B415E8 /* MiniMaxResponseParserTests.swift */,
@@ -436,6 +445,8 @@
 				2537FCAC1A5AF4352C00A379 /* BalanceSnapshot.swift in Sources */,
 				BF503CCF6292ED4CC34E9760 /* CharMapDigits.swift in Sources */,
 				A12E9356DEA403F17F3F0514 /* CharMapLetters.swift in Sources */,
+				2B8D51AC6C7D463E3A712340 /* CopilotResponseParser.swift in Sources */,
+				B0FA5D5C283CA6AC8B88268D /* CopilotSupplier.swift in Sources */,
 				43C82B54982192D27582D57E /* Date+Extensions.swift in Sources */,
 				4DC5637237CA7B0729761A8A /* Decimal+Extensions.swift in Sources */,
 				98AD5AB1B943EDB574215F6B /* DeepSeekResponseParser.swift in Sources */,
@@ -481,6 +492,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E151C0B79689A158AD80C756 /* BalanceCalculatorTests.swift in Sources */,
+				58FE71AE6E22D92A16ABE7C4 /* CopilotResponseParserTests.swift in Sources */,
 				A59F71AB0AD3673AD43D9F6A /* DeepSeekResponseParserTests.swift in Sources */,
 				C9DB590820DD74C7B9923EAB /* MenuBarIconRendererTests.swift in Sources */,
 				2B1CC113637594900496DAD2 /* MiniMaxResponseParserTests.swift in Sources */,

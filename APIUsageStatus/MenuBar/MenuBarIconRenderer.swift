@@ -5,7 +5,9 @@ import Combine
 
 /// Renders the menu-bar icon using SF Pro Regular 8pt in a two-line stacked layout.
 /// First line: shortName (centered), second line: balance / percentage (centered).
-/// When two slots are active, each takes exactly 50% of the total width.
+/// Each enabled instance gets its own slot sized by content width, laid out left
+/// to right with a horizontal gap between adjacent slots. Slot count is unbounded —
+/// macOS truncates the right side if total width exceeds the available menu bar area.
 /// Must be called on the main actor because it uses NSImage.lockFocus().
 @MainActor
 final class MenuBarIconRenderer {
@@ -29,7 +31,7 @@ final class MenuBarIconRenderer {
 
     private static let slotHeight: CGFloat = 22.0
 
-    /// Gap between two slots' halves; also used as the implied side margin.
+    /// Horizontal gap between adjacent slots.
     private static let betweenSlotGap: CGFloat = 10.0
 
     // MARK: - Flashing state
@@ -63,36 +65,21 @@ final class MenuBarIconRenderer {
         let enabledSlots = slotViewDataList
             .filter { $0.colorState != .disabled }
             .sorted { $0.sortOrder < $1.sortOrder }
-            .prefix(2)
 
         if enabledSlots.isEmpty {
             return renderSpecialCenteredText("?")
         }
 
-        // Measure content widths (max of name width and value width per slot)
-        var contentWidths: [CGFloat] = []
-        for slot in enabledSlots {
-            let isVisible = flashingVisible[slot.uuid] ?? true
-            if slot.colorState == .critical && !isVisible {
-                contentWidths.append(measureSlotContent(slot))
-            } else if slot.colorState == .unavailable && slot.instanceType.isBalance {
-                contentWidths.append(textWidth("N/A", font: Self.font))
-            } else {
-                contentWidths.append(measureSlotContent(slot))
+        // Per-slot content width: each slot is sized by its own content, no equal-width forcing.
+        let slotWidths: [CGFloat] = enabledSlots.map { slot in
+            if slot.colorState == .unavailable && slot.instanceType.isBalance {
+                return textWidth("N/A", font: Self.font)
             }
+            return measureSlotContent(slot)
         }
 
-        let twoSlots = contentWidths.count == 2
-        let slotRenderWidth: CGFloat
-        let totalWidth: CGFloat
-
-        if twoSlots {
-            slotRenderWidth = max(contentWidths[0], contentWidths[1])
-            totalWidth = slotRenderWidth * 2 + Self.betweenSlotGap
-        } else {
-            slotRenderWidth = contentWidths[0]
-            totalWidth = slotRenderWidth
-        }
+        let totalWidth = slotWidths.reduce(0, +)
+            + CGFloat(max(0, slotWidths.count - 1)) * Self.betweenSlotGap
 
         let size = NSSize(width: totalWidth, height: Self.slotHeight)
         let image = NSImage(size: size)
@@ -103,21 +90,25 @@ final class MenuBarIconRenderer {
             return image
         }
 
+        var slotOriginX: CGFloat = 0
         for (index, slot) in enabledSlots.enumerated() {
+            let slotWidth = slotWidths[index]
             let isVisible = flashingVisible[slot.uuid] ?? true
-            let slotColor = colorForSlot(slot, colorMode: colorMode, isDarkBackground: isDarkBackground)
-            let slotOriginX = twoSlots ? CGFloat(index) * (slotRenderWidth + Self.betweenSlotGap) : 0
+
+            defer { slotOriginX += slotWidth + Self.betweenSlotGap }
 
             if slot.colorState == .critical && !isVisible {
                 continue
             }
 
+            let slotColor = colorForSlot(slot, colorMode: colorMode, isDarkBackground: isDarkBackground)
+
             if slot.colorState == .unavailable && slot.instanceType.isBalance {
                 let naWidth = textWidth("N/A", font: Self.font)
-                let naX = slotOriginX + (slotRenderWidth - naWidth) / 2
+                let naX = slotOriginX + (slotWidth - naWidth) / 2
                 renderText("N/A", at: CGPoint(x: naX, y: centerBaseline), color: slotColor, font: Self.font, in: context)
             } else {
-                renderTwoLineSlot(atX: slotOriginX, width: slotRenderWidth, data: slot, color: slotColor, in: context)
+                renderTwoLineSlot(atX: slotOriginX, width: slotWidth, data: slot, color: slotColor, in: context)
             }
         }
 
@@ -129,7 +120,6 @@ final class MenuBarIconRenderer {
         let enabledSlots = slotViewDataList
             .filter { $0.colorState != .disabled }
             .sorted { $0.sortOrder < $1.sortOrder }
-            .prefix(2)
 
         let currentCriticalUUIDs = Set(enabledSlots
             .filter { $0.colorState == .critical }

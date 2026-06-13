@@ -202,8 +202,8 @@ final class MenuBarIconRendererTests: XCTestCase {
             isDarkBackground: false
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
-        // Should render two slots with a 2pt gap
-        let expectedMinWidth: CGFloat = 80
+        // Two slots, each sized by content, separated by the inter-slot gap.
+        let expectedMinWidth: CGFloat = 60
         XCTAssertGreaterThan(image.size.width, CGFloat(expectedMinWidth) - 1)
         assertSnapshot(image, named: "two_slots_mixed_color")
     }
@@ -230,7 +230,7 @@ final class MenuBarIconRendererTests: XCTestCase {
         assertSnapshot(image, named: "balance_unavailable_na")
     }
 
-    func testThreeSlotsTruncatedToTwo() {
+    func testThreeSlotsAllRendered() {
         let a = SlotViewData(
             uuid: "slot-a",
             displayName: "A",
@@ -258,7 +258,15 @@ final class MenuBarIconRendererTests: XCTestCase {
             colorState: .normal,
             provider: Provider.minimax.rawValue
         )
-        let image = renderer.render(
+        let twoSlotImage = renderer.render(
+            slotViewDataList: [a, b],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 2,
+            enabledCount: 2,
+            isDarkBackground: false
+        )
+        let threeSlotImage = renderer.render(
             slotViewDataList: [a, b, c],
             colorMode: .color,
             refreshState: .idle,
@@ -266,9 +274,10 @@ final class MenuBarIconRendererTests: XCTestCase {
             enabledCount: 3,
             isDarkBackground: false
         )
-        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
-        // Only first 2 slots rendered → width roughly same as two-slot scenario
-        assertSnapshot(image, named: "three_slots_truncated")
+        XCTAssertEqual(threeSlotImage.size.height, 22, accuracy: 0.1)
+        // No 2-slot cap: rendering 3 slots must be wider than rendering 2.
+        XCTAssertGreaterThan(threeSlotImage.size.width, twoSlotImage.size.width)
+        assertSnapshot(threeSlotImage, named: "three_slots_all_rendered")
     }
 
     func testFlashingStateUpdateRendering() {

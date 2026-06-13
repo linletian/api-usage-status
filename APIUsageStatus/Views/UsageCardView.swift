@@ -114,15 +114,11 @@ struct UsageCardView: View {
         cycleDays: Int?
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Copilot prefers text-above-bar (matches the Weekly layout).
-            // Other providers keep the original bar-above-text.
-            if slot.provider == Provider.githubCopilot.rawValue {
-                quotaSummaryRow(usageValue: usageValue, limitValue: limitValue, percent: percent)
-                quotaProgressBar(percent: percent, height: 4)
-            } else {
-                quotaProgressBar(percent: percent, height: 4)
-                quotaSummaryRow(usageValue: usageValue, limitValue: limitValue, percent: percent)
-            }
+            // All quota-type providers use text-above-bar to match the
+            // Weekly section layout. Balance-type instances have their
+            // own layout and don't go through this path.
+            quotaSummaryRow(usageValue: usageValue, limitValue: limitValue, percent: percent)
+            quotaProgressBar(percent: percent, height: 4)
 
             // Weekly progress bar
             if let weekly = slot.weekly {

@@ -2,37 +2,35 @@ import Foundation
 
 /// Parses MiniMax token plan API responses into internal dimension identifiers.
 ///
-/// API response structure:
+/// API response structure (current format):
 /// ```json
 /// {
 ///   "model_remains": [
 ///     {
-///       "model_name": "MiniMax-M2.7",
-///       "current_interval_total_count": 600,
-///       "current_interval_usage_count": 57,
-///       "start_time": 1779174000000,
-///       "end_time": 1779192000000,
-///       "remains_time": 5024998,
-///       "current_weekly_total_count": 0,
-///       "current_weekly_usage_count": 0,
-///       "weekly_start_time": 1779033600000,
-///       "weekly_end_time": 1779638400000,
-///       "weekly_remains_time": 451424998
-///     },
-///     ...
+///       "model_name": "general",
+///       "current_interval_status": 1,
+///       "current_interval_remaining_percent": 28,
+///       "start_time": 1781247600000,
+///       "end_time": 1781265600000,
+///       "remains_time": 173501,
+///       "current_weekly_status": 3,
+///       "current_weekly_remaining_percent": 100,
+///       "weekly_start_time": 1780848000000,
+///       "weekly_end_time": 1781452800000,
+///       "weekly_remains_time": 187373501
+///     }
 ///   ],
 ///   "base_resp": { "status_code": 0, "status_msg": "success" }
 /// }
 /// ```
 ///
-/// Each `model_name` entry is treated as an independent dimension.
-/// Users can configure monitoring for any model independently.
+/// `current_interval_status` indicates whether the model's 5h interval quota is
+/// currently active (`1` = active). Other observed values (e.g. `3`) mean the
+/// quota is not in effect for this window; we report 0% usage in that case.
+/// The 5h usage percent is derived as `100 - current_interval_remaining_percent`.
 ///
-/// For quota-style display, percentage is calculated as:
-/// `current_interval_usage_count / current_interval_total_count * 100`
-///
-/// If `current_interval_total_count == 0`, the model has no quota limit
-/// and should not display a percentage (or display N/A).
+/// Each `model_name` entry is treated as an independent dimension. Users can
+/// configure monitoring for any model independently.
 struct MiniMaxResponseParser {
     /// Parses raw JSON data into a SupplierResponse.
     /// Each model entry becomes a separate rawData entry with the model_name as key.
@@ -67,32 +65,30 @@ struct MiniMaxResponseParser {
                 continue
             }
 
-            let totalCount = entry["current_interval_total_count"] as? Int ?? 0
-            let usageCount = entry["current_interval_usage_count"] as? Int ?? 0
+            let remainingPercent = numericValue(entry, key: "current_interval_remaining_percent")
+            let intervalStatus = entry["current_interval_status"] as? Int ?? 0
+            let weeklyRemainingPercent = numericValue(entry, key: "current_weekly_remaining_percent")
+            let weeklyStatus = entry["current_weekly_status"] as? Int ?? 0
 
-            // Calculate percentage if quota exists
-            if totalCount > 0 {
-                let percent = Double(usageCount) / Double(totalCount) * 100.0
-                rawData[modelName] = formatPercent(percent)
-                rawData["\(modelName):total"] = String(totalCount)
-                rawData["\(modelName):used"] = String(usageCount)
-            } else {
-                // No quota limit — store with special marker
-                rawData[modelName] = "NO_LIMIT"
-                rawData["\(modelName):total"] = "0"
-                rawData["\(modelName):used"] = String(usageCount)
-            }
+            // status == 1: quota is active. Anything else means the window is not in effect
+            // (e.g. status 3) and we report 0% to avoid misleading numbers.
+            let usagePercent = intervalStatus == 1
+                ? max(0, min(100, 100.0 - remainingPercent))
+                : 0
+            rawData[modelName] = formatPercent(usagePercent)
+            rawData["\(modelName):status"] = String(intervalStatus)
+            rawData["\(modelName):remaining"] = String(format: "%.1f", remainingPercent)
 
-            // Weekly quota data
-            let weeklyTotal = entry["current_weekly_total_count"] as? Int ?? 0
-            let weeklyUsed = entry["current_weekly_usage_count"] as? Int ?? 0
-            rawData["\(modelName):weekly_total"] = String(weeklyTotal)
-            rawData["\(modelName):weekly_used"] = String(weeklyUsed)
+            let weeklyUsagePercent = weeklyStatus == 1
+                ? max(0, min(100, 100.0 - weeklyRemainingPercent))
+                : 0
+            rawData["\(modelName):weekly_status"] = String(weeklyStatus)
+            rawData["\(modelName):weekly_remaining"] = String(format: "%.1f", weeklyRemainingPercent)
+            rawData["\(modelName):weekly_percent"] = formatPercent(weeklyUsagePercent)
 
-            if weeklyTotal > 0 {
-                let weeklyPercent = Double(weeklyUsed) / Double(weeklyTotal) * 100.0
-                rawData["\(modelName):weekly_percent"] = formatPercent(weeklyPercent)
-            }
+            // Store interval end time (ms) so callers can compute remaining days
+            let endTime = entry["end_time"] as? Int64 ?? 0
+            rawData["\(modelName):end_time"] = String(endTime)
         }
 
         let modelNames = modelRemains.compactMap { $0["model_name"] as? String }
@@ -101,16 +97,15 @@ struct MiniMaxResponseParser {
         return SupplierResponse(rawData: rawData, currency: nil, isAvailable: true)
     }
 
+    private func numericValue(_ entry: [String: Any], key: String) -> Double {
+        if let d = entry[key] as? Double { return d }
+        if let i = entry[key] as? Int { return Double(i) }
+        if let n = entry[key] as? NSNumber { return n.doubleValue }
+        return 0
+    }
+
     private func formatPercent(_ value: Double) -> String {
-        // Format to 1 decimal place, e.g. "9.5" or "100.0"
-        if value >= 100.0 {
-            return "100.0"
-        } else if value >= 10.0 {
-            return String(format: "%.1f", value)
-        } else if value >= 1.0 {
-            return String(format: "%.1f", value)
-        } else {
-            return String(format: "%.1f", value)
-        }
+        let clamped = min(100.0, max(0.0, value))
+        return String(format: "%.1f", clamped)
     }
 }

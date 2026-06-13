@@ -15,9 +15,6 @@ struct MiniMaxSupplier: Supplier {
         )
 
         let response = try await networkClient.request(endpoint, apiKey: apiKey)
-
-        let result = try parser.parse(response)
-        logger.debug("MiniMax response parsed: \(result.rawData)")
-        return result
+        return try parser.parse(response)
     }
 }

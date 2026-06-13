@@ -62,12 +62,13 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
     private func setupWindow() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 300, height: 400),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.standardWindowButton(.closeButton)?.isHidden = true
         window.standardWindowButton(.miniaturizeButton)?.isHidden = true
         window.standardWindowButton(.zoomButton)?.isHidden = true
         window.isReleasedWhenClosed = false
@@ -175,8 +176,12 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
             view.needsLayout = true
             view.layoutSubtreeIfNeeded()
             let measured = view.fittingSize.height
-            if measured > 0 {
-                return min(500, max(160, measured))
+            // Subtract title bar safe area inset (~28pt) since .ignoresSafeArea(edges: .top)
+            // moves content up but fittingSize still includes the reserved space
+            let topInset = view.safeAreaInsets.top
+            let adjusted = measured - topInset
+            if adjusted > 0 {
+                return min(500, max(160, adjusted))
             }
         }
         return estimatedContentHeight()
@@ -215,7 +220,8 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
 
         switch slot.instanceType {
         case .quota:
-            let contentHeight: CGFloat = 40
+            // 40pt for 5h bar + text, ~20pt for optional weekly bar
+            let contentHeight: CGFloat = 60
             return headerHeight + contentHeight + padding
 
         case .balance(_, _, let grantedBalance, let isAvailable, _):

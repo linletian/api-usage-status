@@ -31,3 +31,7 @@ tmp/
 *.plist.keys
 *.entitlements.keys
 **/APIKeys/
+
+# CodeWhale / AI tool configs
+.codewhale/
+AGENTS.md

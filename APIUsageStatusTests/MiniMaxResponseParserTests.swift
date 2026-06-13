@@ -11,16 +11,16 @@ final class MiniMaxResponseParserTests: XCTestCase {
           "base_resp": { "status_code": 0, "status_msg": "success" },
           "model_remains": [
             {
-              "model_name": "MiniMax-M2.7",
-              "current_interval_total_count": 600,
-              "current_interval_usage_count": 57,
-              "start_time": 1779174000000,
-              "end_time": 1779192000000,
+              "model_name": "general",
+              "current_interval_status": 1,
+              "current_interval_remaining_percent": 28,
+              "start_time": 1781247600000,
+              "end_time": 1781265600000,
               "remains_time": 5024998,
-              "current_weekly_total_count": 0,
-              "current_weekly_usage_count": 0,
-              "weekly_start_time": 1779033600000,
-              "weekly_end_time": 1779638400000,
+              "current_weekly_status": 3,
+              "current_weekly_remaining_percent": 100,
+              "weekly_start_time": 1780848000000,
+              "weekly_end_time": 1781452800000,
               "weekly_remains_time": 451424998
             }
           ]
@@ -30,10 +30,14 @@ final class MiniMaxResponseParserTests: XCTestCase {
         let response = try parser.parse(json)
 
         XCTAssertTrue(response.isAvailable)
-        XCTAssertEqual(response.rawData["MiniMax-M2.7"], "9.5")
-        XCTAssertEqual(response.rawData["MiniMax-M2.7:total"], "600")
-        XCTAssertEqual(response.rawData["MiniMax-M2.7:used"], "57")
-        XCTAssertEqual(response.rawData["_model_names"], "MiniMax-M2.7")
+        XCTAssertEqual(response.rawData["general"], "72.0")
+        XCTAssertEqual(response.rawData["general:status"], "1")
+        XCTAssertEqual(response.rawData["general:remaining"], "28.0")
+        XCTAssertEqual(response.rawData["general:weekly_status"], "3")
+        XCTAssertEqual(response.rawData["general:weekly_remaining"], "100.0")
+        XCTAssertEqual(response.rawData["general:weekly_percent"], "0.0")
+        XCTAssertEqual(response.rawData["general:end_time"], "1781265600000")
+        XCTAssertEqual(response.rawData["_model_names"], "general")
     }
 
     func testMultipleModels() throws {
@@ -43,17 +47,17 @@ final class MiniMaxResponseParserTests: XCTestCase {
           "model_remains": [
             {
               "model_name": "Model-A",
-              "current_interval_total_count": 100,
-              "current_interval_usage_count": 25,
-              "current_weekly_total_count": 0,
-              "current_weekly_usage_count": 0
+              "current_interval_status": 1,
+              "current_interval_remaining_percent": 75,
+              "current_weekly_status": 1,
+              "current_weekly_remaining_percent": 20
             },
             {
               "model_name": "Model-B",
-              "current_interval_total_count": 200,
-              "current_interval_usage_count": 80,
-              "current_weekly_total_count": 0,
-              "current_weekly_usage_count": 0
+              "current_interval_status": 1,
+              "current_interval_remaining_percent": 60,
+              "current_weekly_status": 1,
+              "current_weekly_remaining_percent": 50
             }
           ]
         }
@@ -63,9 +67,77 @@ final class MiniMaxResponseParserTests: XCTestCase {
 
         XCTAssertEqual(response.rawData["Model-A"], "25.0")
         XCTAssertEqual(response.rawData["Model-B"], "40.0")
-        XCTAssertEqual(response.rawData["Model-A:total"], "100")
-        XCTAssertEqual(response.rawData["Model-B:total"], "200")
+        XCTAssertEqual(response.rawData["Model-A:weekly_percent"], "80.0")
+        XCTAssertEqual(response.rawData["Model-B:weekly_percent"], "50.0")
         XCTAssertEqual(response.rawData["_model_names"], "Model-A,Model-B")
+    }
+
+    func testInactiveIntervalReportsZero() throws {
+        // status 3 = interval not active. Should report 0% even if remaining_percent is non-zero.
+        let json = """
+        {
+          "base_resp": { "status_code": 0, "status_msg": "success" },
+          "model_remains": [
+            {
+              "model_name": "video",
+              "current_interval_status": 3,
+              "current_interval_remaining_percent": 100,
+              "current_weekly_status": 3,
+              "current_weekly_remaining_percent": 100
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+
+        XCTAssertEqual(response.rawData["video"], "0.0")
+        XCTAssertEqual(response.rawData["video:status"], "3")
+        XCTAssertEqual(response.rawData["video:weekly_percent"], "0.0")
+    }
+
+    func testFullyConsumedInterval() throws {
+        let json = """
+        {
+          "base_resp": { "status_code": 0, "status_msg": "success" },
+          "model_remains": [
+            {
+              "model_name": "general",
+              "current_interval_status": 1,
+              "current_interval_remaining_percent": 0,
+              "current_weekly_status": 1,
+              "current_weekly_remaining_percent": 0
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+
+        XCTAssertEqual(response.rawData["general"], "100.0")
+        XCTAssertEqual(response.rawData["general:weekly_percent"], "100.0")
+    }
+
+    func testFullyUnusedInterval() throws {
+        let json = """
+        {
+          "base_resp": { "status_code": 0, "status_msg": "success" },
+          "model_remains": [
+            {
+              "model_name": "general",
+              "current_interval_status": 1,
+              "current_interval_remaining_percent": 100,
+              "current_weekly_status": 1,
+              "current_weekly_remaining_percent": 100
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+
+        XCTAssertEqual(response.rawData["general"], "0.0")
+        XCTAssertEqual(response.rawData["general:weekly_percent"], "0.0")
     }
 
     func testMissingModelRemains() {
@@ -148,46 +220,23 @@ final class MiniMaxResponseParserTests: XCTestCase {
         }
     }
 
-    func testZeroQuotaModel() throws {
-        let json = """
-        {
-          "base_resp": { "status_code": 0, "status_msg": "success" },
-          "model_remains": [
-            {
-              "model_name": "NoLimit-Model",
-              "current_interval_total_count": 0,
-              "current_interval_usage_count": 42,
-              "current_weekly_total_count": 0,
-              "current_weekly_usage_count": 0
-            }
-          ]
-        }
-        """.data(using: .utf8)!
-
-        let response = try parser.parse(json)
-
-        XCTAssertEqual(response.rawData["NoLimit-Model"], "NO_LIMIT")
-        XCTAssertEqual(response.rawData["NoLimit-Model:total"], "0")
-        XCTAssertEqual(response.rawData["NoLimit-Model:used"], "42")
-    }
-
     func testMissingModelName() throws {
         let json = """
         {
           "base_resp": { "status_code": 0, "status_msg": "success" },
           "model_remains": [
             {
-              "current_interval_total_count": 100,
-              "current_interval_usage_count": 50,
-              "current_weekly_total_count": 0,
-              "current_weekly_usage_count": 0
+              "current_interval_status": 1,
+              "current_interval_remaining_percent": 50,
+              "current_weekly_status": 1,
+              "current_weekly_remaining_percent": 100
             },
             {
               "model_name": "Valid-Model",
-              "current_interval_total_count": 200,
-              "current_interval_usage_count": 60,
-              "current_weekly_total_count": 0,
-              "current_weekly_usage_count": 0
+              "current_interval_status": 1,
+              "current_interval_remaining_percent": 70,
+              "current_weekly_status": 1,
+              "current_weekly_remaining_percent": 100
             }
           ]
         }
@@ -195,7 +244,7 @@ final class MiniMaxResponseParserTests: XCTestCase {
 
         let response = try parser.parse(json)
 
-        XCTAssertEqual(response.rawData.count, 6)
+        // Only the entry with a model_name is parsed.
         XCTAssertEqual(response.rawData["Valid-Model"], "30.0")
         XCTAssertEqual(response.rawData["_model_names"], "Valid-Model")
     }

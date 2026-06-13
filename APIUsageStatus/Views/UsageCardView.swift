@@ -97,7 +97,7 @@ struct UsageCardView: View {
         cycleDays: Int?
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Progress bar
+            // 5h interval progress bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2)
@@ -114,13 +114,18 @@ struct UsageCardView: View {
             .frame(height: 4)
 
             HStack(spacing: 4) {
-                Text("\(usageValue) / \(limitValue)")
+                Text("5h · \(usageValue) / \(limitValue)")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.secondary)
                 Spacer()
                 Text("\(Int(percent))%")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundColor(percent >= 95 ? .red : (percent >= 80 ? .orange : .primary))
+            }
+
+            // Weekly progress bar
+            if let weekly = slot.weekly {
+                weeklySection(weekly: weekly)
             }
 
             HStack {
@@ -135,6 +140,49 @@ struct UsageCardView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func weeklySection(weekly: WeeklyQuota) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if weekly.isUnlimited {
+                HStack(spacing: 4) {
+                    Text("Weekly")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("∞ unlimited")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                FlowingGlowBar()
+            } else {
+                HStack(spacing: 4) {
+                    Text("Weekly · \(String(format: "%.1f", weekly.remaining))% left")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("\(Int(weekly.percent))%")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(weekly.percent >= 95 ? .red : (weekly.percent >= 80 ? .orange : .secondary))
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.secondary.opacity(0.15))
+                            .frame(height: 3)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(progressColor(for: weekly.percent))
+                            .frame(
+                                width: max(0, min(geo.size.width, geo.size.width * CGFloat(weekly.percent) / 100.0)),
+                                height: 3
+                            )
+                    }
+                }
+                .frame(height: 3)
+            }
+        }
+        .padding(.top, 2)
     }
 
     // MARK: - Balance Content
@@ -293,6 +341,88 @@ struct ColorStateBadge: View {
         case .unavailable:  return "N/A"
         case .loading:      return "..."
         case .error:        return "ERR"
+        }
+    }
+}
+
+// MARK: - FlowingGlowBar
+
+/// A thin progress bar that conveys "no limit" via a continuously flowing
+/// luminous band travelling from left to right. Used in place of a normal
+/// progress bar when the underlying quota is not enforced (e.g. MiniMax
+/// weekly limit on plans that do not include a weekly cap).
+///
+/// Animation is driven by `TimelineView`, so the schedule is part of the
+/// view's definition rather than an implicit animation state machine. When
+/// the view leaves the hierarchy, SwiftUI tears down the timeline and stops
+/// driving redraws — no manual start/stop is needed.
+struct FlowingGlowBar: View {
+    private let barHeight: CGFloat = 3
+    private let shimmerWidthFraction: CGFloat = 0.45
+    private let duration: Double = 2.4
+
+    var body: some View {
+        TimelineView(.animation) { context in
+            let phase = CGFloat(
+                context.date.timeIntervalSinceReferenceDate
+                    .truncatingRemainder(dividingBy: duration) / duration
+            )
+            ShimmerBar(
+                phase: phase,
+                barHeight: barHeight,
+                shimmerWidthFraction: shimmerWidthFraction
+            )
+        }
+        .frame(height: barHeight)
+    }
+}
+
+// MARK: - ShimmerBar
+
+/// Renders the glow strip at a fixed phase. Extracted from `FlowingGlowBar`
+/// so snapshot tests can render a deterministic frame.
+struct ShimmerBar: View {
+    let phase: CGFloat
+    let barHeight: CGFloat
+    let shimmerWidthFraction: CGFloat
+
+    var body: some View {
+        GeometryReader { geo in
+            let barWidth = geo.size.width
+            let shimmerWidth = barWidth * shimmerWidthFraction
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: barHeight / 2)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.cyan.opacity(0.18),
+                                Color.blue.opacity(0.28),
+                                Color.cyan.opacity(0.18)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(height: barHeight)
+                RoundedRectangle(cornerRadius: barHeight / 2)
+                    .fill(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0.0),
+                                .init(color: Color.cyan.opacity(0.95), location: 0.45),
+                                .init(color: Color.white, location: 0.5),
+                                .init(color: Color.cyan.opacity(0.95), location: 0.55),
+                                .init(color: .clear, location: 1.0)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: shimmerWidth, height: barHeight)
+                    .shadow(color: Color.cyan.opacity(0.7), radius: 4, x: 0, y: 0)
+                    .offset(x: (barWidth + shimmerWidth) * phase - shimmerWidth)
+                    .blendMode(.plusLighter)
+            }
         }
     }
 }

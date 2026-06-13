@@ -478,17 +478,17 @@ Authorization: Bearer <Token Plan Key>
 {
   "model_remains": [
     {
-      "model_name": "MiniMax-M2.7",
-      "current_interval_total_count": 600,
-      "current_interval_usage_count": 57,
-      "start_time": 1779174000000,
-      "end_time": 1779192000000,
-      "remains_time": 5024998,
-      "current_weekly_total_count": 0,
-      "current_weekly_usage_count": 0,
-      "weekly_start_time": 1779033600000,
-      "weekly_end_time": 1779638400000,
-      "weekly_remains_time": 451424998
+      "model_name": "general",
+      "current_interval_status": 1,
+      "current_interval_remaining_percent": 99,
+      "start_time": 1781265600000,
+      "end_time": 1781280000000,
+      "remains_time": 14369778,
+      "current_weekly_status": 3,
+      "current_weekly_remaining_percent": 100,
+      "weekly_start_time": 1780848000000,
+      "weekly_end_time": 1781452800000,
+      "weekly_remains_time": 187169778
     }
   ],
   "base_resp": { "status_code": 0, "status_msg": "success" }
@@ -499,19 +499,23 @@ Authorization: Bearer <Token Plan Key>
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `model_name` | string | 模型名称，如 `"MiniMax-M2.7"`、`"speech-hd"`、`"music-2.6"` 等。每个值对应一个独立维度 |
-| `current_interval_total_count` | int | 当前周期配额数（如 600 次 / 5小时窗口）。**为 0 表示该模型无配额限制**，不显示百分比 |
-| `current_interval_usage_count` | int | 当前周期已用次数 |
-| `start_time` / `end_time` | int64 | 当前周期时间窗口（毫秒时间戳） |
-| `remains_time` | int64 | 周期内剩余时间（毫秒） |
-| `current_weekly_total_count` | int | 本周总配额数。为 0 表示无周限额 |
-| `current_weekly_usage_count` | int | 本周已用次数 |
+| `model_name` | string | 模型名称，如 `"general"`、`"video"`、`"music-2.6"` 等。每个值对应一个独立维度 |
+| `current_interval_status` | int | 5h 区间配额状态（`1` = 生效，其他值视为未激活） |
+| `current_interval_remaining_percent` | number | 5h 区间剩余百分比（0-100） |
+| `start_time` / `end_time` | int64 | 5h 区间时间窗口（毫秒时间戳） |
+| `remains_time` | int64 | 区间内剩余时间（毫秒） |
+| `current_weekly_status` | int | 周配额状态（`1` = 生效，其他值视为未激活） |
+| `current_weekly_remaining_percent` | number | 周剩余百分比（0-100） |
 | `weekly_start_time` / `weekly_end_time` | int64 | 本周时间窗口（毫秒时间戳） |
+| `weekly_remains_time` | int64 | 本周剩余时间（毫秒） |
+
+> 旧字段 `current_interval_total_count` / `current_interval_usage_count` 等已弃用，实测恒为 0，不再使用。
 
 **百分比计算规则**：
 
-- `current_interval_total_count > 0` 时：`百分比 = current_interval_usage_count / current_interval_total_count * 100`
-- `current_interval_total_count == 0` 时：该模型无配额限制，不显示百分比（或显示 `NO_LIMIT`）
+- `current_interval_status == 1` 时：`百分比 = 100 - current_interval_remaining_percent`
+- `current_interval_status != 1` 时：该模型 5h 区间未激活，`百分比 = 0`
+- `current_weekly_status == 1` 时：额外计算周百分比 `100 - current_weekly_remaining_percent`
 
 **内部维度标识符**：
 

@@ -98,6 +98,7 @@ struct UsagePanelView: View {
             .padding(.vertical, 10)
         }
         .frame(width: 300)
+        .ignoresSafeArea(edges: .top)
     }
 }
 

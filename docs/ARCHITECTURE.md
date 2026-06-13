@@ -733,17 +733,29 @@ struct MiniMaxSupplier: Supplier {
 }
 ```
 
-解析后的响应由 `MiniMaxResponseParser` 映射到内部维度标识符：
+解析后的响应由 `MiniMaxResponseParser` 映射到内部维度标识符。
 
-每个 `model_name` 条目映射为一个独立的维度，百分比计算规则：
+API 当前 schema（旧的 `current_interval_total_count` / `current_interval_usage_count` 字段已弃用，恒为 0；新字段为权威源）：
 
-| 模型 | 计算规则 |
+| 字段 | 类型 | 含义 |
+|------|------|------|
+| `model_name` | string | 模型维度标识符 |
+| `current_interval_status` | int | 5h 区间配额状态（`1` = 生效，其他值视为未激活） |
+| `current_interval_remaining_percent` | number | 5h 区间剩余百分比（0-100） |
+| `current_weekly_status` | int | 周配额状态（`1` = 生效，其他值视为未激活） |
+| `current_weekly_remaining_percent` | number | 周剩余百分比（0-100） |
+| `start_time` / `end_time` / `remains_time` | int64 | 5h 区间时间窗（毫秒 / 秒） |
+| `weekly_start_time` / `weekly_end_time` / `weekly_remains_time` | int64 | 周时间窗 |
+
+百分比计算规则：
+
+| 状态 | 计算规则 |
 |------|----------|
-| `current_interval_total_count > 0` | `percent = current_interval_usage_count / current_interval_total_count * 100` |
-| `current_interval_total_count == 0` | 无配额限制，不显示百分比（或显示 `NO_LIMIT`） |
-| `current_weekly_total_count > 0` | 额外计算周累计百分比 |
+| `current_interval_status == 1` | `usage_percent = 100 - current_interval_remaining_percent` |
+| `current_interval_status != 1` | `usage_percent = 0`（区间未激活，不显示用量） |
+| `current_weekly_status == 1` | 额外计算 `weekly_percent = 100 - current_weekly_remaining_percent` |
 
-`rawData` 中每个 model_name 作为 key，存储百分比字符串（如 `"9.5"`），辅助字段用 `model_name:total`、`model_name:used`、`model_name:weekly_total` 等格式。
+`rawData` 中每个 model_name 作为 key，存储百分比字符串（如 `"72.0"`），辅助字段用 `model_name:status`、`model_name:remaining`、`model_name:weekly_percent` 等格式。
 
 `MiniMaxResponseParser` 的职责：接收原始 JSON → 提取对应字段值 → 分配至各维度实例。若 API 实际返回格式与预期不同，仅需修改此 Parser，不影响上游调用方。
 

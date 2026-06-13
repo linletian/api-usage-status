@@ -41,6 +41,51 @@ enum InstanceType: Equatable {
     }
 }
 
+// MARK: - WeeklyQuota
+
+/// Weekly-cycle quota for a quota instance. `isUnlimited` is true when the
+/// API reports the weekly window is not active for the user's plan.
+struct WeeklyQuota: Equatable {
+    /// Usage percent in the weekly window (0-100). 0 = unused, 100 = exhausted.
+    let percent: Double
+    /// Remaining percent in the weekly window (0-100). 100 = unused, 0 = exhausted.
+    /// This is a percentage, not a raw quota count — the MiniMax API does not
+    /// expose absolute weekly counts, only the remaining percent.
+    let remaining: Double
+    /// True when the user's plan does not enforce a weekly limit
+    /// (`current_weekly_status != 1` in the MiniMax response).
+    let isUnlimited: Bool
+
+    /// Build a `WeeklyQuota` from a parsed supplier response. Returns nil
+    /// (and the caller should suppress the weekly bar) when any of the three
+    /// expected fields is missing — we never invent a default for a field
+    /// the API did not provide.
+    ///
+    /// The MiniMax parser stores weekly data under "<model>:weekly_*" keys.
+    /// `weekly_status == 1` means the weekly window is active. Any other
+    /// value (e.g. 3) means the user's plan does not enforce a weekly limit.
+    static func from(response: SupplierResponse, dimension: String) -> WeeklyQuota? {
+        guard
+            let statusString = response.value(forDimension: "\(dimension):weekly_status"),
+            let status = Int(statusString),
+            let percentString = response.value(forDimension: "\(dimension):weekly_percent"),
+            let remainingString = response.value(forDimension: "\(dimension):weekly_remaining")
+        else {
+            return nil
+        }
+        return WeeklyQuota(
+            percent: Self.parsePercent(percentString),
+            remaining: Self.parsePercent(remainingString),
+            isUnlimited: status != 1
+        )
+    }
+
+    private static func parsePercent(_ value: String) -> Double {
+        let cleaned = value.replacingOccurrences(of: "%", with: "").trimmed
+        return Double(cleaned) ?? 0.0
+    }
+}
+
 // MARK: - SlotViewData
 
 struct SlotViewData: Identifiable, Equatable {
@@ -58,6 +103,14 @@ struct SlotViewData: Identifiable, Equatable {
     var todayUsage: String?
     var dailyAverages: [AvgDailyPeriod: Decimal]?
 
+    // Quota-specific: weekly cycle breakdown. nil when not applicable
+    // (e.g. DeepSeek, or when the API does not return weekly data).
+    var weekly: WeeklyQuota?
+
+    // TODO: Remove after confirming weekly feature is stable on all user plans.
+    // Temporary diagnostic: keys looked up in rawData for weekly.
+    var weeklyDebug: String?
+
     init(
         uuid: String,
         displayName: String,
@@ -67,7 +120,9 @@ struct SlotViewData: Identifiable, Equatable {
         colorState: ColorState,
         provider: String,
         todayUsage: String? = nil,
-        dailyAverages: [AvgDailyPeriod: Decimal]? = nil
+        dailyAverages: [AvgDailyPeriod: Decimal]? = nil,
+        weekly: WeeklyQuota? = nil,
+        weeklyDebug: String? = nil
     ) {
         self.uuid = uuid
         self.displayName = displayName
@@ -78,5 +133,7 @@ struct SlotViewData: Identifiable, Equatable {
         self.provider = provider
         self.todayUsage = todayUsage
         self.dailyAverages = dailyAverages
+        self.weekly = weekly
+        self.weeklyDebug = weeklyDebug
     }
 }

@@ -1,1 +1,31 @@
-{"model_remains":[{"start_time":0,"end_time":0,"remains_time":0,"current_interval_total_count":0,"current_interval_usage_count":0,"model_name":"MiniMax-M*","current_weekly_total_count":0,"current_weekly_usage_count":0,"weekly_start_time":0,"weekly_end_time":0,"weekly_remains_time":0},{"start_time":0,"end_time":0,"remains_time":0,"current_interval_total_count":0,"current_interval_usage_count":0,"model_name":"speech-hd","current_weekly_total_count":0,"current_weekly_usage_count":0,"weekly_start_time":0,"weekly_end_time":0,"weekly_remains_time":0},{"start_time":0,"end_time":0,"remains_time":0,"current_interval_total_count":0,"current_interval_usage_count":0,"model_name":"MiniMax-Hailuo-2.3-Fast-6s-768p","current_weekly_total_count":0,"current_weekly_usage_count":0,"weekly_start_time":0,"weekly_end_time":0,"weekly_remains_time":0},{"start_time":0,"end_time":0,"remains_time":0,"current_interval_total_count":0,"current_interval_usage_count":0,"model_name":"MiniMax-Hailuo-2.3-6s-768p","current_weekly_total_count":0,"current_weekly_usage_count":0,"weekly_start_time":0,"weekly_end_time":0,"weekly_remains_time":0},{"start_time":0,"end_time":0,"remains_time":0,"current_interval_total_count":0,"current_interval_usage_count":0,"model_name":"music-2.5","current_weekly_total_count":0,"current_weekly_usage_count":0,"weekly_start_time":0,"weekly_end_time":0,"weekly_remains_time":0},{"start_time":0,"end_time":0,"remains_time":0,"current_interval_total_count":100,"current_interval_usage_count":0,"model_name":"music-2.6","current_weekly_total_count":700,"current_weekly_usage_count":0,"weekly_start_time":0,"weekly_end_time":0,"weekly_remains_time":0}],"request_id":"REDACTED","code":0,"msg":"success","total_remain":0}
+{
+  "model_remains": [
+    {
+      "model_name": "general",
+      "current_interval_status": 1,
+      "current_interval_remaining_percent": 99,
+      "start_time": 1781265600000,
+      "end_time": 1781280000000,
+      "remains_time": 14369778,
+      "current_weekly_status": 3,
+      "current_weekly_remaining_percent": 100,
+      "weekly_start_time": 1780848000000,
+      "weekly_end_time": 1781452800000,
+      "weekly_remains_time": 187169778
+    },
+    {
+      "model_name": "video",
+      "current_interval_status": 3,
+      "current_interval_remaining_percent": 100,
+      "start_time": 1781193600000,
+      "end_time": 1781280000000,
+      "remains_time": 14369778,
+      "current_weekly_status": 3,
+      "current_weekly_remaining_percent": 100,
+      "weekly_start_time": 1780848000000,
+      "weekly_end_time": 1781452800000,
+      "weekly_remains_time": 187169778
+    }
+  ],
+  "base_resp": { "status_code": 0, "status_msg": "success" }
+}

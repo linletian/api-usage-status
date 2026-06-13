@@ -250,32 +250,30 @@ actor RefreshService {
             }
         }
 
-        // 5. Calculate time-derived fields for quota-type instances
+        // 5. Update time-derived fields for quota-type instances
         for (index, slot) in allSlotData.enumerated() {
-            if case .quota(_, _, _, _, _) = slot.instanceType {
+            if case .quota(let percent, let usageValue, let limitValue, _, let days) = slot.instanceType {
                 let nextRefreshMinutes = calculateNextRefreshMinutes()
-                let cycleRemainingDays = 0 // Will be computed in Phase 2
-
-                if case .quota(let percent, let usageValue, let limitValue, _, _) = slot.instanceType {
-                    let updatedType = InstanceType.quota(
-                        percent: percent,
-                        usageValue: usageValue,
-                        limitValue: limitValue,
-                        nextRefreshMinutes: nextRefreshMinutes,
-                        cycleRemainingDays: cycleRemainingDays
-                    )
-                    allSlotData[index] = SlotViewData(
-                        uuid: slot.uuid,
-                        displayName: slot.displayName,
-                        shortName: slot.shortName,
-                        instanceType: updatedType,
-                        sortOrder: slot.sortOrder,
-                        colorState: slot.colorState,
-                        provider: slot.provider,
-                        todayUsage: slot.todayUsage,
-                        dailyAverages: slot.dailyAverages
-                    )
-                }
+                let updatedType = InstanceType.quota(
+                    percent: percent,
+                    usageValue: usageValue,
+                    limitValue: limitValue,
+                    nextRefreshMinutes: nextRefreshMinutes,
+                    cycleRemainingDays: days
+                )
+                allSlotData[index] = SlotViewData(
+                    uuid: slot.uuid,
+                    displayName: slot.displayName,
+                    shortName: slot.shortName,
+                    instanceType: updatedType,
+                    sortOrder: slot.sortOrder,
+                    colorState: slot.colorState,
+                    provider: slot.provider,
+                    todayUsage: slot.todayUsage,
+                    dailyAverages: slot.dailyAverages,
+                    weekly: slot.weekly,
+                    weeklyDebug: slot.weeklyDebug
+                )
             }
         }
 
@@ -308,21 +306,51 @@ actor RefreshService {
     private func mapInstanceToSlotData(instance: Instance, response: SupplierResponse) -> SlotViewData {
         let instanceType: InstanceType
         let colorState: ColorState
+        var weekly: WeeklyQuota? = nil
+#if DEBUG
+        var weeklyDebug: String? = "isQuota=\(instance.isQuotaType) dim=\(instance.dimension)"
+#else
+        let weeklyDebug: String? = nil
+#endif
 
         if instance.isQuotaType {
             // Quota-type instance
-            let valueString = response.value(forDimension: instance.dimension) ?? "0"
+            let dim = instance.dimension
+            let valueString = response.value(forDimension: dim) ?? "0"
             let percent = parsePercent(from: valueString)
+
+            // Compute cycle remaining days from interval end_time (ms timestamp)
+            let cycleRemainingDays: Int? = {
+                if let ets = response.value(forDimension: "\(dim):end_time"),
+                   let endTimeMs = Int64(ets), endTimeMs > 0 {
+                    let endDate = Date(timeIntervalSince1970: TimeInterval(endTimeMs) / 1000.0)
+                    let remaining = endDate.timeIntervalSinceNow
+                    let days = Int(ceil(remaining / 86400.0))
+                    return max(0, days)
+                }
+                return nil
+            }()
 
             instanceType = .quota(
                 percent: percent,
                 usageValue: valueString,
                 limitValue: "100",
                 nextRefreshMinutes: calculateNextRefreshMinutes(),
-                cycleRemainingDays: nil
+                cycleRemainingDays: cycleRemainingDays
             )
 
             colorState = determineColorState(percent: percent, thresholds: instance.thresholds)
+            weekly = WeeklyQuota.from(response: response, dimension: dim)
+#if DEBUG
+            // Build debug string for UI
+            let wsKey = "\(dim):weekly_status"
+            let wpKey = "\(dim):weekly_percent"
+            let wrKey = "\(dim):weekly_remaining"
+            let ws = response.value(forDimension: wsKey) ?? "nil"
+            let wp = response.value(forDimension: wpKey) ?? "nil"
+            let wr = response.value(forDimension: wrKey) ?? "nil"
+            weeklyDebug = "dim=\(dim) ws=\(ws) wp=\(wp) wr=\(wr) totalKeys=\(response.rawData.count)"
+#endif
         } else {
             // Balance-type instance
             let balance = response.value(forDimension: "balance") ?? "0"
@@ -357,7 +385,9 @@ actor RefreshService {
             instanceType: instanceType,
             sortOrder: instance.sortOrder,
             colorState: colorState,
-            provider: instance.provider
+            provider: instance.provider,
+            weekly: weekly,
+            weeklyDebug: weeklyDebug
         )
     }
 

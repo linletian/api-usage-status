@@ -70,18 +70,34 @@ struct MiniMaxResponseParser {
             let weeklyRemainingPercent = numericValue(entry, key: "current_weekly_remaining_percent")
             let weeklyStatus = entry["current_weekly_status"] as? Int ?? 0
 
-            // status == 1: quota is active. Anything else means the window is not in effect
-            // (e.g. status 3) and we report 0% to avoid misleading numbers.
-            let usagePercent = intervalStatus == 1
-                ? max(0, min(100, 100.0 - remainingPercent))
-                : 0
+            // Trust the percent data when present, regardless of status.
+            // status != 1 was previously treated as "window not in effect"
+            // and reported 0%, but the API also returns status != 1 when
+            // the 5h window is fully consumed (remaining_percent = 0) —
+            // that should display as 100%, not 0%. Only fall back to 0
+            // when the percent field is entirely absent, which is the
+            // genuine "no quota tracked" case (user not on a 5h plan).
+            let usagePercent: Double
+            if entry["current_interval_remaining_percent"] != nil {
+                usagePercent = max(0, min(100, 100.0 - remainingPercent))
+            } else {
+                usagePercent = 0
+            }
             rawData[modelName] = formatPercent(usagePercent)
             rawData["\(modelName):status"] = String(intervalStatus)
             rawData["\(modelName):remaining"] = String(format: "%.1f", remainingPercent)
 
-            let weeklyUsagePercent = weeklyStatus == 1
-                ? max(0, min(100, 100.0 - weeklyRemainingPercent))
-                : 0
+            // Same trust-the-data semantics as the 5h usage above.
+            // status != 1 with a present remaining_percent means the
+            // weekly window is fully consumed (or otherwise out of
+            // normal tracking state) and should display the actual
+            // percent, not 0%.
+            let weeklyUsagePercent: Double
+            if entry["current_weekly_remaining_percent"] != nil {
+                weeklyUsagePercent = max(0, min(100, 100.0 - weeklyRemainingPercent))
+            } else {
+                weeklyUsagePercent = 0
+            }
             rawData["\(modelName):weekly_status"] = String(weeklyStatus)
             rawData["\(modelName):weekly_remaining"] = String(format: "%.1f", weeklyRemainingPercent)
             rawData["\(modelName):weekly_percent"] = formatPercent(weeklyUsagePercent)

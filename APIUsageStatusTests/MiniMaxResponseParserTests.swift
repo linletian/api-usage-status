@@ -118,6 +118,34 @@ final class MiniMaxResponseParserTests: XCTestCase {
         XCTAssertEqual(response.rawData["general:weekly_percent"], "100.0")
     }
 
+    func testExhaustedWithNonOneStatus() throws {
+        // Regression test: when the 5h window is fully consumed, the
+        // API may return status != 1 (e.g. 3) alongside remaining=0.
+        // Parser must still report 100% — only fall back to 0% when
+        // the percent field is entirely missing. Same logic applies
+        // to the weekly window.
+        let json = """
+        {
+          "base_resp": { "status_code": 0, "status_msg": "success" },
+          "model_remains": [
+            {
+              "model_name": "general",
+              "current_interval_status": 3,
+              "current_interval_remaining_percent": 0,
+              "current_weekly_status": 3,
+              "current_weekly_remaining_percent": 0
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+
+        XCTAssertEqual(response.rawData["general"], "100.0")
+        XCTAssertEqual(response.rawData["general:status"], "3")
+        XCTAssertEqual(response.rawData["general:weekly_percent"], "100.0")
+    }
+
     func testFullyUnusedInterval() throws {
         let json = """
         {

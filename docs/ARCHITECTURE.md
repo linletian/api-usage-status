@@ -193,15 +193,14 @@
 
 **职责**：编排刷新周期。使用 **Actor**。
 
-- 管理定时刷新的 `Timer`，记录 `lastRefreshAt: Date` 用于计算下一次刷新的剩余分钟数
+- 管理定时刷新的 `Timer`，记录 `lastRefreshAt: Date`。"Next refresh" 倒计时的显示由 `UsagePanelView` 从 `AppStateProxy.lastRefreshAt` + `globalSettings.refreshIntervalMinutes` 派生,**不再通过 `InstanceType.quota` 关联值注入**
 - 每次触发（定时或手动）：
   1. 按 `api_key_ref` 分组实例，以确定 HTTP 请求数量
   2. 对每组调用对应 `Supplier` 实现
   3. 以指数退避方式重试（最多 3 次）
   4. 解析响应，更新 `AppState`
   5. 对余额型实例触发余额历史计算，若 API 响应的 `currency` 与实例当前值不同，自动更新并写回 `instances.json`
-  6. 对配额型实例计算时间派生字段（`nextRefreshMinutes`、`cycleRemainingDays`）
-  7. 触发阈值评估与通知
+  6. 触发阈值评估与通知
 - 应用终止时取消 Timer
 
 ### 2.8 供应商协议（`Supplier.swift`）
@@ -353,14 +352,7 @@ RefreshService.performRefresh()
     │     └──▶ 映射 SupplierResponse → 每实例 SlotViewData
     │              （一次响应中提取多个 MiniMax 维度）
     │
-    ├──▶ 对每个配额型实例，计算时间派生字段：
-    │     │
-    │     ├──▶ nextRefreshMinutes = refreshInterval - 上次刷新至今已过秒数 ÷ 60
-    │     │
-    │     └──▶ 按维度计算 cycleRemainingDays：
-    │           - 5 小时滚动窗口（如 MiniMax-M2.7）→ nil（滚动窗口无天概念）
-    │           - 每日配额型（如 speech-hd）→ 距今日 23:59:59 天数（即 0 或 1）
-    │           - 周累计型（current_weekly_total_count > 0 时）→ 距本周日 23:59:59 天数
+    ├──▶ 对每个配额型实例，解析响应时算出 `cycleRemainingSeconds`（基于 `<model>:end_time` 毫秒时间戳 - 当前时刻），注入到 `InstanceType.quota` 关联值，UI 层据此格式化为 `Xh Ym` / `Xm` / `Xd remaining`。字段缺失则该行隐藏
     │
     ├──▶ AppState.updateSlotData(slotViewDataList)
     │
@@ -511,8 +503,7 @@ struct SlotViewData {
 
     enum InstanceType {
         case quota(percent: Double, usageValue: String, limitValue: String,
-                   nextRefreshMinutes: Int,          // 距下次定时刷新的分钟数
-                   cycleRemainingDays: Int?)           // 自然天/周配额型的周期剩余天数；5h 滚动窗口为 nil
+                   cycleRemainingSeconds: Int?)   // 周期剩余秒数（基于 <model>:end_time 算出）；缺失则 UI 倒计时行隐藏
         case balance(amount: String, totalBalance: String, grantedBalance: String,
                    isAvailable: Bool, currency: String?)
     }

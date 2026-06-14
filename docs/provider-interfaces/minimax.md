@@ -117,7 +117,7 @@ Authorization: Bearer <apiKey>
 | `<model_name>:weekly_status` | `current_weekly_status` 原始值 | 判定 weekly `isUnlimited` |
 | `<model_name>:weekly_remaining` | weekly 剩余百分比 | 周窗口精度 |
 | `<model_name>:weekly_percent` | weekly 用量百分比 | 周窗口主显示 |
-| `<model_name>:end_time` | 5h 窗口 end_time 毫秒 | UI 倒计时 |
+| `<model_name>:end_time` | 5h 窗口 end_time 毫秒时间戳 | **字段依赖**:RefreshService 算成 `cycleRemainingSeconds` 注入 `InstanceType.quota`,UI 层 `UsageCardView.formatRemainingTime` 格式化为 `Xh Ym` / `Xm` / `Xd remaining`。字段缺失则倒计时行整行隐藏 |
 | `_model_names` | 逗号拼接的 model 列表 | `InstanceEditorView` 维度选择器 |
 
 **示例**（响应里有 `MiniMax-M2.7` 一条）：

@@ -80,6 +80,12 @@ struct UsagePanelView: View {
                 .disabled(appStateProxy.isRefreshing)
                 .buttonStyle(.borderless)
 
+                if !appStateProxy.isRefreshing {
+                    Text("Next refresh: ≈ \(nextRefreshMinutes)m")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+
                 Spacer()
 
                 Button {
@@ -99,6 +105,20 @@ struct UsagePanelView: View {
         }
         .frame(width: 300)
         .ignoresSafeArea(edges: .top)
+    }
+
+    /// Minutes until the next automatic refresh cycle. All cards share
+    /// the same global refresh interval, so this is computed once at
+    /// the panel level rather than per-card. Falls back to the full
+    /// interval if no refresh has happened yet.
+    private var nextRefreshMinutes: Int {
+        let intervalMinutes = appStateProxy.globalSettings.refreshIntervalMinutes
+        guard let lastRefresh = appStateProxy.lastRefreshAt else {
+            return intervalMinutes
+        }
+        let elapsed = Date().timeIntervalSince(lastRefresh)
+        let remaining = TimeInterval(intervalMinutes * 60) - elapsed
+        return max(0, Int(remaining / 60))
     }
 }
 

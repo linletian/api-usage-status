@@ -37,13 +37,12 @@ struct UsageCardView: View {
 
             // Content
             switch slot.instanceType {
-            case .quota(let percent, let usageValue, let limitValue, let nextMinutes, let cycleDays):
+            case .quota(let percent, let usageValue, let limitValue, let cycleRemainingSeconds):
                 quotaContent(
                     percent: percent,
                     usageValue: usageValue,
                     limitValue: limitValue,
-                    nextMinutes: nextMinutes,
-                    cycleDays: cycleDays
+                    cycleRemainingSeconds: cycleRemainingSeconds
                 )
             case .balance(let amount, let totalBalance, let grantedBalance, let isAvailable, let currency):
                 balanceContent(
@@ -110,8 +109,7 @@ struct UsageCardView: View {
         percent: Double,
         usageValue: String,
         limitValue: String,
-        nextMinutes: Int,
-        cycleDays: Int?
+        cycleRemainingSeconds: Int?
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             // All quota-type providers use text-above-bar to match the
@@ -120,21 +118,22 @@ struct UsageCardView: View {
             quotaSummaryRow(usageValue: usageValue, limitValue: limitValue, percent: percent)
             quotaProgressBar(percent: percent, height: 4)
 
-            // Weekly progress bar
-            if let weekly = slot.weekly {
-                weeklySection(weekly: weekly)
-            }
-
+            // Countdown row: "Xh Ym remaining" (until the quota window
+            // resets) on the right. The "Next refresh" countdown is a
+            // global value shared by all cards, so it's displayed once
+            // at the bottom of the panel next to the Refresh button.
             HStack {
-                Text("Next refresh: ≈ \(nextMinutes)m")
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary)
                 Spacer()
-                if let days = cycleDays, days > 0 {
-                    Text("\(days)d remaining")
+                if let remaining = formatRemainingTime(cycleRemainingSeconds) {
+                    Text(remaining)
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                 }
+            }
+
+            // Weekly section starts on its own line below the countdown row.
+            if let weekly = slot.weekly {
+                weeklySection(weekly: weekly)
             }
         }
     }
@@ -184,13 +183,43 @@ struct UsageCardView: View {
 
     // MARK: - Quota subviews
 
+    private func quotaSummaryText(usageValue: String, limitValue: String) -> String {
+        // For percent-only providers (no denominator), the left side just
+        // shows the window label — the percent is already on the right,
+        // so duplicating it on the left would be redundant.
+        if limitValue.isEmpty {
+            return quotaWindowLabel
+        }
+        var parts: [String] = []
+        if !quotaWindowLabel.isEmpty { parts.append(quotaWindowLabel) }
+        parts.append("\(usageValue) / \(limitValue)")
+        if !quotaUnitLabel.isEmpty { parts.append(quotaUnitLabel) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Format cycle remaining seconds into a human-readable string.
+    /// Returns nil if the value is 0 or negative (no point showing).
+    private func formatRemainingTime(_ seconds: Int?) -> String? {
+        guard let seconds, seconds > 0 else { return nil }
+        if seconds >= 86_400 {
+            let days = seconds / 86_400
+            return "\(days)d remaining"
+        } else if seconds >= 3_600 {
+            let hours = seconds / 3_600
+            let minutes = (seconds % 3_600) / 60
+            return "\(hours)h \(minutes)m remaining"
+        } else {
+            // Sub-minute values are rounded up to "1m" so the countdown
+            // doesn't flicker between "0m" and "1m" near window close.
+            let minutes = max(1, seconds / 60)
+            return "\(minutes)m remaining"
+        }
+    }
+
     @ViewBuilder
     private func quotaSummaryRow(usageValue: String, limitValue: String, percent: Double) -> some View {
         HStack(spacing: 4) {
-            let summary = [quotaWindowLabel, "\(usageValue) / \(limitValue)", quotaUnitLabel]
-                .filter { !$0.isEmpty }
-                .joined(separator: " · ")
-            Text(summary)
+            Text(quotaSummaryText(usageValue: usageValue, limitValue: limitValue))
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundColor(.secondary)
             Spacer()

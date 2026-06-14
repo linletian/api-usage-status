@@ -78,7 +78,7 @@ final class NotificationManager: NSObject {
             guard instance.enabled else { continue }
 
             switch slot.instanceType {
-            case .quota(let percent, _, _, _, _):
+            case .quota(let percent, _, _, _):
                 evaluateQuota(instance: instance, percent: percent)
             case .balance(let amount, _, _, let isAvailable, _):
                 evaluateBalance(instance: instance, amount: amount, isAvailable: isAvailable)

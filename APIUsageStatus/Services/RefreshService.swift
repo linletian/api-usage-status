@@ -250,37 +250,10 @@ actor RefreshService {
             }
         }
 
-        // 5. Update time-derived fields for quota-type instances
-        for (index, slot) in allSlotData.enumerated() {
-            if case .quota(let percent, let usageValue, let limitValue, _, let days) = slot.instanceType {
-                let nextRefreshMinutes = calculateNextRefreshMinutes()
-                let updatedType = InstanceType.quota(
-                    percent: percent,
-                    usageValue: usageValue,
-                    limitValue: limitValue,
-                    nextRefreshMinutes: nextRefreshMinutes,
-                    cycleRemainingDays: days
-                )
-                allSlotData[index] = SlotViewData(
-                    uuid: slot.uuid,
-                    displayName: slot.displayName,
-                    shortName: slot.shortName,
-                    instanceType: updatedType,
-                    sortOrder: slot.sortOrder,
-                    colorState: slot.colorState,
-                    provider: slot.provider,
-                    todayUsage: slot.todayUsage,
-                    dailyAverages: slot.dailyAverages,
-                    weekly: slot.weekly,
-                    weeklyDebug: slot.weeklyDebug
-                )
-            }
-        }
-
         // Sort by sortOrder
         allSlotData.sort { $0.sortOrder < $1.sortOrder }
 
-        // 6. Evaluate thresholds and send notifications
+        // 5. Evaluate thresholds and send notifications
         let globalSettings = await appState.getGlobalSettings()
         await notificationManager?.evaluateThresholds(
             instances: await appState.getInstances(),
@@ -288,7 +261,7 @@ actor RefreshService {
             settings: globalSettings
         )
 
-        // 7. Update AppState
+        // 6. Update AppState
         await appState.updateSlotData(allSlotData)
         await appState.setErrorSummaries(errorSummaries)
         await appState.setRefreshState(.idle)
@@ -319,21 +292,25 @@ actor RefreshService {
             let valueString = response.value(forDimension: dim) ?? "0"
             let percent = parsePercent(from: valueString)
 
-            // Compute cycle remaining days from interval end_time (ms timestamp)
-            let cycleRemainingDays: Int? = {
+            // Compute cycle remaining seconds from interval end_time (ms timestamp).
+            // The view layer formats this as "Xd" / "Xh Ym" / "Xm" based on magnitude.
+            let cycleRemainingSeconds: Int? = {
                 if let ets = response.value(forDimension: "\(dim):end_time"),
                    let endTimeMs = Int64(ets), endTimeMs > 0 {
                     let endDate = Date(timeIntervalSince1970: TimeInterval(endTimeMs) / 1000.0)
                     let remaining = endDate.timeIntervalSinceNow
-                    let days = Int(ceil(remaining / 86400.0))
-                    return max(0, days)
+                    return max(0, Int(remaining))
                 }
                 return nil
             }()
 
-            // Provider-specific display values. By default we surface the
-            // percent directly (e.g. "72.0 / 100"). Copilot stores absolute
-            // credit counts, so the panel shows used/total credits instead.
+            // Provider-specific display values. Copilot stores absolute
+            // credit counts, so the panel shows used/total credits. Other
+            // quota providers (MiniMax) only expose a percent from the API
+            // — we pass an empty `displayLimit` so the view renders just
+            // "<value>%" instead of "<value> / 100" (the "/ 100" is a
+            // meaningless constant since the API doesn't expose a real
+            // denominator for these providers).
             let displayUsage: String
             let displayLimit: String
             if instance.provider == Provider.githubCopilot.rawValue {
@@ -350,15 +327,14 @@ actor RefreshService {
                 }
             } else {
                 displayUsage = valueString
-                displayLimit = "100"
+                displayLimit = ""
             }
 
             instanceType = .quota(
                 percent: percent,
                 usageValue: displayUsage,
                 limitValue: displayLimit,
-                nextRefreshMinutes: calculateNextRefreshMinutes(),
-                cycleRemainingDays: cycleRemainingDays
+                cycleRemainingSeconds: cycleRemainingSeconds
             )
 
             colorState = determineColorState(percent: percent, thresholds: instance.thresholds)
@@ -417,15 +393,6 @@ actor RefreshService {
         // Handle formats like "85", "85.5", "85.5%"
         let cleaned = value.replacingOccurrences(of: "%", with: "").trimmed
         return Double(cleaned) ?? 0.0
-    }
-
-    private func calculateNextRefreshMinutes() -> Int {
-        guard let lastRefresh = lastRefreshAt else {
-            return Int(refreshInterval / 60)
-        }
-        let elapsed = Date().timeIntervalSince(lastRefresh)
-        let remaining = refreshInterval - elapsed
-        return max(0, Int(remaining / 60))
     }
 
     private func determineColorState(percent: Double, thresholds: Thresholds) -> ColorState {

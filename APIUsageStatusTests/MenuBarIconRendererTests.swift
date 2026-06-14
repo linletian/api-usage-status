@@ -113,7 +113,7 @@ final class MenuBarIconRendererTests: XCTestCase {
             uuid: "quota-safe",
             displayName: "MiniMax Text",
             shortName: "MX",
-            instanceType: .quota(percent: 45, usageValue: "450", limitValue: "1000", nextRefreshMinutes: 3, cycleRemainingDays: 5),
+            instanceType: .quota(percent: 45, usageValue: "450", limitValue: "1000", cycleRemainingSeconds: 5 * 86400),
             sortOrder: 0,
             colorState: .normal,
             provider: Provider.minimax.rawValue
@@ -135,7 +135,7 @@ final class MenuBarIconRendererTests: XCTestCase {
             uuid: "quota-warning",
             displayName: "MiniMax Speech",
             shortName: "SP",
-            instanceType: .quota(percent: 75, usageValue: "750", limitValue: "1000", nextRefreshMinutes: 3, cycleRemainingDays: nil),
+            instanceType: .quota(percent: 75, usageValue: "750", limitValue: "1000", cycleRemainingSeconds: nil),
             sortOrder: 0,
             colorState: .warning,
             provider: Provider.minimax.rawValue
@@ -179,7 +179,7 @@ final class MenuBarIconRendererTests: XCTestCase {
             uuid: "quota-critical",
             displayName: "MiniMax",
             shortName: "MX",
-            instanceType: .quota(percent: 96, usageValue: "960", limitValue: "1000", nextRefreshMinutes: 1, cycleRemainingDays: 2),
+            instanceType: .quota(percent: 96, usageValue: "960", limitValue: "1000", cycleRemainingSeconds: 2 * 86400),
             sortOrder: 0,
             colorState: .critical,
             provider: Provider.minimax.rawValue
@@ -235,7 +235,7 @@ final class MenuBarIconRendererTests: XCTestCase {
             uuid: "slot-a",
             displayName: "A",
             shortName: "AA",
-            instanceType: .quota(percent: 10, usageValue: "10", limitValue: "100", nextRefreshMinutes: 5, cycleRemainingDays: nil),
+            instanceType: .quota(percent: 10, usageValue: "10", limitValue: "100", cycleRemainingSeconds: nil),
             sortOrder: 0,
             colorState: .normal,
             provider: Provider.minimax.rawValue
@@ -244,7 +244,7 @@ final class MenuBarIconRendererTests: XCTestCase {
             uuid: "slot-b",
             displayName: "B",
             shortName: "BB",
-            instanceType: .quota(percent: 20, usageValue: "20", limitValue: "100", nextRefreshMinutes: 5, cycleRemainingDays: nil),
+            instanceType: .quota(percent: 20, usageValue: "20", limitValue: "100", cycleRemainingSeconds: nil),
             sortOrder: 1,
             colorState: .normal,
             provider: Provider.minimax.rawValue
@@ -253,7 +253,7 @@ final class MenuBarIconRendererTests: XCTestCase {
             uuid: "slot-c",
             displayName: "C",
             shortName: "CC",
-            instanceType: .quota(percent: 30, usageValue: "30", limitValue: "100", nextRefreshMinutes: 5, cycleRemainingDays: nil),
+            instanceType: .quota(percent: 30, usageValue: "30", limitValue: "100", cycleRemainingSeconds: nil),
             sortOrder: 2,
             colorState: .normal,
             provider: Provider.minimax.rawValue
@@ -285,7 +285,7 @@ final class MenuBarIconRendererTests: XCTestCase {
             uuid: "flashing-slot",
             displayName: "MiniMax",
             shortName: "MX",
-            instanceType: .quota(percent: 98, usageValue: "980", limitValue: "1000", nextRefreshMinutes: 1, cycleRemainingDays: 1),
+            instanceType: .quota(percent: 98, usageValue: "980", limitValue: "1000", cycleRemainingSeconds: 86400),
             sortOrder: 0,
             colorState: .critical,
             provider: Provider.minimax.rawValue

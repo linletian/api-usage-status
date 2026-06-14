@@ -19,8 +19,7 @@ enum InstanceType: Equatable {
         percent: Double,
         usageValue: String,
         limitValue: String,
-        nextRefreshMinutes: Int,
-        cycleRemainingDays: Int?
+        cycleRemainingSeconds: Int?
     )
     case balance(
         amount: String,            // topped_up_balance (primary display amount)

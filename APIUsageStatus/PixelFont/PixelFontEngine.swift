@@ -189,7 +189,7 @@ enum PixelFontEngine {
         cursorX += PixelFontEngine.elementGap
 
         switch data.instanceType {
-        case .quota(let percent, _, _, _, _):
+        case .quota(let percent, _, _, _):
             // Progress bar (14×4 pt), vertically centred in 22 pt slot
             let barY = origin.y + (PixelFontEngine.slotHeight - 4) / 2
             renderProgressBar(

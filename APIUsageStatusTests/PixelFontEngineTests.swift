@@ -207,7 +207,7 @@ final class PixelFontEngineTests: XCTestCase {
             uuid: "test-quota",
             displayName: "Test",
             shortName: "MX",
-            instanceType: .quota(percent: 82, usageValue: "820", limitValue: "1000", nextRefreshMinutes: 3, cycleRemainingDays: 5),
+            instanceType: .quota(percent: 82, usageValue: "820", limitValue: "1000", cycleRemainingSeconds: 5 * 86400),
             sortOrder: 0,
             colorState: .normal,
             provider: Provider.minimax.rawValue

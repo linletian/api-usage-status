@@ -50,11 +50,14 @@ final class ShellProcessRunnerTests: XCTestCase {
         do {
             _ = try await runner.run(cmd)
             XCTFail("expected timeout")
+        } catch let error as ShellError {
+            if case .timedOut(let seconds) = error {
+                XCTAssertEqual(seconds, 0.5)
+            } else {
+                XCTFail("expected timedOut, got \(error)")
+            }
         } catch {
-            // Process gets terminated; on macOS the child of a terminated
-            // sleep exits with a non-zero status (SIGTERM). Either timedOut
-            // or nonZeroExit is acceptable — we just want the runner to
-            // surface the failure rather than hang.
+            XCTFail("expected ShellError, got \(error)")
         }
     }
 }

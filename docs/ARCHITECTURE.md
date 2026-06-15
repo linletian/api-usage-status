@@ -452,7 +452,7 @@ struct Instance: Codable, Identifiable {
     var provider: String        // "minimax" | "deepseek"
     var dimension: String       // MiniMax: model_name 值（如 "MiniMax-M2.7"、"speech-hd"）；DeepSeek: "balance"
     var displayName: String     // 用户自定义，如「MiniMax-文字」
-    var shortName: String       // 2 个大写字母，用于菜单栏
+    var shortName: String       // 2-3 个大写字母，用于菜单栏
     var apiKeyRef: String       // 引用 Keychain 条目；同 Key 的实例共享
     var enabled: Bool
     var sortOrder: Int
@@ -491,7 +491,7 @@ enum ColorMode: String, Codable {
 struct SlotViewData {
     let uuid: String
     let displayName: String
-    let shortName: String           // 2 字母
+    let shortName: String           // 2-3 字母
     let instanceType: InstanceType
     let sortOrder: Int
     let colorState: ColorState

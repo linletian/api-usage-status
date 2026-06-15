@@ -89,10 +89,20 @@ struct UsageCardView: View {
 
     // MARK: - Quota Content
 
+    /// Per-window label, e.g. "5h" / "Weekly" / "Monthly". Single-window
+    /// providers (Copilot, MiniMax) hardcode their label; OpenCode picks
+    /// from three window names based on `slot.dimension`.
     private var quotaWindowLabel: String {
         switch slot.provider {
         case Provider.githubCopilot.rawValue: return "Monthly"
         case Provider.minimax.rawValue: return "5h"
+        case Provider.opencode.rawValue:
+            switch slot.dimension {
+            case "5h":     return "5h"
+            case "weekly": return "Weekly"
+            case "monthly": return "Monthly"
+            default:       return ""
+            }
         default: return ""
         }
     }
@@ -100,6 +110,7 @@ struct UsageCardView: View {
     private var quotaUnitLabel: String {
         switch slot.provider {
         case Provider.githubCopilot.rawValue: return "credits"
+        case Provider.opencode.rawValue: return "USD"
         default: return ""
         }
     }

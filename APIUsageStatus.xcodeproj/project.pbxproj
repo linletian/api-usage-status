@@ -56,6 +56,14 @@
 		EB5E4F70DF41FB5B94DD3028 /* SettingsWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE8D076FD5C5C0A09162678 /* SettingsWindow.swift */; };
 		ECED5E163AB280EACF479DCD /* SupplierResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 505B0572B80E384A6A32A1F5 /* SupplierResponse.swift */; };
 		EE3159A84E5512117B81870D /* SlotViewData.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1C0764D7DF1B841E40D805B /* SlotViewData.swift */; };
+		8B1B2C3D4E5F6001A1B2C3D4 /* ShellCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1B2C3D4E5F6001A1B2C3D4 /* ShellCommand.swift */; };
+		8B1B2C3D4E5F6002A1B2C3D5 /* ShellError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1B2C3D4E5F6002A1B2C3D5 /* ShellError.swift */; };
+		8B1B2C3D4E5F6003A1B2C3D6 /* ShellProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1B2C3D4E5F6003A1B2C3D6 /* ShellProcessRunner.swift */; };
+		8B1B2C3D4E5F6004A1B2C3D7 /* ShellProcessRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1B2C3D4E5F6004A1B2C3D7 /* ShellProcessRunnerTests.swift */; };
+		8B1B2C3D4E5F6013A1B2C3D3 /* OpenCodeResponseParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1B2C3D4E5F6013A1B2C3D3 /* OpenCodeResponseParserTests.swift */; };
+		8B1B2C3D4E5F6010A1B2C3D0 /* OpenCodeGoLimits.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1B2C3D4E5F6010A1B2C3D0 /* OpenCodeGoLimits.swift */; };
+		8B1B2C3D4E5F6011A1B2C3D1 /* OpenCodeResponseParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1B2C3D4E5F6011A1B2C3D1 /* OpenCodeResponseParser.swift */; };
+		8B1B2C3D4E5F6012A1B2C3D2 /* OpenCodeSupplier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1B2C3D4E5F6012A1B2C3D2 /* OpenCodeSupplier.swift */; };
 		F1DABF702F62874847249FD5 /* MiniMaxSupplier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 433FA8715F2BFF9C522388D1 /* MiniMaxSupplier.swift */; };
 		F3AC5A1D826E691922F7792F /* FileManager+Atomic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57ED6FC692ACB2E79DD25E34 /* FileManager+Atomic.swift */; };
 		F5E0A4C29EE9AA1690A55B29 /* PixelFontEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2974C22DB75903B0A00C506 /* PixelFontEngine.swift */; };
@@ -129,6 +137,14 @@
 		E3F2ECA6B9F97C70C33383A8 /* RefreshState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshState.swift; sourceTree = "<group>"; };
 		E5A3B76ED15429C57FF92148 /* UsageCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageCardView.swift; sourceTree = "<group>"; };
 		F1C0764D7DF1B841E40D805B /* SlotViewData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlotViewData.swift; sourceTree = "<group>"; };
+		7A1B2C3D4E5F6001A1B2C3D4 /* ShellCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellCommand.swift; sourceTree = "<group>"; };
+		7A1B2C3D4E5F6002A1B2C3D5 /* ShellError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellError.swift; sourceTree = "<group>"; };
+		7A1B2C3D4E5F6003A1B2C3D6 /* ShellProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellProcessRunner.swift; sourceTree = "<group>"; };
+		7A1B2C3D4E5F6004A1B2C3D7 /* ShellProcessRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellProcessRunnerTests.swift; sourceTree = "<group>"; };
+		7A1B2C3D4E5F6013A1B2C3D3 /* OpenCodeResponseParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeResponseParserTests.swift; sourceTree = "<group>"; };
+		7A1B2C3D4E5F6010A1B2C3D0 /* OpenCodeGoLimits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeGoLimits.swift; sourceTree = "<group>"; };
+		7A1B2C3D4E5F6011A1B2C3D1 /* OpenCodeResponseParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeResponseParser.swift; sourceTree = "<group>"; };
+		7A1B2C3D4E5F6012A1B2C3D2 /* OpenCodeSupplier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeSupplier.swift; sourceTree = "<group>"; };
 		F2974C22DB75903B0A00C506 /* PixelFontEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelFontEngine.swift; sourceTree = "<group>"; };
 		F2DBDA65D6BD3694508CB40E /* CharMapDigits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CharMapDigits.swift; sourceTree = "<group>"; };
 		F5CFD56AEC8BF420DCA4361A /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
@@ -219,10 +235,23 @@
 				16CA73AE724FE3F2A1E292D0 /* DeepSeekSupplier.swift */,
 				20CC79379A5CEC0A1BFCC6E2 /* MiniMaxResponseParser.swift */,
 				433FA8715F2BFF9C522388D1 /* MiniMaxSupplier.swift */,
+				7A1B2C3D4E5F6010A1B2C3D0 /* OpenCodeGoLimits.swift */,
+				7A1B2C3D4E5F6011A1B2C3D1 /* OpenCodeResponseParser.swift */,
+				7A1B2C3D4E5F6012A1B2C3D2 /* OpenCodeSupplier.swift */,
 				41ADBBBDA1659A6F00F29A4E /* Supplier.swift */,
 				73A7A208048CE06C739A89AF /* SupplierRegistry.swift */,
 			);
 			path = Suppliers;
+			sourceTree = "<group>";
+		};
+		7A1B2C3D4E5F6000A1B2C3D8 /* Shell */ = {
+			isa = PBXGroup;
+			children = (
+				7A1B2C3D4E5F6001A1B2C3D4 /* ShellCommand.swift */,
+				7A1B2C3D4E5F6002A1B2C3D5 /* ShellError.swift */,
+				7A1B2C3D4E5F6003A1B2C3D6 /* ShellProcessRunner.swift */,
+			);
+			path = Shell;
 			sourceTree = "<group>";
 		};
 		94FD9C3A7740DFB60DB395D4 /* Models */ = {
@@ -260,6 +289,8 @@
 				FC5D83D4218C5C4635B415E8 /* MiniMaxResponseParserTests.swift */,
 				BE990C87099D3307658BA5DF /* PixelFontEngineTests.swift */,
 				D8510DAC180E0828A2BA5214 /* RetryPolicyTests.swift */,
+				7A1B2C3D4E5F6004A1B2C3D7 /* ShellProcessRunnerTests.swift */,
+				7A1B2C3D4E5F6013A1B2C3D3 /* OpenCodeResponseParserTests.swift */,
 			);
 			path = APIUsageStatusTests;
 			sourceTree = "<group>";
@@ -276,6 +307,7 @@
 				09DDF017E9F5B07377F98A1E /* PixelFont */,
 				778552EF2583674797F6D5EB /* Resources */,
 				E9996B7EA3FBBE0C05F53B52 /* Services */,
+				7A1B2C3D4E5F6000A1B2C3D8 /* Shell */,
 				8B2F37398395345612597289 /* Suppliers */,
 				3066D60C63FA4E76345DB9A9 /* Utilities */,
 				CB40E94FF64029CAB58DDC5A /* Views */,
@@ -465,6 +497,9 @@
 				BC9D2ACC5F5BC054E0E50320 /* MenuBarIconRenderer.swift in Sources */,
 				C5D25734AD3B2C8F77B4BC2F /* MiniMaxResponseParser.swift in Sources */,
 				F1DABF702F62874847249FD5 /* MiniMaxSupplier.swift in Sources */,
+				8B1B2C3D4E5F6010A1B2C3D0 /* OpenCodeGoLimits.swift in Sources */,
+				8B1B2C3D4E5F6011A1B2C3D1 /* OpenCodeResponseParser.swift in Sources */,
+				8B1B2C3D4E5F6012A1B2C3D2 /* OpenCodeSupplier.swift in Sources */,
 				4E1FB678BAF07C9F48F2B804 /* NetworkClient.swift in Sources */,
 				D39926FD9D46E664FA6CC79C /* NotificationManager.swift in Sources */,
 				20756AFFFD3B48846BC11690 /* PersistenceService.swift in Sources */,
@@ -476,6 +511,9 @@
 				2D324F8A84CE5CF007DB2774 /* SettingsViewModel.swift in Sources */,
 				EB5E4F70DF41FB5B94DD3028 /* SettingsWindow.swift in Sources */,
 				EE3159A84E5512117B81870D /* SlotViewData.swift in Sources */,
+				8B1B2C3D4E5F6001A1B2C3D4 /* ShellCommand.swift in Sources */,
+				8B1B2C3D4E5F6002A1B2C3D5 /* ShellError.swift in Sources */,
+				8B1B2C3D4E5F6003A1B2C3D6 /* ShellProcessRunner.swift in Sources */,
 				921E198F0C80D5FDE2870F46 /* String+Extensions.swift in Sources */,
 				ADC77A3D21636C112284A744 /* Supplier.swift in Sources */,
 				5E2A208690912C14DF6AC33B /* SupplierRegistry.swift in Sources */,
@@ -497,6 +535,8 @@
 				C9DB590820DD74C7B9923EAB /* MenuBarIconRendererTests.swift in Sources */,
 				2B1CC113637594900496DAD2 /* MiniMaxResponseParserTests.swift in Sources */,
 				17EAB28C7F6AD40431966A2A /* PixelFontEngineTests.swift in Sources */,
+				8B1B2C3D4E5F6004A1B2C3D7 /* ShellProcessRunnerTests.swift in Sources */,
+				8B1B2C3D4E5F6013A1B2C3D3 /* OpenCodeResponseParserTests.swift in Sources */,
 				528719C0D8315CA09E28868F /* RetryPolicyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

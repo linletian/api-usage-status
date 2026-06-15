@@ -14,6 +14,8 @@ enum SupplierRegistry {
             return DeepSeekSupplier()
         case .githubCopilot:
             return CopilotSupplier()
+        case .opencode:
+            return OpenCodeSupplier()
         }
     }
 

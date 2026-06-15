@@ -85,13 +85,23 @@ struct InstanceEditorView: View {
 
                     TextField("Display Name", text: $displayName)
 
-                    TextField("Short Name (2 uppercase letters, e.g. MX)", text: $shortName)
+                    TextField("Short Name (2-3 uppercase letters/digits, e.g. MX or OC5)", text: $shortName)
                         .onChange(of: shortName) { _ in
-                            shortName = String(shortName.prefix(2)).uppercased()
+                            shortName = String(shortName.prefix(3)).uppercased()
                             validationError = nil
                         }
 
-                    SecureInput(text: $apiKey, placeholder: apiKeyPlaceholder)
+                    if provider == .opencode {
+                        // OpenCode Go reads from a local SQLite database via the `opencode` CLI,
+                        // so no API key is required. Show an explanatory note in place of
+                        // the SecureInput field to make the no-key behavior discoverable.
+                        Text("Requires the `opencode` CLI to be installed locally and authenticated with OpenCode Go. The supplier reads usage data from the local OpenCode SQLite database — no remote API key is required.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        SecureInput(text: $apiKey, placeholder: apiKeyPlaceholder)
+                    }
 
                     if isBalanceType {
                         Picker("Currency", selection: $currency) {
@@ -166,6 +176,8 @@ struct InstanceEditorView: View {
             return ["balance"]
         case .githubCopilot:
             return ["premium_interactions"]
+        case .opencode:
+            return ["5h", "weekly", "monthly"]
         case .minimax:
             return []
         }
@@ -179,11 +191,12 @@ struct InstanceEditorView: View {
         switch provider {
         case .githubCopilot: return "GitHub PAT (classic, needs copilot scope)"
         case .deepseek, .minimax: return "API Key"
+        case .opencode: return "(no API key — uses local opencode CLI)"
         }
     }
 
     private var isFormFilled: Bool {
-        !shortName.isEmpty && shortName.count == 2
+        !shortName.isEmpty && shortName.count >= 2 && shortName.count <= 3
     }
 
     private func dimensionDisplayName(_ dim: String) -> String {
@@ -221,13 +234,26 @@ struct InstanceEditorView: View {
     }
 
     private func makeInstance() -> Instance {
-        Instance(
+        // OpenCode instances share one fixed apiKeyRef (the placeholder
+        // stored in KeychainService). Three separate Instances (5h / weekly
+        // / monthly) point to the same ref so RefreshService de-dupes
+        // their fetch into a single CLI call.
+        let apiKeyRef: String
+        if let existing = existingInstance {
+            apiKeyRef = existing.apiKeyRef
+        } else if provider == .opencode {
+            apiKeyRef = KeychainService.openCodePlaceholderRef
+        } else {
+            apiKeyRef = UUID().uuidString
+        }
+
+        return Instance(
             uuid: existingInstance?.uuid ?? UUID().uuidString,
             provider: provider.rawValue,
             dimension: dimension,
             displayName: displayName,
             shortName: shortName,
-            apiKeyRef: existingInstance?.apiKeyRef ?? UUID().uuidString,
+            apiKeyRef: apiKeyRef,
             enabled: existingInstance?.enabled ?? true,
             sortOrder: existingInstance?.sortOrder ?? 0,
             currency: isBalanceType ? currency : nil,
@@ -237,7 +263,7 @@ struct InstanceEditorView: View {
 
     private func validate() -> Bool {
         guard shortName.isValidShortName else {
-            validationError = "Short name must be exactly 2 uppercase letters (e.g. MX)"
+            validationError = "Short name must be 2 or 3 uppercase letters or digits (e.g. MX or OC5)"
             return false
         }
 

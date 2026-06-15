@@ -12,17 +12,18 @@ A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek
 - **Weekly Quota Display** — MiniMax instance card shows a weekly window progress bar at the bottom; unlimited plans display a cyan-blue flowing glow bar animation
 - **Threshold Alerts** — quota percentages or balance amounts trigger macOS system notifications; click the notification to view details
 - **Balance Tracking** — records historical snapshots, displays daily averages by week / month / last 7 days / last 30 days
-- **Zero External Dependencies** — only uses system frameworks like AppKit, SwiftUI, Security
+- **Zero External Dependencies** — only uses system frameworks like AppKit, SwiftUI, Security. OpenCode Go provider requires the `opencode` CLI to be installed locally.
 
 <img src="docs/README_assets/ScreenShot.png" alt="Usage Panel Screenshot" style="max-width: 100%;">
 
 ### Supported Providers
 
-| Provider | Monitoring Dimension | API Endpoint |
+| Provider | Monitoring Dimension | Data Source |
 |----------|---------------------|--------------|
 | MiniMax | Remaining percentage of the 5h window and weekly window for each `model_name` (e.g. `general` text, `video` non-text) | `www.minimaxi.com/v1/token_plan/remains` |
 | DeepSeek | Topped-up amount, gifted amount, total balance, currency unit | `api.deepseek.com/user/balance` |
 | GitHub Copilot | Monthly `premium_interactions` remaining percentage (Free / Pro / Pro+ / Business / Enterprise) | `api.github.com/copilot_internal/user` |
+| OpenCode Go | Dollar usage of the 5h / weekly / monthly windows ($12 / $30 / $60 limits) | Local SQLite via `opencode db` CLI |
 
 ### Authentication
 
@@ -44,6 +45,8 @@ Each provider has a different authentication model. All credentials are stored i
   Caveats:
   - The GitHub account owning the token must have an active Copilot subscription (Free / Pro / Pro+ / Business / Enterprise all work).
   - You can revoke the token at any time at https://github.com/settings/tokens.
+
+- **OpenCode Go** — No API key required. The supplier shells out to the local `opencode` CLI (must be installed at `~/.opencode/bin/opencode`, `/usr/local/bin/opencode`, or `/opt/homebrew/bin/opencode`) and reads the usage data directly from the OpenCode SQLite database (`~/.local/share/opencode/opencode.db`). See `docs/provider-interfaces/opencode_go.md` for details.
 
 ## System Requirements
 
@@ -116,6 +119,8 @@ Or press Cmd+U in Xcode.
 | WeeklyQuotaTests | 10 | Weekly field parsing, `isUnlimited` judgment, missing field fallback |
 | FlowingGlowBarTests | 5 | Glow bar phase, width, geometry constraints |
 | MenuBarIconRendererTests | 11 | Snapshot comparison tests for all icon states |
+| OpenCodeResponseParserTests | 6 | Real fixture parsing, window algorithm tests, makeResponse shape |
+| ShellProcessRunnerTests | 4 | Success, executable-not-found, non-zero exit, timeout |
 | ~~PixelFontEngineTests~~ | ~~58~~ | ~~(Deprecated) Original pixel font engine tests; code is commented out and does not run~~ |
 
 ## Deploy to /Applications
@@ -142,8 +147,9 @@ APIUsageStatus/
 ├── AppState/                      # Runtime state Actor + @MainActor proxy
 ├── Models/                        # Data models (instance/balance/threshold/global settings)
 ├── Services/                      # Core services (Keychain/persistence/refresh/notification/launch at login)
+├── Shell/                         # Shell process execution (used by OpenCode Go supplier)
 ├── Network/                       # HTTP client + retry policy
-├── Suppliers/                     # Provider protocol + MiniMax / DeepSeek implementations
+├── Suppliers/                     # Provider protocol + MiniMax / DeepSeek / Copilot / OpenCode implementations
 ├── Balance/                       # Balance calculator + history snapshots
 ├── PixelFont/                     # ⚠️ Deprecated: original pixel font engine (code commented out)
 ├── Extensions/                    # Date/Decimal/String extensions
@@ -158,13 +164,18 @@ APIUsageStatusTests/
 ├── WeeklyQuotaTests.swift
 ├── FlowingGlowBarTests.swift
 ├── MenuBarIconRendererTests.swift
+├── OpenCodeResponseParserTests.swift
+├── ShellProcessRunnerTests.swift
 ├── ~~PixelFontEngineTests.swift~~  # Deprecated (code commented out)
 └── ReferenceImages/               # Snapshot test golden images
 ```
 
 ## Security & Privacy
 
-- **App Sandbox** — all file I/O is restricted to the sandbox container
+- **⚠️ App Sandbox** — **Disabled** so that the OpenCode Go supplier can run `opencode db` via `Process.run()` to read the local SQLite database. This is the only way to query OpenCode Go usage (there is no public REST API). The trade-off:
+  - **What's gained**: OpenCode Go real-time usage monitoring (5h / weekly / monthly windows) directly from local data — no need to wait for an official API.
+  - **What's lost**: macOS App Sandbox protections. The app can now theoretically access any file the current user can access, and spawn child processes. In practice, this project is self-compiled and self-used — it only talks to known HTTPS API endpoints and spawns only the `opencode` CLI; it never processes untrusted user input. The actual attack surface increase is negligible for personal use. See `docs/provider-interfaces/opencode_go.md` for details.
+  - **If you don't use OpenCode Go**: the only code path that requires sandbox-disabled is `ShellProcessRunner` (invoked solely by `OpenCodeSupplier`). The MiniMax / DeepSeek / Copilot suppliers work identically with or without sandbox.
 - **API Key** — stored in Keychain (InternetPassword type), never written to disk in plain text
 - **Network** — only HTTPS access to provider APIs, no user data transmitted
 - **Logging** — os.Logger, sensitive information automatically masked in production

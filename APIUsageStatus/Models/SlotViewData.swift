@@ -95,6 +95,10 @@ struct SlotViewData: Identifiable, Equatable {
     let sortOrder: Int
     let colorState: ColorState
     let provider: String
+    /// The dimension string from the source `Instance` (e.g. "5h", "weekly",
+    /// "monthly" for OpenCode; "premium_interactions" for Copilot). The UI
+    /// layer reads this to pick the right per-window label.
+    let dimension: String
 
     var id: String { uuid }
 
@@ -118,6 +122,7 @@ struct SlotViewData: Identifiable, Equatable {
         sortOrder: Int,
         colorState: ColorState,
         provider: String,
+        dimension: String,
         todayUsage: String? = nil,
         dailyAverages: [AvgDailyPeriod: Decimal]? = nil,
         weekly: WeeklyQuota? = nil,
@@ -130,6 +135,7 @@ struct SlotViewData: Identifiable, Equatable {
         self.sortOrder = sortOrder
         self.colorState = colorState
         self.provider = provider
+        self.dimension = dimension
         self.todayUsage = todayUsage
         self.dailyAverages = dailyAverages
         self.weekly = weekly

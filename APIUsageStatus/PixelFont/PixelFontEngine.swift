@@ -180,8 +180,8 @@ enum PixelFontEngine {
     ) -> CGFloat {
         var cursorX = origin.x
 
-        // Short name (always 2 letters, 5×7)
-        let shortName = data.shortName.uppercased().prefix(2)
+        // Short name (2-3 letters, 5×7)
+        let shortName = data.shortName.uppercased().prefix(3)
         let nameText = String(shortName)
         let nameWidth = textWidth(nameText, scale: scale)
         _ = renderText(nameText, at: CGPoint(x: cursorX, y: origin.y), color: color, scale: scale, in: context)

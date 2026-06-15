@@ -82,7 +82,7 @@ final class SettingsViewModel: ObservableObject {
         // Validate all instances
         for instance in instances {
             if !instance.shortName.isValidShortName {
-                saveError = "Short name for \"\(instance.displayName)\" must be 2 uppercase letters"
+                saveError = "Short name for \"\(instance.displayName)\" must be 2 or 3 uppercase letters or digits"
                 return false
             }
 

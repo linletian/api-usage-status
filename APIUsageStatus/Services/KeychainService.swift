@@ -145,4 +145,21 @@ actor KeychainService {
             throw KeychainError.unableToDelete
         }
     }
+
+    // MARK: - OpenCode Placeholder Key
+
+    /// Fixed `apiKeyRef` shared by all OpenCode Go instances. OpenCode has
+    /// no real API key, but `RefreshService` looks up the ref in Keychain
+    /// before calling `fetchUsage`. We store an empty string so the lookup
+    /// succeeds; `OpenCodeSupplier` ignores the value.
+    static let openCodePlaceholderRef = "local://opencode-go"
+
+    /// Ensure the OpenCode placeholder key exists in the keychain. Idempotent.
+    func ensureOpenCodePlaceholder() throws {
+        if retrieve(for: Self.openCodePlaceholderRef) != nil {
+            return
+        }
+        try store(key: "", for: Self.openCodePlaceholderRef)
+        logger.info("Inserted OpenCode placeholder key for ref: \(Self.openCodePlaceholderRef, privacy: .private)")
+    }
 }

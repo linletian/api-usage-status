@@ -12,17 +12,18 @@
 - **周配额展示** — MiniMax 实例卡片底部展示周窗口进度条；无限额计划用青蓝辉光条动画呈现
 - **阈值告警** — 配额百分比或余额金额触发 macOS 系统通知，点击通知查看详情
 - **余额追踪** — 记录历史快照，按周/月/近7天/近30天展示日均消耗
-- **零外部依赖** — 仅使用 AppKit、SwiftUI、Security 等系统框架
+- **零外部依赖** — 仅使用 AppKit、SwiftUI、Security 等系统框架。OpenCode Go 供应商需本地安装 `opencode` CLI
 
 <img src="docs/README_assets/ScreenShot.png" alt="用量面板截图" style="max-width: 100%;">
 
 ### 支持的供应商
 
-| 供应商 | 监控维度 | API 端点 |
+| 供应商 | 监控维度 | 数据来源 |
 |--------|---------|---------|
 | MiniMax | 每个 `model_name`（如 `general` 文本、`video` 非文本）的 5h 窗口与周窗口剩余百分比 | `www.minimaxi.com/v1/token_plan/remains` |
 | DeepSeek | 充值金额、赠送金额、总余额、货币单位 | `api.deepseek.com/user/balance` |
 | GitHub Copilot | 月度 `premium_interactions` 剩余百分比（Free / Pro / Pro+ / Business / Enterprise 全覆盖） | `api.github.com/copilot_internal/user` |
+| OpenCode Go | 5h / 每周 / 每月窗口的美元用量（上限 $12 / $30 / $60） | 本地 SQLite，通过 `opencode db` CLI 读取 |
 
 ### 凭据配置
 
@@ -44,6 +45,8 @@
   注意事项：
   - Token 对应的 GitHub 账号必须已开通 Copilot 订阅（Free / Pro / Pro+ / Business / Enterprise 均可）
   - 可随时在 https://github.com/settings/tokens 撤销
+
+- **OpenCode Go** — 无需 API Key。供应商通过 shell 调用本地 `opencode` CLI（需安装在 `~/.opencode/bin/opencode`、`/usr/local/bin/opencode` 或 `/opt/homebrew/bin/opencode`），直接读取 OpenCode SQLite 数据库（`~/.local/share/opencode/opencode.db`）中的用量数据。详见 `docs/provider-interfaces/opencode_go.md`
 
 ## 系统要求
 
@@ -116,6 +119,8 @@ xcodebuild -project APIUsageStatus.xcodeproj \
 | WeeklyQuotaTests | 10 | 周字段解析、isUnlimited 判定、缺失字段回退 |
 | FlowingGlowBarTests | 5 | 辉光条相位、宽度、几何约束 |
 | MenuBarIconRendererTests | 11 | 所有图标状态的快照对比测试 |
+| OpenCodeResponseParserTests | 6 | 真实数据解析、窗口算法测试、makeResponse 结构验证 |
+| ShellProcessRunnerTests | 4 | 成功执行、可执行文件不存在、非零退出码、超时 |
 | ~~PixelFontEngineTests~~ | ~~58~~ | ~~（已弃用）原像素字模引擎测试，代码已注释，不参与运行~~ |
 
 ## 部署到 /Applications
@@ -142,8 +147,9 @@ APIUsageStatus/
 ├── AppState/                      # 运行时状态 Actor + @MainActor 代理
 ├── Models/                        # 数据模型（实例/余额/阈值/全局设置）
 ├── Services/                      # 核心服务（Keychain/持久化/刷新/通知/开机自启）
+├── Shell/                         # Shell 进程执行（OpenCode Go 供应商使用）
 ├── Network/                       # HTTP 客户端 + 重试策略
-├── Suppliers/                     # 供应商协议 + MiniMax / DeepSeek 实现
+├── Suppliers/                     # 供应商协议 + MiniMax / DeepSeek / Copilot / OpenCode 实现
 ├── Balance/                       # 余额计算器 + 历史快照
 ├── PixelFont/                     # ⚠️ 已弃用：原像素字体引擎（代码已注释）
 ├── Extensions/                    # Date/Decimal/String 扩展
@@ -158,13 +164,18 @@ APIUsageStatusTests/
 ├── WeeklyQuotaTests.swift
 ├── FlowingGlowBarTests.swift
 ├── MenuBarIconRendererTests.swift
+├── OpenCodeResponseParserTests.swift
+├── ShellProcessRunnerTests.swift
 ├── ~~PixelFontEngineTests.swift~~  # 已弃用（代码已注释）
 └── ReferenceImages/               # 快照测试金标准图片
 ```
 
 ## 安全与隐私
 
-- **App Sandbox** — 所有文件 I/O 限定在沙盒容器内
+- **⚠️ App Sandbox** — **已关闭**，以便 OpenCode Go 供应商能通过 `Process.run()` 执行 `opencode db` 命令读取本地 SQLite 数据库。这是查询 OpenCode Go 用量的唯一途径（无公开 REST API）。权衡说明：
+  - **获得**：OpenCode Go 实时用量监控（5h / 每周 / 每月窗口），直接从本地数据读取，无需等待官方 API。
+  - **失去**：macOS App Sandbox 保护。应用理论上可以访问当前用户可访问的任何文件，以及启动子进程。但本项目为自编译自用——仅与已知的 HTTPS API 端点通信，仅启动 `opencode` CLI，不处理不可信用户输入。在个人使用场景下，实际攻击面增加可忽略不计。详见 `docs/provider-interfaces/opencode_go.md`。
+  - **若不使用 OpenCode Go**：唯一需要关闭沙箱的代码路径是 `ShellProcessRunner`（仅由 `OpenCodeSupplier` 调用）。MiniMax / DeepSeek / Copilot 供应商在开启或关闭沙箱下行为完全一致。
 - **API Key** — 存储在 Keychain（InternetPassword 类型），不落磁盘明文
 - **网络** — 仅 HTTPS 访问供应商 API，不传输任何用户数据
 - **日志** — os.Logger，生产环境自动屏蔽敏感信息

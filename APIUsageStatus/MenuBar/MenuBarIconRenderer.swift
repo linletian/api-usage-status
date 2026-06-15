@@ -148,7 +148,7 @@ final class MenuBarIconRenderer {
     // MARK: - Private: measurement
 
     private func measureSlotContent(_ slot: SlotViewData) -> CGFloat {
-        let shortName = String(slot.shortName.uppercased().prefix(2))
+        let shortName = String(slot.shortName.uppercased().prefix(3))
         let nameWidth = textWidth(shortName, font: Self.font)
 
         let valueWidth: CGFloat
@@ -270,7 +270,7 @@ final class MenuBarIconRenderer {
         color: NSColor,
         in context: CGContext
     ) {
-        let shortName = String(data.shortName.uppercased().prefix(2))
+        let shortName = String(data.shortName.uppercased().prefix(3))
         let (topBaseline, bottomBaseline) = twoLineBaselines
 
         // Line 1: shortName

@@ -20,6 +20,9 @@ Package.resolved
 .DS_Store
 Thumbs.db
 
+# Build artifacts (macOS app bundle zips)
+*.zip
+
 # Claude / AI tool configs
 .claude/
 

@@ -232,6 +232,7 @@ actor RefreshService {
                         sortOrder: slot.sortOrder,
                         colorState: slot.colorState,
                         provider: instance.provider,
+                        dimension: slot.dimension,
                         todayUsage: update.snapshot.todayUsage,
                         dailyAverages: displayAverages
                     )
@@ -305,12 +306,13 @@ actor RefreshService {
             }()
 
             // Provider-specific display values. Copilot stores absolute
-            // credit counts, so the panel shows used/total credits. Other
-            // quota providers (MiniMax) only expose a percent from the API
-            // — we pass an empty `displayLimit` so the view renders just
-            // "<value>%" instead of "<value> / 100" (the "/ 100" is a
-            // meaningless constant since the API doesn't expose a real
-            // denominator for these providers).
+            // credit counts, so the panel shows used/total credits. OpenCode
+            // exposes both used and limit in dollars (the supplier
+            // pre-formats them as "%.2f" strings). MiniMax only exposes a
+            // percent from the API — we pass an empty `displayLimit` so the
+            // view renders just "<value>%" instead of "<value> / 100" (the
+            // "/ 100" is a meaningless constant since the API doesn't
+            // expose a real denominator for these providers).
             let displayUsage: String
             let displayLimit: String
             if instance.provider == Provider.githubCopilot.rawValue {
@@ -325,6 +327,11 @@ actor RefreshService {
                     displayUsage = String(used)
                     displayLimit = String(entitlement)
                 }
+            } else if instance.provider == Provider.opencode.rawValue {
+                let used = response.value(forDimension: "\(dim):used") ?? "0"
+                let limit = response.value(forDimension: "\(dim):limit") ?? "0"
+                displayUsage = "$\(used)"
+                displayLimit = "$\(limit)"
             } else {
                 displayUsage = valueString
                 displayLimit = ""
@@ -384,6 +391,7 @@ actor RefreshService {
             sortOrder: instance.sortOrder,
             colorState: colorState,
             provider: instance.provider,
+            dimension: instance.dimension,
             weekly: weekly,
             weeklyDebug: weeklyDebug
         )

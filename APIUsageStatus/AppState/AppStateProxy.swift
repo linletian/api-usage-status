@@ -43,6 +43,16 @@ final class AppStateProxy: ObservableObject {
     func initialize() async {
         logger.info("AppStateProxy initializing")
 
+        // Ensure the OpenCode placeholder keychain entry exists. The
+        // keychainService is unreachable through `appState`, so we go
+        // through `persistenceService`. Idempotent — safe to call on
+        // every launch.
+        do {
+            try await persistenceService.ensureOpenCodePlaceholder()
+        } catch {
+            logger.warning("Failed to ensure OpenCode placeholder key: \(error.localizedDescription)")
+        }
+
         // Load from disk
         let (loadedInstances, loadedSettings) = await persistenceService.loadInstances()
         await appState.setInstances(loadedInstances)

@@ -123,6 +123,14 @@ actor PersistenceService {
         try await keychainService.delete(for: apiKeyRef)
     }
 
+    /// Ensure the OpenCode placeholder key exists in the keychain. Called at
+    /// app launch so any OpenCode instance's `apiKeyRef` resolves to a
+    /// non-nil value (the supplier ignores the value, but the keychain
+    /// lookup must succeed).
+    func ensureOpenCodePlaceholder() async throws {
+        try await keychainService.ensureOpenCodePlaceholder()
+    }
+
     // MARK: - Instance Deletion Cleanup
 
     /// Cleans up all data associated with an instance being deleted.

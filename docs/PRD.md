@@ -155,6 +155,12 @@
 - 不收集任何用户数据，无第三方统计/埋点
 - 所有网络请求直连 API 提供商服务器，使用 HTTPS 加密传输
 
+> **⚠️ App Sandbox 状态**：自 OpenCode Go 供应商接入后，App Sandbox 已关闭。
+>
+> **原因**：OpenCode Go 不提供公开 REST API，唯一的数据源是本地的 `~/.local/share/opencode/opencode.db`。要读取该数据库，必须通过 `opencode db` CLI（`Process.run()`），而 macOS App Sandbox 不允许子进程创建——这是沙箱的硬性限制，无 entitlement 可例外。
+>
+> **影响评估**：本项目为自编译自用，仅与已知的 HTTPS API 端点通信，仅启动 `opencode` CLI 子进程，不处理不可信用户输入。实际攻击面增加在个人使用场景下可忽略不计。若将来仅使用 MiniMax / DeepSeek / Copilot 供应商而不使用 OpenCode Go，可重新开启沙箱，上述供应商无需沙箱例外。
+
 ### 3.7 余额型：当日用量本地统计
 
 DeepSeek 等余额型 API 仅提供剩余余额，不提供当日用量接口。实行以下本地计算方案。**余额跟踪仅使用 `topped_up_balance`（充值余额），排除 `granted_balance`（赠金）**，确保赠金过期不会造成虚假消耗统计。
@@ -170,10 +176,10 @@ DeepSeek 等余额型 API 仅提供剩余余额，不提供当日用量接口。
 
 **数据持久化**：
 
-由于应用保留 App Sandbox，数据存储在 Sandbox 容器内：
+数据存储路径（因 App Sandbox 已关闭，走用户主目录下的标准路径）：
 
 ```
-~/Library/Containers/<bundle-id>/Data/Library/Application Support/
+~/Library/Application Support/api-usage-status/
 ```
 
 > **iCloud 同步说明**：该路径不在 iCloud 同步范围内，不会随 iCloud Drive 在多台 Mac 间同步。余额型用量统计是每台设备独立维护的本地计算值，各 Mac 各自保留独立的刷新记录和当日消耗，跨设备不作合并。
@@ -242,7 +248,7 @@ DeepSeek 等余额型 API 仅提供剩余余额，不提供当日用量接口。
 
 ### 3.8 配置数据持久化
 
-实例元数据（供应商、统计维度、显示名、阈值等）和全局设置统一存储在一个 JSON 文件中，路径同 3.7 节（Sandbox 容器内的 `Library/Application Support/`）。
+实例元数据（供应商、统计维度、显示名、阈值等）和全局设置统一存储在一个 JSON 文件中，路径同 3.7 节（`~/Library/Application Support/api-usage-status/`）。
 
 文件名：`instances.json`
 
@@ -299,7 +305,7 @@ DeepSeek 等余额型 API 仅提供剩余余额，不提供当日用量接口。
 | `provider` | string | 供应商标识，如 `minimax`、`deepseek` |
 | `dimension` | string | 统计维度标识，如 `text_model_5h`、`non_text_daily`、`weekly_total`、`balance` |
 | `display_name` | string | 用户自定义显示名（如「MiniMax-文字」） |
-| `short_name` | string | 2 个英文字母简称，用于菜单栏槽位左侧标识 |
+| `short_name` | string | 2-3 个大写英文字母或数字简称（如 MX、MAX、OC5），用于菜单栏槽位左侧标识 |
 | `api_key_ref` | string | API Key 引用名。相同 `api_key_ref` 的多个实例共享同一把 Key，刷新时合并为一次 HTTP 请求。API Key 本身存储在 Keychain 中，以 `api_key_ref` 为查找标识 |
 | `enabled` | boolean | 实例启用状态。禁用后菜单栏和面板隐藏该实例，但数据文件保留 |
 | `sort_order` | integer | 排序序号，升序排列，决定菜单栏槽位和面板卡片的显示顺序。`sort_order` 相同时按创建时间排序 |
@@ -350,7 +356,7 @@ DeepSeek 等余额型 API 仅提供剩余余额，不提供当日用量接口。
 | Copilot / MiniMax 用量接口可能变更 | 关注官方 API 变更日志，版本更新时快速适配 |
 | Copilot 使用的 `/copilot_internal/user` 为非官方文档端点 | parser 硬依赖核心字段（`entitlement` / `remaining` / `percent_remaining` / `unlimited` / `quota_reset_date_utc`），这些字段缺失或类型不符时**抛 `RefreshError.parsingError`**（不静默降级为 0，避免误触发 100% critical 告警）；次要字段（如 `overage_count`，目前未使用）缺失时降级为 0；如端点改版，单点修改 `CopilotResponseParser` 即可 |
 | DeepSeek 余额接口变更 | 同上，定期关注 DeepSeek 开放平台公告 |
-| macOS 沙盒限制 | 必须保留 App Sandbox，需配置以下 entitlements：`com.apple.security.network.client`（发起网络请求）、`com.apple.security.files.user-selected.read-only`（可选，读取本地配置） |
+| macOS 沙盒限制 | 为支持 OpenCode Go 供应商（需 `Process.run()` 执行 `opencode` CLI），App Sandbox 已关闭。MiniMax / DeepSeek / Copilot 供应商在沙箱开启或关闭下行为一致。若移除 OpenCode Go 支持，可重新开启沙箱。Entitlements 保持精简：`com.apple.security.network.client`（发起网络请求）、`com.apple.security.files.user-selected.read-only`（可选，读取本地配置） |
 | 用户 API 凭证安全担忧 | Keychain 存储，本地处理，计划开源 |
 | 启用实例过多导致菜单栏总宽度超出系统可显示区域 | 不设硬性槽位数上限；当 macOS 自行截断右侧槽位时，用户可通过禁用不关注的实例缩短总宽度，或在用量面板中查看全部 |
 | 余额型当日用量统计存在误差（刷新间隔内可能发生多次消费） | 面板标注「约」字；支持用户调高刷新频率提升精度 |
@@ -387,7 +393,7 @@ DeepSeek 等余额型 API 仅提供剩余余额，不提供当日用量接口。
 |------|------|
 | **代码签名** | Xcode Debug Build 默认使用 ad-hoc 签名（`-`），无需额外配置；如需手动签名：`codesign --force --deep --sign - YourApp.app` |
 | **Gatekeeper 绕过** | 首次运行时右键点击应用 →「打开」，或执行 `xattr -cr YourApp.app` 去除隔离标记 |
-| **App Sandbox（必须保留）** | Xcode → Target → Signing & Capabilities → 开启 App Sandbox，配置以下 entitilements：<br>- `com.apple.security.network.client`：发起 HTTPS 网络请求<br>- `com.apple.security.files.user-selected.read-only`：读取用户手动选择的文件（可选，用于将来导入/导出配置） |
+| **App Sandbox（可选）** | 当前为支持 OpenCode Go 供应商而关闭（详见 3.6 节说明）。若不使用 OpenCode Go，可在 Xcode → Target → Signing & Capabilities → 开启 App Sandbox，并配置以下 entitlements：<br>- `com.apple.security.network.client`：发起 HTTPS 网络请求<br>- `com.apple.security.files.user-selected.read-only`：读取用户手动选择的文件（可选，用于将来导入/导出配置） |
 | **Keychain 存储** | ad-hoc 签名下可正常读写 Keychain，无需额外权限 |
 | **开机自启** | `SMAppService`（macOS 13+）在 ad-hoc 签名下正常工作 |
 
@@ -527,9 +533,9 @@ Authorization: Bearer <Token Plan Key>
 
 ---
 
-## 附录 C：OpenCode Go 用量查询（暂不支持）
+## 附录 C：OpenCode Go 用量查询（V1 已支持）
 
-> **状态**：V1 暂不支持。OpenCode 未提供公开 REST API，无法以编程方式查询用量。
+> **状态**：V1 已支持。通过 shell 调用本地 `opencode` CLI 读取 SQLite 数据库实现，详见 `docs/provider-interfaces/opencode_go.md`。
 
 **来源**：https://opencode.ai/docs/go/
 
@@ -542,13 +548,23 @@ Authorization: Bearer <Token Plan Key>
 | 每月 | $60 |
 
 - 用量以美元金额计量（非 Token 数），不同模型消耗速率不同
-- 当前仅支持通过 Web 控制台（https://opencode.ai/auth）查看用量
-- **未提供公开的 REST API**，无法以编程方式查询用量
+- OpenCode 会将会话历史和 cost 数据写入本地 SQLite（`~/.local/share/opencode/opencode.db`）
+- 本项目通过 `opencode db "<SQL>" --format json` 子命令读取该数据库，无需远程 HTTP API
 - 超出限制后，若用户开通了 Zen 余额自动补充功能，可继续使用
 
-**OpenCode Zen** 同为按量付费余额模式，亦无公开余额查询 API。
+**实现方式**：
 
-> **对本项目的影响**：OpenCode Go 和 Zen 在 V1 中暂不支持。等待官方发布公开 API 后可考虑接入。
+| 项目 | 说明 |
+|------|------|
+| 数据源 | 本地 SQLite，`SELECT … FROM message WHERE providerID='opencode-go' AND role='assistant'` |
+| 调用方式 | `ShellProcessRunner` 执行 `opencode db <SQL> --format json` |
+| 三窗口 | 5h（滚动，最旧消息+5h）/ Weekly（UTC 周一重置）/ Monthly（锚定首次使用日） |
+| 无 API Key | 无需远程凭证，但需 `opencode` CLI 已安装且已认证 |
+| 上限常量 | `OpenCodeGoLimits` 硬编码 $12/$30/$60，上游调价时需同步修改 |
+
+**OpenCode Zen** 同为按量付费余额模式，亦无公开余额查询 API，V1 暂不支持。
+
+> **对本项目的影响**：OpenCode Go 已通过 `OpenCodeSupplier` 接入，无需等待官方发布公开 API。Zen 余额模式暂不支持，需等待后续迭代。
 
 ---
 

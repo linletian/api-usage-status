@@ -273,6 +273,8 @@ func locateOpencode() throws -> String {
 
 ### 5.4 套餐上限常量
 
+> **来源**：[https://opencode.ai/docs/go/](https://opencode.ai/docs/go/)（截至 2026-06-15）。官方备注 "Usage limits may change as we learn from early usage and feedback."
+
 ```swift
 enum OpenCodeGoLimits {
     static let fiveHour:  Double = 12.0

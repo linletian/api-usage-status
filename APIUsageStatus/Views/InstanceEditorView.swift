@@ -252,7 +252,7 @@ struct InstanceEditorView: View {
         case .deepseek:
             return MetricConfig(key: "deepseek.balance", group: nil, window: nil, displayInMenuBar: true)
         case .githubCopilot:
-            return MetricConfig(key: "githubCopilot.premium_interactions", group: nil, window: nil, displayInMenuBar: true)
+            return MetricConfig(key: "premium_interactions", group: nil, window: nil, displayInMenuBar: true)
         default:
             return MetricConfig(key: "", displayInMenuBar: true)
         }
@@ -434,7 +434,7 @@ struct InstanceEditorView: View {
         case .deepseek:
             selectedMetrics = [MetricConfig(key: "deepseek.balance", group: nil, window: nil)]
         case .githubCopilot:
-            selectedMetrics = [MetricConfig(key: "githubCopilot.premium_interactions", group: nil, window: nil)]
+            selectedMetrics = [MetricConfig(key: "premium_interactions", group: nil, window: nil)]
         }
         thresholds = isBalanceType ? .defaultBalance : .defaultQuota
     }

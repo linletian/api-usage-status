@@ -49,6 +49,23 @@ enum RefreshError: Error, Equatable {
     }
 }
 
+extension RefreshError: CustomStringConvertible {
+    var description: String {
+        switch self {
+        case .networkTimeout:
+            return "Network timeout"
+        case .networkUnreachable:
+            return "Network unreachable"
+        case .httpError(let code):
+            return "HTTP error (status \(code))"
+        case .parsingError(let msg):
+            return "Parsing error: \(msg)"
+        case .maxRetriesExceeded:
+            return "Max retries exceeded"
+        }
+    }
+}
+
 // MARK: - ErrorSummary
 
 struct ErrorSummary: Identifiable, Equatable {

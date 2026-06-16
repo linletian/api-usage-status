@@ -135,7 +135,8 @@ struct OpenCodeSupplier: Supplier {
             switch shell {
             case .executableNotFound, .launchFailed:
                 return RefreshError.parsingError(shell.localizedDescription)
-            case .nonZeroExit(_, let stderr):
+            case .nonZeroExit(let code, let stderr):
+                logger.error("opencode db exited with code \(code): \(String(stderr.prefix(200)))")
                 return RefreshError.parsingError("opencode db failed: \(stderr)")
             case .timedOut:
                 return RefreshError.networkTimeout

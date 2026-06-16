@@ -24,9 +24,13 @@ actor ShellProcessRunner {
             throw ShellError.launchFailed(underlying: error.localizedDescription)
         }
 
-        let timeoutTask = Task {
+        let timeoutTask = Task<Bool, Never> {
             try? await Task.sleep(nanoseconds: UInt64(command.timeout * 1_000_000_000))
-            if process.isRunning { process.terminate() }
+            if process.isRunning {
+                process.terminate()
+                return true
+            }
+            return false
         }
 
         let exitTask = Task.detached { () -> Int32 in
@@ -44,7 +48,11 @@ actor ShellProcessRunner {
         let stdoutData = await stdoutDataTask.value
         let stderrData = await stderrDataTask.value
         timeoutTask.cancel()
+        let wasTerminatedByTimeout = await timeoutTask.value
 
+        if wasTerminatedByTimeout {
+            throw ShellError.timedOut(seconds: command.timeout)
+        }
         if exitCode != 0 {
             let stderrStr = String(data: stderrData, encoding: .utf8) ?? ""
             throw ShellError.nonZeroExit(code: exitCode, stderr: stderrStr)

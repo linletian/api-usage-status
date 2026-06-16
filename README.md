@@ -9,6 +9,7 @@ A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek
 
 - **Menu Bar Icon** — rendered in SF Pro 8pt, two-line stacked layout, one slot per enabled instance (unbounded), each sized by content width
 - **Usage Panel** — click the icon to pop up a floating window showing usage cards, error summary, manual refresh, and a settings entry
+- **Multi-Metric Tracking** — MiniMax tracks usage for each capability bucket (`general`, `video`, `speech-hd`, etc.) independently, each with its own 5h + weekly dual-window metrics
 - **Weekly Quota Display** — MiniMax instance card shows a weekly window progress bar at the bottom; unlimited plans display a cyan-blue flowing glow bar animation
 - **Threshold Alerts** — quota percentages or balance amounts trigger macOS system notifications; click the notification to view details
 - **Balance Tracking** — records historical snapshots, displays daily averages by week / month / last 7 days / last 30 days
@@ -20,7 +21,7 @@ A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek
 
 | Provider | Monitoring Dimension | Data Source |
 |----------|---------------------|--------------|
-| MiniMax | Remaining percentage of the 5h window and weekly window for each `model_name` (e.g. `general` text, `video` non-text) | `www.minimaxi.com/v1/token_plan/remains` |
+| MiniMax | Multi-metric: each `model_name` (capability bucket, e.g. `general`/`video`/`speech-hd`) tracks 5h + weekly independently | `www.minimaxi.com/v1/token_plan/remains` |
 | DeepSeek | Topped-up amount, gifted amount, total balance, currency unit | `api.deepseek.com/user/balance` |
 | GitHub Copilot | Monthly `premium_interactions` remaining percentage (Free / Pro / Pro+ / Business / Enterprise) | `api.github.com/copilot_internal/user` |
 | OpenCode Go | Dollar usage of the 5h / weekly / monthly windows ($12 / $30 / $60 limits) | Local SQLite via `opencode db` CLI |

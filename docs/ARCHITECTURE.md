@@ -349,8 +349,9 @@ RefreshService.performRefresh()
     │     │                              ├── 全部重试失败 ──▶ ErrorSummary
     │     │                              └── 重试成功 ──▶ SupplierResponse
     │     │
-    │     └──▶ 映射 SupplierResponse → 每实例 SlotViewData
-    │              （一次响应中提取多个 MiniMax 维度）
+    │     └──▶ 映射 SupplierResponse → 每 Instance 的 SlotViewData
+    │              （RefreshService.mapInstanceToSlotData 做 1:N 映射：
+    │               遍历 instance.metrics，每个 MetricConfig 产生一个 MetricSnapshot）
     │
     ├──▶ 对每个配额型实例，解析响应时算出 `cycleRemainingSeconds`（基于 `<model>:end_time` 毫秒时间戳 - 当前时刻），注入到 `InstanceType.quota` 关联值，UI 层据此格式化为 `Xh Ym` / `Xm` / `Xd remaining`。字段缺失则该行隐藏
     │
@@ -450,14 +451,44 @@ SettingsViewModel.save()
 struct Instance: Codable, Identifiable {
     let uuid: String            // UUID v4，不可变
     var provider: String        // "minimax" | "deepseek"
-    var dimension: String       // MiniMax: model_name 值（如 "MiniMax-M2.7"、"speech-hd"）；DeepSeek: "balance"
+    var metrics: [MetricConfig] // 多指标配置列表（v2 schema）。每个 MetricConfig 描述一个 (provider, group, window) 三元组
     var displayName: String     // 用户自定义，如「MiniMax-文字」
     var shortName: String       // 2-3 个大写字母，用于菜单栏
     var apiKeyRef: String       // 引用 Keychain 条目；同 Key 的实例共享
-    var enabled: Bool
+    var trackingEnabled: Bool   // 是否启用刷新（v2 JSON key: "tracking_enabled"；旧版 "enabled" 由迁移路径处理）
     var sortOrder: Int
     var currency: String?       // "CNY" | "USD" | nil（nil 表示配额型）。余额型实例：每次 API 刷新时若响应含 currency 字段，自动更新为本值；用户也可手动设置初始值
     var thresholds: Thresholds
+
+    // 计算属性，向后兼容：从 metrics.first?.key 派生
+    var dimension: String { metrics.first?.key ?? "" }
+    // 计算属性，向后兼容旧版 enabled 读写
+    var enabled: Bool {
+        get { trackingEnabled }
+        set { trackingEnabled = newValue }
+    }
+}
+
+// === 指标配置（持久化，写入 instances.json） ===
+struct MetricConfig: Codable, Equatable {
+    let key: String             // 稳定查找键，格式："{provider}.{group}.{window}" 或 "{provider}.balance"
+    let group: String?          // 可选逻辑分组（如 MiniMax 的 "general"、"video"）
+    let window: String?         // 可选时间窗口（如 "5h"、"weekly"、"monthly"）；非窗口指标为 nil
+    var displayInMenuBar: Bool  // 是否在菜单栏图标中渲染（默认 true）
+}
+
+// === 指标快照（运行时，不持久化） ===
+struct MetricSnapshot: Equatable {
+    let key: String
+    let group: String?
+    let window: String?
+    let percent: Double              // 用量百分比 (0–100)
+    let displayUsage: String         // 预格式化的用量字符串（如 "28.0%"、"¥42.50"）
+    let displayLimit: String         // 预格式化的上限字符串（可为空）
+    let cycleRemainingSeconds: Int?  // 当前重置周期剩余秒数
+    let colorState: ColorState
+    let configIndex: Int             // 1-based 位置，用于稳定排序
+    let displayInMenuBar: Bool
 }
 
 enum Thresholds: Codable {
@@ -492,18 +523,29 @@ struct SlotViewData {
     let uuid: String
     let displayName: String
     let shortName: String           // 2-3 字母
-    let instanceType: InstanceType
     let sortOrder: Int
-    let colorState: ColorState
     let provider: String            // 供应商标识（如 "deepseek" / "minimax"），用于「See details」按钮的 URL 映射
+
+    // v2：多指标运行时快照。每次刷新由 MetricConfig + SupplierResponse 派生。
+    // instanceType、colorState、dimension、weekly 均为计算属性，源自 metricSnapshots。
+    var metricSnapshots: [MetricSnapshot]
 
     // Balance-specific fields for usage panel
     var todayUsage: String?
     var dailyAverages: [AvgDailyPeriod: Decimal]?
 
+    // 计算属性：由 metricSnapshots.first 派生
+    var instanceType: InstanceType { ... }
+    // 计算属性：所有指标快照中最严重的颜色状态
+    var colorState: ColorState { ... }
+    // 计算属性：由 metricSnapshots.first?.key 派生
+    var dimension: String { ... }
+    // 计算属性：首个 window == "weekly" 的快照 → WeeklyQuota
+    var weekly: WeeklyQuota? { ... }
+
     enum InstanceType {
         case quota(percent: Double, usageValue: String, limitValue: String,
-                   cycleRemainingSeconds: Int?)   // 周期剩余秒数（基于 <model>:end_time 算出）；缺失则 UI 倒计时行隐藏
+                   cycleRemainingSeconds: Int?)   // 周期剩余秒数（基于 <metric>:end_time 算出）；缺失则 UI 倒计时行隐藏
         case balance(amount: String, totalBalance: String, grantedBalance: String,
                    isAvailable: Bool, currency: String?)
     }
@@ -724,13 +766,13 @@ struct MiniMaxSupplier: Supplier {
 }
 ```
 
-解析后的响应由 `MiniMaxResponseParser` 映射到内部维度标识符。
+解析后的响应由 `MiniMaxResponseParser` 映射到内部维度标识符。每个 `model_name`（能力桶，如 `general`、`video`、`speech-hd`）作为一个独立的 `MetricConfig` 维度，`RefreshService.mapInstanceToSlotData()` 遍历 `instance.metrics` 将每个 `MetricConfig` 映射为一个 `MetricSnapshot`（1:N 映射）。
 
 API 当前 schema（旧的 `current_interval_total_count` / `current_interval_usage_count` 字段已弃用，恒为 0；新字段为权威源）：
 
 | 字段 | 类型 | 含义 |
 |------|------|------|
-| `model_name` | string | 模型维度标识符 |
+| `model_name` | string | 能力桶标识（如 `general`、`video`、`speech-hd`、`music-2.6`、`image-01`），非具体模型名 |
 | `current_interval_status` | int | 5h 区间配额状态（`1` = 生效，其他值视为未激活） |
 | `current_interval_remaining_percent` | number | 5h 区间剩余百分比（0-100） |
 | `current_weekly_status` | int | 周配额状态（`1` = 生效，其他值视为未激活） |
@@ -802,6 +844,8 @@ enum RefreshError: Error {
 ## 7. 菜单栏渲染管线
 
 ### 7.1 槽位布局（variableLength × 22pt）
+
+**多指标展开**：v2 schema 中，一个 `SlotViewData` 可能包含多个 `MetricSnapshot`。`MenuBarIconRenderer.expandToMetricSlots()` 在渲染前将每个启用可见（`displayInMenuBar == true`）的指标快照展开为独立的渲染槽位，确保一个 MiniMax 实例的 `general` 和 `video` 能力桶各自在菜单栏中独立显示。展开后的槽位按 `sortOrder` 排序。
 
 槽位高度固定 22pt，宽度动态决定。槽位内容以**双行层叠**方式排列，每行各自水平居中：
 
@@ -1329,7 +1373,9 @@ APIUsageStatus/
 │   │
 │   ├── Models/
 │   │   ├── Instance.swift                # 实例配置模型
-│   │   ├── GlobalSettings.swift          # 全局设置模型
+│   │   ├── MetricConfig.swift            # 指标配置（持久化，写入 instances.json）
+│   │   ├── MetricSnapshot.swift          # 指标运行时快照（不持久化）
+│   │   ├── GlobalSettings.swift          # 全局设置模型（含 InstancesContainer + schema 版本化）
 │   │   ├── Thresholds.swift              # 阈值配置（带关联值的枚举）
 │   │   ├── SlotViewData.swift            # 运行时槽位渲染数据
 │   │   ├── ErrorSummary.swift            # 刷新错误模型
@@ -1353,9 +1399,19 @@ APIUsageStatus/
 │   ├── BalanceCalculatorTests.swift
 │   ├── MiniMaxResponseParserTests.swift
 │   ├── DeepSeekResponseParserTests.swift
+│   ├── CopilotResponseParserTests.swift
 │   ├── RetryPolicyTests.swift
-│   ├── PixelFontEngineTests.swift
-│   └── PersistenceServiceTests.swift
+│   ├── WeeklyQuotaTests.swift
+│   ├── FlowingGlowBarTests.swift
+│   ├── MenuBarIconRendererTests.swift
+│   ├── OpenCodeResponseParserTests.swift
+│   ├── ShellProcessRunnerTests.swift
+│   ├── BreathingMathTests.swift
+│   ├── PersistenceServiceTests.swift    # Schema 版本化 + v1→v2 迁移检测
+│   ├── SchemaVersionTests.swift         # InstancesContainer schemaVersion 编解码
+│   ├── RefreshServiceMappingTests.swift # 1:N 映射（Instance.metrics → MetricSnapshot）
+│   ├── MetricConfigCodableTests.swift   # MetricConfig Codable 往返
+│   └── InstanceDecodingTests.swift      # 旧格式/新格式 Instance 解码兼容性
 │
 └── docs/
     ├── PRD.md

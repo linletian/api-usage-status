@@ -14,7 +14,7 @@
 |------|------|
 | 数据源 | 远端 HTTPS API（`/v1/token_plan/remains`） |
 | 认证方式 | Bearer Token（API Key 存 Keychain） |
-| 监控粒度 | **每模型独立维度**（如 `MiniMax-M2.7` / `speech-hd` / `music-2.6`） |
+| 监控粒度 | **每能力桶独立维度**（`model_name` = 能力桶，如 `general` / `video` / `speech-hd` / `music-2.6` / `image-01`），具体值随订阅套餐类型（general text / video / speech-hd 等）而异 |
 | 配额类型 | 周期配额型（5h 窗口 + Weekly 窗口） |
 | 是否有无限套餐 | 有（响应里 `status != 1` 时按无限处理，渲染 flowing glow bar） |
 | 单实例多维度支持 | 是 — 一个 API Key 拉一次，所有 model 自动展开为多个 instance |
@@ -59,7 +59,7 @@ Authorization: Bearer <apiKey>
 {
   "model_remains": [
     {
-      "model_name": "MiniMax-M2.7",
+      "model_name": "general",
       "current_interval_status": 1,
       "current_interval_remaining_percent": 28,
       "start_time": 1781247600000,
@@ -89,7 +89,7 @@ Authorization: Bearer <apiKey>
 
 | 字段 | 类型 | 含义 |
 |------|------|------|
-| `model_name` | string | 模型唯一标识（如 `MiniMax-M2.7`），同时也是 `Instance.dimension` |
+| `model_name` | string | 能力桶标识（如 `general`、`video`、`speech-hd`、`music-2.6`、`image-01`），非具体模型名；在应用中映射为 `MetricConfig.key` / `MetricConfig.group`。实际值由订阅套餐决定（general text、video、speech-hd 等），不同订阅等级可用的 model_name 集合不同 |
 | `current_interval_status` | int | 5h 窗口状态：`1` = 配额生效中；其他值 = 窗口不计入（按 0% 处理） |
 | `current_interval_remaining_percent` | number | 5h 窗口剩余百分比；**5h 用量 = `100 - 此值`** |
 | `start_time` / `end_time` | int64 | 5h 窗口起止时间戳（毫秒） |
@@ -120,18 +120,17 @@ Authorization: Bearer <apiKey>
 | `<model_name>:end_time` | 5h 窗口 end_time 毫秒时间戳 | **字段依赖**:RefreshService 算成 `cycleRemainingSeconds` 注入 `InstanceType.quota`,UI 层 `UsageCardView.formatRemainingTime` 格式化为 `Xh Ym` / `Xm` / `Xd remaining`。字段缺失则倒计时行整行隐藏 |
 | `_model_names` | 逗号拼接的 model 列表 | `InstanceEditorView` 维度选择器 |
 
-**示例**（响应里有 `MiniMax-M2.7` 一条）：
-
+**示例**（响应里有 `general` 一条）：
 ```swift
 [
-  "MiniMax-M2.7": "72.0",              // 5h 已用 72%
-  "MiniMax-M2.7:status": "1",
-  "MiniMax-M2.7:remaining": "28.0",
-  "MiniMax-M2.7:weekly_status": "3",   // weekly 不计入
-  "MiniMax-M2.7:weekly_remaining": "100.0",
-  "MiniMax-M2.7:weekly_percent": "0.0",
-  "MiniMax-M2.7:end_time": "1781265600000",
-  "_model_names": "MiniMax-M2.7"
+  "general": "72.0",              // 5h 已用 72%
+  "general:status": "1",
+  "general:remaining": "28.0",
+  "general:weekly_status": "3",   // weekly 不计入
+  "general:weekly_remaining": "100.0",
+  "general:weekly_percent": "0.0",
+  "general:end_time": "1781265600000",
+  "_model_names": "general"
 ]
 ```
 

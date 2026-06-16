@@ -243,7 +243,7 @@ struct InstanceEditorView: View {
 
     private var openCodeMetricOptions: [MetricConfig] {
         ["5h", "weekly", "monthly"].map { window in
-            MetricConfig(key: "opencode.\(window)", group: nil, window: window, displayInMenuBar: true)
+            MetricConfig(key: window, group: nil, window: window, displayInMenuBar: true)
         }
     }
 
@@ -308,7 +308,7 @@ struct InstanceEditorView: View {
         if let idx = selectedMetrics.firstIndex(where: { $0.window == window }) {
             selectedMetrics.remove(at: idx)
         } else {
-            selectedMetrics.append(MetricConfig(key: "opencode.\(window)", group: nil, window: window))
+            selectedMetrics.append(MetricConfig(key: window, group: nil, window: window))
         }
     }
 

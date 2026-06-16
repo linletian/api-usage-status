@@ -496,6 +496,7 @@ struct ShimmerBar: View {
                     .offset(x: (barWidth + shimmerWidth) * phase - shimmerWidth)
                     .blendMode(.plusLighter)
             }
+            .clipped()
         }
     }
 }

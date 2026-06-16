@@ -108,19 +108,21 @@ xcodebuild -project APIUsageStatus.xcodeproj \
 
 Or press Cmd+U in Xcode.
 
-### Test Suites (64 cases in total, excluding deprecated)
+### Test Suites (113 cases in total, excluding deprecated)
 
 | Suite | Count | Coverage |
 |-------|-------|----------|
 | BalanceCalculatorTests | 14 | Consumption calculation, cross-day archiving, top-up detection, daily average statistics, history trimming |
-| MiniMaxResponseParserTests | 10 | Normal parsing, auth errors, business errors, malformed JSON, multiple models, weekly fields |
+| MiniMaxResponseParserTests | 11 | Normal parsing, auth errors, business errors, malformed JSON, multiple models, weekly fields |
 | DeepSeekResponseParserTests | 8 | CNY priority parsing, fallback, `is_available=false`, empty array |
+| CopilotResponseParserTests | 12 | GitHub Copilot API response parsing, token scopes, error responses |
 | RetryPolicyTests | 6 | Retry behavior, backoff delay, max attempts |
 | WeeklyQuotaTests | 10 | Weekly field parsing, `isUnlimited` judgment, missing field fallback |
 | FlowingGlowBarTests | 5 | Glow bar phase, width, geometry constraints |
-| MenuBarIconRendererTests | 11 | Snapshot comparison tests for all icon states |
-| OpenCodeResponseParserTests | 6 | Real fixture parsing, window algorithm tests, makeResponse shape |
+| MenuBarIconRendererTests | 15 | Property-assertion + snapshot: breathing state tracking, shadow, animation lifecycle, monochrome, multi-slot |
+| OpenCodeResponseParserTests | 11 | Real fixture parsing, window algorithm tests, makeResponse shape |
 | ShellProcessRunnerTests | 4 | Success, executable-not-found, non-zero exit, timeout |
+| BreathingMathTests | 17 | Breathing animation phase, shadow radius, shadow opacity, config validation |
 | ~~PixelFontEngineTests~~ | ~~58~~ | ~~(Deprecated) Original pixel font engine tests; code is commented out and does not run~~ |
 
 ## Deploy to /Applications
@@ -145,7 +147,7 @@ APIUsageStatus/
 ├── MenuBar/                       # Menu bar icon and usage panel controllers
 ├── Views/                         # SwiftUI views (panel/card/settings/details)
 ├── AppState/                      # Runtime state Actor + @MainActor proxy
-├── Models/                        # Data models (instance/balance/threshold/global settings)
+├── Models/                        # Data models (instance/balance/threshold/global settings, BreathingMath)
 ├── Services/                      # Core services (Keychain/persistence/refresh/notification/launch at login)
 ├── Shell/                         # Shell process execution (used by OpenCode Go supplier)
 ├── Network/                       # HTTP client + retry policy
@@ -153,19 +155,21 @@ APIUsageStatus/
 ├── Balance/                       # Balance calculator + history snapshots
 ├── PixelFont/                     # ⚠️ Deprecated: original pixel font engine (code commented out)
 ├── Extensions/                    # Date/Decimal/String extensions
-├── Utilities/                     # Logging + atomic writes
+├── Utilities/                     # Logging + atomic writes + CVDisplayLinkRunner (breathing animation driver)
 ├── Resources/                     # Info.plist + AppIcon source files
 └── Assets.xcassets/               # Compiled AppIcon asset catalog
 APIUsageStatusTests/
 ├── BalanceCalculatorTests.swift
 ├── MiniMaxResponseParserTests.swift
 ├── DeepSeekResponseParserTests.swift
+├── CopilotResponseParserTests.swift
 ├── RetryPolicyTests.swift
 ├── WeeklyQuotaTests.swift
 ├── FlowingGlowBarTests.swift
 ├── MenuBarIconRendererTests.swift
 ├── OpenCodeResponseParserTests.swift
 ├── ShellProcessRunnerTests.swift
+├── BreathingMathTests.swift
 ├── ~~PixelFontEngineTests.swift~~  # Deprecated (code commented out)
 └── ReferenceImages/               # Snapshot test golden images
 ```

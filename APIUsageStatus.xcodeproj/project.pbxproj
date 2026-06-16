@@ -71,6 +71,9 @@
 		B0FA5D5C283CA6AC8B88268D /* CopilotSupplier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7750C271C683F26694673C06 /* CopilotSupplier.swift */; };
 		2B8D51AC6C7D463E3A712340 /* CopilotResponseParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D16B145224C03775432023A1 /* CopilotResponseParser.swift */; };
 		58FE71AE6E22D92A16ABE7C4 /* CopilotResponseParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A7DA4D993A61D39B88CD119 /* CopilotResponseParserTests.swift */; };
+		A1B2C3D4E5F6A7B8C9D0E1F3 /* CVDisplayLinkRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* CVDisplayLinkRunner.swift */; };
+		B1C2D3E4F5A6B7C8D9E0F1A3 /* BreathingMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2D3E4F5A6B7C8D9E0F1A2B4 /* BreathingMath.swift */; };
+		D3E4F5A6B7C8D9E0F1A2B3C5 /* BreathingMathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4F5A6B7C8D9E0F1A2B3C4D6 /* BreathingMathTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -152,6 +155,9 @@
 		7750C271C683F26694673C06 /* CopilotSupplier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotSupplier.swift; sourceTree = "<group>"; };
 		D16B145224C03775432023A1 /* CopilotResponseParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotResponseParser.swift; sourceTree = "<group>"; };
 		2A7DA4D993A61D39B88CD119 /* CopilotResponseParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotResponseParserTests.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* CVDisplayLinkRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CVDisplayLinkRunner.swift; sourceTree = "<group>"; };
+		C2D3E4F5A6B7C8D9E0F1A2B4 /* BreathingMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BreathingMath.swift; sourceTree = "<group>"; };
+		E4F5A6B7C8D9E0F1A2B3C4D6 /* BreathingMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BreathingMathTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -185,6 +191,7 @@
 		3066D60C63FA4E76345DB9A9 /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* CVDisplayLinkRunner.swift */,
 				57ED6FC692ACB2E79DD25E34 /* FileManager+Atomic.swift */,
 				AD15EE8B3B25789BE01761DF /* Logger.swift */,
 			);
@@ -264,6 +271,7 @@
 				F1C0764D7DF1B841E40D805B /* SlotViewData.swift */,
 				505B0572B80E384A6A32A1F5 /* SupplierResponse.swift */,
 				CF7A42715FBDCF7D61599A3C /* Thresholds.swift */,
+				C2D3E4F5A6B7C8D9E0F1A2B4 /* BreathingMath.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -291,6 +299,7 @@
 				D8510DAC180E0828A2BA5214 /* RetryPolicyTests.swift */,
 				7A1B2C3D4E5F6004A1B2C3D7 /* ShellProcessRunnerTests.swift */,
 				7A1B2C3D4E5F6013A1B2C3D3 /* OpenCodeResponseParserTests.swift */,
+				E4F5A6B7C8D9E0F1A2B3C4D6 /* BreathingMathTests.swift */,
 			);
 			path = APIUsageStatusTests;
 			sourceTree = "<group>";
@@ -479,6 +488,7 @@
 				A12E9356DEA403F17F3F0514 /* CharMapLetters.swift in Sources */,
 				2B8D51AC6C7D463E3A712340 /* CopilotResponseParser.swift in Sources */,
 				B0FA5D5C283CA6AC8B88268D /* CopilotSupplier.swift in Sources */,
+				A1B2C3D4E5F6A7B8C9D0E1F3 /* CVDisplayLinkRunner.swift in Sources */,
 				43C82B54982192D27582D57E /* Date+Extensions.swift in Sources */,
 				4DC5637237CA7B0729761A8A /* Decimal+Extensions.swift in Sources */,
 				98AD5AB1B943EDB574215F6B /* DeepSeekResponseParser.swift in Sources */,
@@ -520,6 +530,7 @@
 				ECED5E163AB280EACF479DCD /* SupplierResponse.swift in Sources */,
 				9A143072D0788CD9467D588A /* ThresholdConfigView.swift in Sources */,
 				B24448E299B105B9E744C8EB /* Thresholds.swift in Sources */,
+				B1C2D3E4F5A6B7C8D9E0F1A3 /* BreathingMath.swift in Sources */,
 				19767C30858AE92B41527006 /* UsageCardView.swift in Sources */,
 				D125D32B242ACE4998F9D078 /* UsagePanelView.swift in Sources */,
 			);
@@ -538,6 +549,7 @@
 				8B1B2C3D4E5F6004A1B2C3D7 /* ShellProcessRunnerTests.swift in Sources */,
 				8B1B2C3D4E5F6013A1B2C3D3 /* OpenCodeResponseParserTests.swift in Sources */,
 				528719C0D8315CA09E28868F /* RetryPolicyTests.swift in Sources */,
+				D3E4F5A6B7C8D9E0F1A2B3C5 /* BreathingMathTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

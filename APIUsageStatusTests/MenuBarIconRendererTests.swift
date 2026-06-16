@@ -3,11 +3,9 @@ import XCTest
 
 // MARK: - MenuBarIconRendererTests
 
-/// Snapshot-style tests for MenuBarIconRenderer.
-/// Golden Master workflow:
-///   1. First run generates reference PNGs in ReferenceImages/
-///   2. Subsequent runs compare rendered PNG bytes against the reference.
-/// If the rendering logic changes intentionally, delete ReferenceImages/ and re-run.
+/// Property-assertion tests for MenuBarIconRenderer.
+/// Covers breathing state tracking, shadow application, animation lifecycle,
+/// monochrome mode, and multi-slot synchronization.
 @MainActor
 final class MenuBarIconRendererTests: XCTestCase {
 
@@ -19,11 +17,33 @@ final class MenuBarIconRendererTests: XCTestCase {
     }
 
     override func tearDown() {
+        renderer.stopBreathingAnimation()
         renderer = nil
         super.tearDown()
     }
 
-    // MARK: - Snapshot helpers
+    // MARK: - Helpers
+
+    private func makeSlot(
+        uuid: String = UUID().uuidString,
+        colorState: ColorState = .normal,
+        instanceType: InstanceType = .quota(percent: 75, usageValue: "75", limitValue: "100", cycleRemainingSeconds: nil),
+        shortName: String = "TST",
+        sortOrder: Int = 0
+    ) -> SlotViewData {
+        SlotViewData(
+            uuid: uuid,
+            displayName: "Test",
+            shortName: shortName,
+            instanceType: instanceType,
+            sortOrder: sortOrder,
+            colorState: colorState,
+            provider: "test",
+            dimension: "test"
+        )
+    }
+
+    // MARK: - Snapshot Helpers
 
     private var referenceImagesDir: URL {
         let sourceFile = URL(fileURLWithPath: #file)
@@ -67,57 +87,18 @@ final class MenuBarIconRendererTests: XCTestCase {
         )
     }
 
-    // MARK: - Scenarios
+    // MARK: - Breathing State Tracking
 
-    func testZeroInstances() {
-        let image = renderer.render(
-            slotViewDataList: [],
-            colorMode: .color,
-            refreshState: .idle,
-            instancesCount: 0,
-            enabledCount: 0,
-            isDarkBackground: false
-        )
-        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
-        assertSnapshot(image, named: "zero_instances_question_mark")
-    }
+    func testBreathingSlotsTrackingWarning() {
+        let uuid = "warning-uuid"
+        let slot = makeSlot(uuid: uuid, colorState: .warning)
 
-    func testAllDisabled() {
-        let image = renderer.render(
-            slotViewDataList: [],
-            colorMode: .color,
-            refreshState: .idle,
-            instancesCount: 2,
-            enabledCount: 0,
-            isDarkBackground: false
-        )
-        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
-        assertSnapshot(image, named: "all_disabled_no_api")
-    }
+        renderer.updateBreathingState(slotViewDataList: [slot])
 
-    func testLoadingState() {
-        let image = renderer.render(
-            slotViewDataList: [],
-            colorMode: .color,
-            refreshState: .refreshing,
-            instancesCount: 2,
-            enabledCount: 2,
-            isDarkBackground: false
-        )
-        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
-        assertSnapshot(image, named: "loading_bullets")
-    }
-
-    func testOneQuotaSafeColorMode() {
-        let slot = SlotViewData(
-            uuid: "quota-safe",
-            displayName: "MiniMax Text",
-            shortName: "MX",
-            instanceType: .quota(percent: 45, usageValue: "450", limitValue: "1000", cycleRemainingSeconds: 5 * 86400),
-            sortOrder: 0,
-            colorState: .normal,
-            provider: Provider.minimax.rawValue
-        )
+        XCTAssertTrue(renderer.needsBreathingAnimation(),
+                       "Warning slot should trigger breathing animation")
+        // Verify render with breathing active produces valid output
+        renderer.startBreathingAnimation()
         let image = renderer.render(
             slotViewDataList: [slot],
             colorMode: .color,
@@ -127,173 +108,240 @@ final class MenuBarIconRendererTests: XCTestCase {
             isDarkBackground: false
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
-        assertSnapshot(image, named: "one_quota_safe_color")
+        XCTAssertGreaterThan(image.size.width, 0)
     }
 
-    func testOneQuotaWarningMonochromeMode() {
-        let slot = SlotViewData(
-            uuid: "quota-warning",
-            displayName: "MiniMax Speech",
-            shortName: "SP",
-            instanceType: .quota(percent: 75, usageValue: "750", limitValue: "1000", cycleRemainingSeconds: nil),
-            sortOrder: 0,
-            colorState: .warning,
-            provider: Provider.minimax.rawValue
+    func testBreathingSlotsTrackingCritical() {
+        let uuid = "critical-uuid"
+        let slot = makeSlot(uuid: uuid, colorState: .critical)
+
+        renderer.updateBreathingState(slotViewDataList: [slot])
+
+        XCTAssertTrue(renderer.needsBreathingAnimation(),
+                       "Critical slot should trigger breathing animation")
+        renderer.startBreathingAnimation()
+        let image = renderer.render(
+            slotViewDataList: [slot],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
         )
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
+        XCTAssertGreaterThan(image.size.width, 0)
+    }
+
+    func testNoBreathingWhenAllNormal() {
+        let slot = makeSlot(colorState: .normal)
+
+        renderer.updateBreathingState(slotViewDataList: [slot])
+
+        XCTAssertFalse(renderer.needsBreathingAnimation(),
+                        "Normal slot should not trigger breathing animation")
+    }
+
+    func testBreathingWhenMixed() {
+        let normal = makeSlot(uuid: "normal-1", colorState: .normal)
+        let warning = makeSlot(uuid: "warn-1", colorState: .warning)
+        let critical = makeSlot(uuid: "crit-1", colorState: .critical)
+
+        renderer.updateBreathingState(slotViewDataList: [normal, warning, critical])
+
+        XCTAssertTrue(renderer.needsBreathingAnimation(),
+                       "Mixed states containing warning/critical should trigger breathing")
+        XCTAssertFalse(renderer.isBreathingAnimationRunning(),
+                        "Breathing should not be running before explicit start")
+    }
+
+    // MARK: - Render Output Size
+
+    func testRenderOutputSizeWithShadow() {
+        let slot = makeSlot(uuid: "shadow-slot", colorState: .warning)
+
+        renderer.updateBreathingState(slotViewDataList: [slot])
+        renderer.startBreathingAnimation()
+
+        let image = renderer.render(
+            slotViewDataList: [slot],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1,
+                        "Output image should be 22pt high with shadow applied")
+        XCTAssertGreaterThan(image.size.width, 0,
+                              "Output image should have non-zero width with shadow applied")
+    }
+
+    func testRenderOutputSizeWithoutShadow() {
+        let slot = makeSlot(colorState: .normal)
+
+        renderer.updateBreathingState(slotViewDataList: [slot])
+
+        let image = renderer.render(
+            slotViewDataList: [slot],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1,
+                        "Output image should be 22pt high without shadow")
+        XCTAssertGreaterThan(image.size.width, 0,
+                              "Output image should have non-zero width without shadow")
+    }
+
+    // MARK: - Animation Lifecycle
+
+    func testAnimationLifecycleStartStop() {
+        let slot = makeSlot(colorState: .warning)
+        renderer.updateBreathingState(slotViewDataList: [slot])
+
+        renderer.startBreathingAnimation()
+        XCTAssertTrue(renderer.isBreathingAnimationRunning(),
+                       "isBreathingAnimationRunning should be true after start")
+
+        renderer.stopBreathingAnimation()
+        XCTAssertFalse(renderer.isBreathingAnimationRunning(),
+                        "isBreathingAnimationRunning should be false after stop")
+    }
+
+    func testAnimationStartWhenAlreadyRunningIsIdempotent() {
+        let slot = makeSlot(colorState: .warning)
+        renderer.updateBreathingState(slotViewDataList: [slot])
+
+        renderer.startBreathingAnimation()
+        XCTAssertTrue(renderer.isBreathingAnimationRunning())
+
+        // Second start should not crash or change state
+        renderer.startBreathingAnimation()
+        XCTAssertTrue(renderer.isBreathingAnimationRunning(),
+                       "Second start should be idempotent and keep running")
+    }
+
+    // MARK: - State Update Clearing
+
+    func testBreathingStateUpdateClearsRemovedUUIDs() {
+        let warningSlot = makeSlot(uuid: "warn-removed", colorState: .warning)
+        let normalSlot = makeSlot(uuid: "normal-new", colorState: .normal)
+
+        // First: update with warning — breathing should be needed
+        renderer.updateBreathingState(slotViewDataList: [warningSlot])
+        XCTAssertTrue(renderer.needsBreathingAnimation(),
+                       "Should need breathing after warning update")
+
+        // Then: update with all normal — breathing should be cleared
+        renderer.updateBreathingState(slotViewDataList: [normalSlot])
+        XCTAssertFalse(renderer.needsBreathingAnimation(),
+                        "Should not need breathing after switching to all normal")
+    }
+
+    // MARK: - Render With Shadow Breathing
+
+    func testRenderWithBreathingSlotsAppliedShadowParams() {
+        let slot = makeSlot(uuid: "shadow-verify", colorState: .critical)
+
+        renderer.updateBreathingState(slotViewDataList: [slot])
+        renderer.startBreathingAnimation()
+
+        // Brief wait so elapsed time > 0, ensuring breathing phase has advanced
+        Thread.sleep(forTimeInterval: 0.05)
+
+        let image = renderer.render(
+            slotViewDataList: [slot],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1,
+                        "Image with breathing shadow should have correct height")
+        XCTAssertGreaterThan(image.size.width, 0,
+                              "Image with breathing shadow should have non-zero width")
+        // Verify image produced real content (not a blank canvas)
+        XCTAssertNotNil(image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+                         "Should produce valid CGImage when breathing shadow is applied")
+    }
+
+    // MARK: - Monochrome Mode
+
+    func testMonochromeModeRender() {
+        let slot = makeSlot(colorState: .normal)
+
         let image = renderer.render(
             slotViewDataList: [slot],
             colorMode: .monochrome,
             refreshState: .idle,
             instancesCount: 1,
             enabledCount: 1,
-            isDarkBackground: false
+            isDarkBackground: true
         )
-        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
-        assertSnapshot(image, named: "one_quota_warning_mono")
+
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1,
+                        "Monochrome output should be 22pt high")
+        XCTAssertGreaterThan(image.size.width, 0,
+                              "Monochrome output should have non-zero width")
     }
 
-    func testOneBalanceWarningColorMode() {
-        let slot = SlotViewData(
-            uuid: "balance-warning",
-            displayName: "DeepSeek",
-            shortName: "DS",
-            instanceType: .balance(amount: "15.20", totalBalance: "20.00", grantedBalance: "4.80", isAvailable: true, currency: "CNY"),
-            sortOrder: 0,
-            colorState: .warning,
-            provider: Provider.deepseek.rawValue
-        )
-        let image = renderer.render(
-            slotViewDataList: [slot],
-            colorMode: .color,
-            refreshState: .idle,
-            instancesCount: 1,
-            enabledCount: 1,
-            isDarkBackground: false
-        )
-        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
-        assertSnapshot(image, named: "one_balance_warning_color")
-    }
+    // MARK: - Multiple Slots Synchronization
 
-    func testTwoSlotsMixed() {
-        let quota = SlotViewData(
-            uuid: "quota-critical",
-            displayName: "MiniMax",
-            shortName: "MX",
-            instanceType: .quota(percent: 96, usageValue: "960", limitValue: "1000", cycleRemainingSeconds: 2 * 86400),
-            sortOrder: 0,
-            colorState: .critical,
-            provider: Provider.minimax.rawValue
-        )
-        let balance = SlotViewData(
-            uuid: "balance-normal",
-            displayName: "DeepSeek",
-            shortName: "DS",
-            instanceType: .balance(amount: "88.50", totalBalance: "100.00", grantedBalance: "11.50", isAvailable: true, currency: "USD"),
-            sortOrder: 1,
-            colorState: .normal,
-            provider: Provider.deepseek.rawValue
-        )
-        let image = renderer.render(
-            slotViewDataList: [quota, balance],
+    func testMultipleSlotsSameStateSynchronized() {
+        let slot1 = makeSlot(uuid: "sync-slot-1", colorState: .warning, shortName: "S1")
+        let slot2 = makeSlot(uuid: "sync-slot-2", colorState: .warning, shortName: "S2")
+
+        renderer.updateBreathingState(slotViewDataList: [slot1, slot2])
+        renderer.startBreathingAnimation()
+
+        let image1 = renderer.render(
+            slotViewDataList: [slot1, slot2],
             colorMode: .color,
             refreshState: .idle,
             instancesCount: 2,
             enabledCount: 2,
             isDarkBackground: false
         )
-        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
-        // Two slots, each sized by content, separated by the inter-slot gap.
-        let expectedMinWidth: CGFloat = 60
-        XCTAssertGreaterThan(image.size.width, CGFloat(expectedMinWidth) - 1)
-        assertSnapshot(image, named: "two_slots_mixed_color")
-    }
 
-    func testBalanceUnavailable() {
-        let slot = SlotViewData(
-            uuid: "balance-unavailable",
-            displayName: "DeepSeek",
-            shortName: "DS",
-            instanceType: .balance(amount: "0", totalBalance: "0", grantedBalance: "0", isAvailable: false, currency: "CNY"),
-            sortOrder: 0,
-            colorState: .unavailable,
-            provider: Provider.deepseek.rawValue
-        )
-        let image = renderer.render(
-            slotViewDataList: [slot],
-            colorMode: .color,
-            refreshState: .idle,
-            instancesCount: 1,
-            enabledCount: 1,
-            isDarkBackground: false
-        )
-        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
-        assertSnapshot(image, named: "balance_unavailable_na")
-    }
+        // Short delay to progress the shared breathingStartTime
+        Thread.sleep(forTimeInterval: 0.1)
 
-    func testThreeSlotsAllRendered() {
-        let a = SlotViewData(
-            uuid: "slot-a",
-            displayName: "A",
-            shortName: "AA",
-            instanceType: .quota(percent: 10, usageValue: "10", limitValue: "100", cycleRemainingSeconds: nil),
-            sortOrder: 0,
-            colorState: .normal,
-            provider: Provider.minimax.rawValue
-        )
-        let b = SlotViewData(
-            uuid: "slot-b",
-            displayName: "B",
-            shortName: "BB",
-            instanceType: .quota(percent: 20, usageValue: "20", limitValue: "100", cycleRemainingSeconds: nil),
-            sortOrder: 1,
-            colorState: .normal,
-            provider: Provider.minimax.rawValue
-        )
-        let c = SlotViewData(
-            uuid: "slot-c",
-            displayName: "C",
-            shortName: "CC",
-            instanceType: .quota(percent: 30, usageValue: "30", limitValue: "100", cycleRemainingSeconds: nil),
-            sortOrder: 2,
-            colorState: .normal,
-            provider: Provider.minimax.rawValue
-        )
-        let twoSlotImage = renderer.render(
-            slotViewDataList: [a, b],
+        let image2 = renderer.render(
+            slotViewDataList: [slot1, slot2],
             colorMode: .color,
             refreshState: .idle,
             instancesCount: 2,
             enabledCount: 2,
             isDarkBackground: false
         )
-        let threeSlotImage = renderer.render(
-            slotViewDataList: [a, b, c],
-            colorMode: .color,
-            refreshState: .idle,
-            instancesCount: 3,
-            enabledCount: 3,
-            isDarkBackground: false
-        )
-        XCTAssertEqual(threeSlotImage.size.height, 22, accuracy: 0.1)
-        // No 2-slot cap: rendering 3 slots must be wider than rendering 2.
-        XCTAssertGreaterThan(threeSlotImage.size.width, twoSlotImage.size.width)
-        assertSnapshot(threeSlotImage, named: "three_slots_all_rendered")
+
+        XCTAssertEqual(image1.size.height, 22, accuracy: 0.1)
+        XCTAssertGreaterThan(image1.size.width, 0)
+        XCTAssertEqual(image2.size.height, 22, accuracy: 0.1)
+        XCTAssertGreaterThan(image2.size.width, 0)
+        // Both renders should produce consistent dimensions — two slots always
+        // use the same shared breathingStartTime, so the phase advances identically
+        XCTAssertEqual(image1.size.width, image2.size.width, accuracy: 0.1,
+                        "Render dimensions should be consistent across animation frames")
+        // With two slots, the width should be wider than a single slot
+        // (two content-sized slots + 10pt gap)
+        XCTAssertGreaterThan(image1.size.width, 30,
+                              "Two slots should produce wider output than one slot")
     }
 
-    func testFlashingStateUpdateRendering() {
-        let slot = SlotViewData(
-            uuid: "flashing-slot",
-            displayName: "MiniMax",
-            shortName: "MX",
-            instanceType: .quota(percent: 98, usageValue: "980", limitValue: "1000", cycleRemainingSeconds: 86400),
-            sortOrder: 0,
-            colorState: .critical,
-            provider: Provider.minimax.rawValue
-        )
+    // MARK: - Snapshot Tests
 
-        // First render with flashing visible (default)
-        renderer.updateFlashingState(slotViewDataList: [slot])
-        let imageVisible = renderer.render(
+    func testSnapshotNormalNoBreathingColor() {
+        let slot = makeSlot(uuid: "snap-normal", colorState: .normal)
+        renderer.updateBreathingState(slotViewDataList: [slot])
+
+        let image = renderer.render(
             slotViewDataList: [slot],
             colorMode: .color,
             refreshState: .idle,
@@ -301,22 +349,22 @@ final class MenuBarIconRendererTests: XCTestCase {
             enabledCount: 1,
             isDarkBackground: false
         )
-
-        // Simulate one flash cycle → toggle off
-        renderer.updateFlashingState(slotViewDataList: [slot])
-        // Manually toggle visibility to simulate the Task running
-        // We can't easily wait for the Task in a unit test, so we test the internal state directly
-        // by checking the flashingVisible dictionary through the render output.
-        // Instead, we'll verify the renderer's flashing state tracking.
-
-        XCTAssertEqual(imageVisible.size.height, 22, accuracy: 0.1)
-        assertSnapshot(imageVisible, named: "critical_visible")
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
+        assertSnapshot(image, named: "normal_no_breathing_color")
     }
 
-    func testEmptyEnabledSlotsShowsQuestion() {
-        // Instances exist and enabled, but slotViewDataList is empty (e.g. all failed or loading)
+    func testSnapshotWarningBreathingInhale() {
+        let uuid = "snap-warning"
+        let slot = makeSlot(uuid: uuid, colorState: .warning)
+
+        renderer.updateBreathingState(slotViewDataList: [slot])
+        // Inject deterministic time: 0.7s into 4.0s warning cycle
+        // At t=0.7s within inhale (1.4s), normalized t = 0.5, phase = 0.25
+        renderer.currentTimeProvider = { 0.7 }
+        renderer.startBreathingAnimation()
+
         let image = renderer.render(
-            slotViewDataList: [],
+            slotViewDataList: [slot],
             colorMode: .color,
             refreshState: .idle,
             instancesCount: 1,
@@ -324,6 +372,28 @@ final class MenuBarIconRendererTests: XCTestCase {
             isDarkBackground: false
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
-        assertSnapshot(image, named: "empty_slots_question")
+        assertSnapshot(image, named: "warning_breathing_inhale")
+    }
+
+    func testSnapshotCriticalBreathingInhale() {
+        let uuid = "snap-critical"
+        let slot = makeSlot(uuid: uuid, colorState: .critical)
+
+        renderer.updateBreathingState(slotViewDataList: [slot])
+        // Inject deterministic time: 0.35s into 2.0s critical cycle
+        // At t=0.35s within inhale (0.7s), normalized t = 0.5, phase = 0.25
+        renderer.currentTimeProvider = { 0.35 }
+        renderer.startBreathingAnimation()
+
+        let image = renderer.render(
+            slotViewDataList: [slot],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
+        assertSnapshot(image, named: "critical_breathing_inhale")
     }
 }

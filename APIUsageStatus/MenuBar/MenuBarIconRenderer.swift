@@ -34,10 +34,12 @@ final class MenuBarIconRenderer {
     /// Horizontal gap between adjacent slots.
     private static let betweenSlotGap: CGFloat = 10.0
 
-    // MARK: - Flashing state
+    // MARK: - Breathing state
 
-    private var flashingTask: Task<Void, Never>?
-    private var flashingVisible: [String: Bool] = [:]
+    private var breathingSlots: Set<String> = []
+    private var displayLink: CVDisplayLinkRunner?
+    private var breathingStartTime: CFTimeInterval = 0
+    var currentTimeProvider: () -> CFTimeInterval = { CACurrentMediaTime() }
 
     var onNeedsDisplay: (() -> Void)?
 
@@ -93,22 +95,35 @@ final class MenuBarIconRenderer {
         var slotOriginX: CGFloat = 0
         for (index, slot) in enabledSlots.enumerated() {
             let slotWidth = slotWidths[index]
-            let isVisible = flashingVisible[slot.uuid] ?? true
 
             defer { slotOriginX += slotWidth + Self.betweenSlotGap }
 
-            if slot.colorState == .critical && !isVisible {
-                continue
-            }
-
             let slotColor = colorForSlot(slot, colorMode: colorMode, isDarkBackground: isDarkBackground)
+
+            var shadowBlur: CGFloat = 0
+            var shadowOp: CGFloat = 0
+            if breathingSlots.contains(slot.uuid) {
+                let elapsed = currentTimeProvider() - breathingStartTime
+                let config: BreathingConfig
+                switch slot.colorState {
+                case .warning:
+                    config = .warning
+                case .critical:
+                    config = .critical
+                default:
+                    config = .warning
+                }
+                let phase = breathingPhase(elapsed: elapsed, config: config)
+                shadowBlur = shadowRadius(forPhase: phase, config: config)
+                shadowOp = shadowOpacity(forPhase: phase, config: config)
+            }
 
             if slot.colorState == .unavailable && slot.instanceType.isBalance {
                 let naWidth = textWidth("N/A", font: Self.font)
                 let naX = slotOriginX + (slotWidth - naWidth) / 2
                 renderText("N/A", at: CGPoint(x: naX, y: centerBaseline), color: slotColor, font: Self.font, in: context)
             } else {
-                renderTwoLineSlot(atX: slotOriginX, width: slotWidth, data: slot, color: slotColor, in: context)
+                renderTwoLineSlot(atX: slotOriginX, width: slotWidth, data: slot, color: slotColor, in: context, shadowBlurRadius: shadowBlur, shadowOpacity: shadowOp)
             }
         }
 
@@ -116,33 +131,39 @@ final class MenuBarIconRenderer {
         return image
     }
 
-    func updateFlashingState(slotViewDataList: [SlotViewData]) {
+    func updateBreathingState(slotViewDataList: [SlotViewData]) {
         let enabledSlots = slotViewDataList
             .filter { $0.colorState != .disabled }
             .sorted { $0.sortOrder < $1.sortOrder }
 
-        let currentCriticalUUIDs = Set(enabledSlots
-            .filter { $0.colorState == .critical }
+        let breathingUUIDs = Set(enabledSlots
+            .filter { $0.colorState == .warning || $0.colorState == .critical }
             .map { $0.uuid })
 
-        for uuid in flashingVisible.keys {
-            if !currentCriticalUUIDs.contains(uuid) {
-                flashingVisible.removeValue(forKey: uuid)
-            }
-        }
+        breathingSlots = breathingUUIDs
+    }
 
-        for slot in enabledSlots where slot.colorState == .critical {
-            if flashingVisible[slot.uuid] == nil {
-                flashingVisible[slot.uuid] = true
-            }
-        }
+    func needsBreathingAnimation() -> Bool {
+        return !breathingSlots.isEmpty
+    }
 
-        let hasCritical = !flashingVisible.isEmpty
-        if hasCritical && flashingTask == nil {
-            startFlashingTask()
-        } else if !hasCritical {
-            stopFlashingTask()
+    func startBreathingAnimation() {
+        guard displayLink == nil else { return }
+        breathingStartTime = currentTimeProvider()
+        displayLink = CVDisplayLinkRunner { [weak self] in
+            guard let self = self else { return }
+            self.onNeedsDisplay?()
         }
+        displayLink?.start()
+    }
+
+    func stopBreathingAnimation() {
+        displayLink?.stop()
+        displayLink = nil
+    }
+
+    func isBreathingAnimationRunning() -> Bool {
+        return displayLink?.isRunning == true
     }
 
     // MARK: - Private: measurement
@@ -188,7 +209,11 @@ final class MenuBarIconRenderer {
 
     // MARK: - Private: special state rendering (single centred line)
 
-    private func renderSpecialCenteredText(_ text: String) -> NSImage {
+    private func renderSpecialCenteredText(
+        _ text: String,
+        shadowBlurRadius: CGFloat = 0,
+        shadowOpacity: CGFloat = 0
+    ) -> NSImage {
         let width = textWidth(text, font: Self.font)
         let size = NSSize(width: width, height: Self.slotHeight)
         let image = NSImage(size: size)
@@ -197,7 +222,18 @@ final class MenuBarIconRenderer {
         if let context = NSGraphicsContext.current?.cgContext {
             let tw = textWidth(text, font: Self.font)
             let x = (width - tw) / 2
+
+            if shadowBlurRadius > 0 && shadowOpacity > 0 {
+                context.saveGState()
+                context.setShadow(offset: CGSize.zero, blur: shadowBlurRadius,
+                                  color: Self.dimColor.withAlphaComponent(shadowOpacity).cgColor)
+            }
+
             renderText(text, at: CGPoint(x: x, y: centerBaseline), color: Self.dimColor, font: Self.font, in: context)
+
+            if shadowBlurRadius > 0 && shadowOpacity > 0 {
+                context.restoreGState()
+            }
         }
 
         image.unlockFocus()
@@ -268,10 +304,18 @@ final class MenuBarIconRenderer {
         width: CGFloat,
         data: SlotViewData,
         color: NSColor,
-        in context: CGContext
+        in context: CGContext,
+        shadowBlurRadius: CGFloat = 0,
+        shadowOpacity: CGFloat = 0
     ) {
         let shortName = String(data.shortName.uppercased().prefix(3))
         let (topBaseline, bottomBaseline) = twoLineBaselines
+
+        if shadowBlurRadius > 0 && shadowOpacity > 0 {
+            context.saveGState()
+            context.setShadow(offset: CGSize.zero, blur: shadowBlurRadius,
+                              color: color.withAlphaComponent(shadowOpacity).cgColor)
+        }
 
         // Line 1: shortName
         let nameWidth = textWidth(shortName, font: Self.font)
@@ -294,31 +338,13 @@ final class MenuBarIconRenderer {
         let valueWidth = textWidth(valueText, font: valueFont)
         let valueX = originX + (width - valueWidth) / 2
         renderText(valueText, at: CGPoint(x: valueX, y: bottomBaseline), color: color, font: valueFont, in: context)
-    }
 
-    // MARK: - Flashing task
-
-    private func startFlashingTask() {
-        flashingTask?.cancel()
-        flashingTask = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let self = self else { return }
-                for uuid in self.flashingVisible.keys {
-                    self.flashingVisible[uuid]?.toggle()
-                }
-                self.onNeedsDisplay?()
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-            }
+        if shadowBlurRadius > 0 && shadowOpacity > 0 {
+            context.restoreGState()
         }
     }
 
-    private func stopFlashingTask() {
-        flashingTask?.cancel()
-        flashingTask = nil
-        flashingVisible.removeAll()
-    }
-
     deinit {
-        flashingTask?.cancel()
+        displayLink?.stop()
     }
 }

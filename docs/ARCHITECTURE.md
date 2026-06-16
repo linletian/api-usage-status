@@ -153,7 +153,7 @@
 - 1 个槽位时宽度自适应内容；2 个槽位时严格 50/50 等宽
 - 支持单色与彩色两种模式
 - 处理特殊状态：`?`（无配置）、`NO API`（全部禁用）、`•••`（加载中）、`N/A`（余额不可用）
-- 实现严重阈值的 1Hz 闪烁动画
+- 实现严重阈值的呼吸动画（warning 4s 周期，critical 2.0s 周期）
 
 ### 2.4 用量面板与独立详情面板（`UsagePanelView.swift`、`UsageCardView.swift`、`InstanceDetailPanel.swift`）
 
@@ -404,7 +404,7 @@ MenuBarIconRenderer.render()
     │     │     ├──▶ 第二行：[配额型] 百分比数字（等宽 8pt） [余额型] 余额数值
     │     │     └──▶ 两行通过上下 margin 对称分布在 22pt 内
     │     │
-    │     └──▶ 若为严重阈值 → 启动 1Hz 闪烁 Task
+    │     └──▶ 若为 warning/critical 阈值 → 启动呼吸动画（CVDisplayLink 驱动）
     │
     ├──▶ 设为 NSStatusBarButton.image
     │
@@ -843,20 +843,22 @@ enum RefreshError: Error {
 #### 单色模式
 - 所有文字：跟随系统菜单栏外观（浅色主题黑色，深色主题白色）
 - 百分比数字本身即为用量信息载体，无需额外视觉编码
-- 严重阈值：整槽以 1Hz 频率闪烁（通过结构化并发 Task 切换可见性）
-- 余额型实例不闪烁，仅显示数值
-- **非活跃状态**：整槽以 `#D6D0A0` 渲染所有元素，不闪烁
+- 警告阈值：整槽以呼吸动画呈现（warning 4s 周期）
+- 严重阈值：整槽以呼吸动画呈现（critical 2.0s 周期）
+- 余额型实例无呼吸动画，仅显示数值
+- **非活跃状态**：整槽以 `#D6D0A0` 渲染所有元素，不启动呼吸动画
 
 #### 彩色模式
 - 每个槽位根据阈值独立着色：
   - 安全：绿色（`#4CAF50`）
   - 警告：黄/琥珀色（`#FFC107`）
   - 严重：红色（`#F44336`）
-- 严重阈值：槽位以 1Hz 频率红色闪烁
+- 警告阈值：槽位以呼吸动画呈现（warning 4s 周期，黄色 `#FFC107`）
+- 严重阈值：槽位以呼吸动画呈现（critical 2.0s 周期，红色 `#F44336`）
 - 余额型实例颜色根据剩余余额与阈值的比较决定
-- **非活跃状态**：整槽以 `#D6D0A0` 渲染所有元素，不闪烁，与单色模式下外观一致
+- **非活跃状态**：整槽以 `#D6D0A0` 渲染所有元素，不启动呼吸动画，与单色模式下外观一致
 
-### 7.4 闪烁动画
+### 7.4 呼吸动画
 
 ```swift
 // 于 MenuBarIconRenderer 中
@@ -1465,7 +1467,7 @@ APIUsageStatus/
 - **可单元测试的模块**：`BalanceCalculator`、`RetryPolicy`、`MiniMaxResponseParser`、`DeepSeekResponseParser` —— 均为纯函数或确定性逻辑。
 - **Actor 测试**：`AppState`、`RefreshService`、`PersistenceService` 可通过 await 其 async 方法并结合 mock/stub 依赖进行测试。
 - **UI 测试**：SwiftUI Previews 结合 mock `AppStateProxy` 数据实现快速视觉迭代。
-- **快照测试**：`MenuBarIconRenderer` 的输出可被捕获为 `NSImage` 并与参考图像对比。
+- **属性断言测试 + 快照测试**：`MenuBarIconRenderer` 的呼吸状态跟踪和动画生命周期通过属性断言测试验证；渲染输出可被捕获为 `NSImage` 并与参考图像对比。
 
 ---
 

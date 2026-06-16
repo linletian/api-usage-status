@@ -108,19 +108,21 @@ xcodebuild -project APIUsageStatus.xcodeproj \
 
 或在 Xcode 中按 Cmd+U。
 
-### 测试套件（共 64 个用例，不含已弃用）
+### 测试套件（共 113 个用例，不含已弃用）
 
 | 套件 | 数量 | 覆盖范围 |
 |------|------|---------|
 | BalanceCalculatorTests | 14 | 消耗计算、跨日归档、充值检测、日均统计、历史裁剪 |
-| MiniMaxResponseParserTests | 10 | 正常解析、鉴权错误、业务错误、畸形 JSON、多模型、周字段 |
+| MiniMaxResponseParserTests | 11 | 正常解析、鉴权错误、业务错误、畸形 JSON、多模型、周字段 |
 | DeepSeekResponseParserTests | 8 | CNY 优先解析、降级回退、is_available=false、空数组 |
+| CopilotResponseParserTests | 12 | GitHub Copilot API 响应解析、token scopes、错误响应 |
 | RetryPolicyTests | 6 | 重试行为、退避延迟、最大尝试次数 |
 | WeeklyQuotaTests | 10 | 周字段解析、isUnlimited 判定、缺失字段回退 |
 | FlowingGlowBarTests | 5 | 辉光条相位、宽度、几何约束 |
-| MenuBarIconRendererTests | 11 | 所有图标状态的快照对比测试 |
-| OpenCodeResponseParserTests | 6 | 真实数据解析、窗口算法测试、makeResponse 结构验证 |
+| MenuBarIconRendererTests | 15 | 属性断言+快照：呼吸状态跟踪、阴影、动画生命周期、单色模式、多槽位 |
+| OpenCodeResponseParserTests | 11 | 真实数据解析、窗口算法测试、makeResponse 结构验证 |
 | ShellProcessRunnerTests | 4 | 成功执行、可执行文件不存在、非零退出码、超时 |
+| BreathingMathTests | 17 | 呼吸动画相位、阴影半径、阴影透明度、配置校验 |
 | ~~PixelFontEngineTests~~ | ~~58~~ | ~~（已弃用）原像素字模引擎测试，代码已注释，不参与运行~~ |
 
 ## 部署到 /Applications
@@ -145,7 +147,7 @@ APIUsageStatus/
 ├── MenuBar/                       # 菜单栏图标与用量面板控制器
 ├── Views/                         # SwiftUI 视图（面板/卡片/设置/详情）
 ├── AppState/                      # 运行时状态 Actor + @MainActor 代理
-├── Models/                        # 数据模型（实例/余额/阈值/全局设置）
+├── Models/                        # 数据模型（实例/余额/阈值/全局设置、BreathingMath）
 ├── Services/                      # 核心服务（Keychain/持久化/刷新/通知/开机自启）
 ├── Shell/                         # Shell 进程执行（OpenCode Go 供应商使用）
 ├── Network/                       # HTTP 客户端 + 重试策略
@@ -153,19 +155,21 @@ APIUsageStatus/
 ├── Balance/                       # 余额计算器 + 历史快照
 ├── PixelFont/                     # ⚠️ 已弃用：原像素字体引擎（代码已注释）
 ├── Extensions/                    # Date/Decimal/String 扩展
-├── Utilities/                     # 日志 + 原子写入
+├── Utilities/                     # 日志 + 原子写入 + CVDisplayLinkRunner（呼吸动画驱动）
 ├── Resources/                     # Info.plist + AppIcon 源文件
 └── Assets.xcassets/               # 编译期 AppIcon 图标集
 APIUsageStatusTests/
 ├── BalanceCalculatorTests.swift
 ├── MiniMaxResponseParserTests.swift
 ├── DeepSeekResponseParserTests.swift
+├── CopilotResponseParserTests.swift
 ├── RetryPolicyTests.swift
 ├── WeeklyQuotaTests.swift
 ├── FlowingGlowBarTests.swift
 ├── MenuBarIconRendererTests.swift
 ├── OpenCodeResponseParserTests.swift
 ├── ShellProcessRunnerTests.swift
+├── BreathingMathTests.swift
 ├── ~~PixelFontEngineTests.swift~~  # 已弃用（代码已注释）
 └── ReferenceImages/               # 快照测试金标准图片
 ```

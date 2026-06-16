@@ -13,7 +13,7 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
     private var openSettings: () -> Void
     private var hostingView: NSView?
 
-    // Cached latest data for re-rendering (e.g. during flashing animation)
+    // Cached latest data for re-rendering (e.g. during breathing animation)
     private var latestSlotData: [SlotViewData] = []
     private var latestRefreshState: RefreshState = .idle
     private var latestInstances: [Instance] = []
@@ -152,7 +152,14 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
         latestSettings = settings
         latestErrorSummaries = errorSummaries
 
-        iconRenderer?.updateFlashingState(slotViewDataList: slotDataList)
+        iconRenderer?.updateBreathingState(slotViewDataList: slotDataList)
+        if let renderer = iconRenderer {
+            if renderer.needsBreathingAnimation(), !renderer.isBreathingAnimationRunning() {
+                renderer.startBreathingAnimation()
+            } else if !renderer.needsBreathingAnimation(), renderer.isBreathingAnimationRunning() {
+                renderer.stopBreathingAnimation()
+            }
+        }
 
         renderIcon()
         updateWindowSize()

@@ -65,7 +65,14 @@ struct InstanceEditorView: View {
         VStack(spacing: 0) {
             Form {
                 Section("Basic Info") {
-                    Picker("Provider", selection: $provider) {
+                    Picker("Provider", selection: Binding<Provider>(
+                        get: { provider },
+                        set: { newProvider in
+                            provider = newProvider
+                            updateDimensionsForProvider()
+                            validationError = nil
+                        }
+                    )) {
                         ForEach(Provider.allCases, id: \.self) { p in
                             Text(p.displayName).tag(p)
                         }
@@ -147,10 +154,6 @@ struct InstanceEditorView: View {
         .frame(minWidth: 500, minHeight: 450)
         .onAppear {
             loadExistingData()
-        }
-        .onChange(of: provider) { _ in
-            updateDimensionsForProvider()
-            validationError = nil
         }
         .onChange(of: thresholds) { _ in
             validationError = nil

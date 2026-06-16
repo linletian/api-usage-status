@@ -4,6 +4,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
+    @State private var expandedInstances: Set<String> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -119,50 +120,113 @@ struct SettingsView: View {
     }
 
     private func instanceRow(_ instance: Instance) -> some View {
-        HStack(spacing: 12) {
-            Toggle("", isOn: Binding(
-                get: { instance.enabled },
-                set: { viewModel.setInstanceEnabled(uuid: instance.uuid, enabled: $0) }
-            ))
-            .toggleStyle(.switch)
-            .controlSize(.small)
+        let isExpanded = expandedInstances.contains(instance.uuid)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(instance.displayName.isEmpty ? "Untitled" : instance.displayName)
-                    .font(.system(size: 13, weight: .medium))
-                Text("\(providerDisplayName(instance.provider)) · \(instance.dimension)")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+        return VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Toggle("", isOn: Binding(
+                    get: { instance.trackingEnabled },
+                    set: { viewModel.setInstanceTrackingEnabled(uuid: instance.uuid, enabled: $0) }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        if isExpanded {
+                            expandedInstances.remove(instance.uuid)
+                        } else {
+                            expandedInstances.insert(instance.uuid)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(instance.displayName.isEmpty ? "Untitled" : instance.displayName)
+                        .font(.system(size: 13, weight: .medium))
+                    Text("\(providerDisplayName(instance.provider)) · \(instance.dimension)")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    Text(instance.shortName)
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .frame(minWidth: 24)
+
+                    Button {
+                        viewModel.editingInstance = instance
+                        viewModel.isPresentingEditor = true
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.borderless)
+
+                    Button {
+                        viewModel.requestDelete(instance)
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundColor(.red)
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
-
-            HStack(spacing: 8) {
-                Text(instance.shortName)
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .frame(minWidth: 24)
-
-                Button {
-                    viewModel.editingInstance = instance
-                    viewModel.isPresentingEditor = true
-                } label: {
-                    Image(systemName: "pencil")
-                }
-                .buttonStyle(.borderless)
-
-                Button {
-                    viewModel.requestDelete(instance)
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.borderless)
-                .foregroundColor(.red)
+            if isExpanded {
+                metricsSection(for: instance)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeInOut(duration: 0.15), value: isExpanded)
+    }
+
+    private func metricsSection(for instance: Instance) -> some View {
+        VStack(spacing: 0) {
+            Divider()
+                .padding(.horizontal, 16)
+
+            ForEach(Array(instance.metrics.enumerated()), id: \.offset) { index, metric in
+                HStack(spacing: 12) {
+                    Toggle("", isOn: Binding(
+                        get: { metric.displayInMenuBar },
+                        set: { viewModel.setMetricDisplayInMenuBar(uuid: instance.uuid, metricIndex: index, enabled: $0) }
+                    ))
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+
+                    Text(metricLabel(metric))
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+                }
+                .padding(.horizontal, 44)
+                .padding(.vertical, 4)
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
+    private func metricLabel(_ metric: MetricConfig) -> String {
+        if let group = metric.group, let window = metric.window {
+            return "\(group) · \(window)"
+        } else if let group = metric.group {
+            return group
+        } else if let window = metric.window {
+            return window
+        }
+        return metric.key
     }
 
     private func providerDisplayName(_ raw: String) -> String {

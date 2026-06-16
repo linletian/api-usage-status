@@ -64,16 +64,14 @@ final class MenuBarIconRenderer {
             return renderSpecialCenteredText("\u{2022}\u{2022}\u{2022}")
         }
 
-        let enabledSlots = slotViewDataList
-            .filter { $0.colorState != .disabled }
-            .sorted { $0.sortOrder < $1.sortOrder }
+        let expandedSlots = expandToMetricSlots(slotViewDataList)
 
-        if enabledSlots.isEmpty {
+        if expandedSlots.isEmpty {
             return renderSpecialCenteredText("?")
         }
 
         // Per-slot content width: each slot is sized by its own content, no equal-width forcing.
-        let slotWidths: [CGFloat] = enabledSlots.map { slot in
+        let slotWidths: [CGFloat] = expandedSlots.map { slot in
             if slot.colorState == .unavailable && slot.instanceType.isBalance {
                 return textWidth("N/A", font: Self.font)
             }
@@ -93,7 +91,7 @@ final class MenuBarIconRenderer {
         }
 
         var slotOriginX: CGFloat = 0
-        for (index, slot) in enabledSlots.enumerated() {
+        for (index, slot) in expandedSlots.enumerated() {
             let slotWidth = slotWidths[index]
 
             defer { slotOriginX += slotWidth + Self.betweenSlotGap }
@@ -132,11 +130,9 @@ final class MenuBarIconRenderer {
     }
 
     func updateBreathingState(slotViewDataList: [SlotViewData]) {
-        let enabledSlots = slotViewDataList
-            .filter { $0.colorState != .disabled }
-            .sorted { $0.sortOrder < $1.sortOrder }
+        let expandedSlots = expandToMetricSlots(slotViewDataList)
 
-        let breathingUUIDs = Set(enabledSlots
+        let breathingUUIDs = Set(expandedSlots
             .filter { $0.colorState == .warning || $0.colorState == .critical }
             .map { $0.uuid })
 
@@ -167,6 +163,41 @@ final class MenuBarIconRenderer {
     }
 
     // MARK: - Private: measurement
+
+    /// Expand each `SlotViewData` into per-metric render slots so that each
+    /// visible metric gets its own icon slot.
+    ///
+    /// - When `metricSnapshots` is non-empty, each snapshot with
+    ///   `displayInMenuBar == true` becomes one slot (1 metric = 1 slot).
+    ///   Slots are ordered by Instance `sortOrder` then `configIndex`.
+    /// - When `metricSnapshots` is empty, backward compat: one slot per instance.
+    /// - Disabled colour-state slots are excluded in both paths.
+    private func expandToMetricSlots(_ slotViewDataList: [SlotViewData]) -> [SlotViewData] {
+        var expanded: [SlotViewData] = []
+        for slot in slotViewDataList {
+            let snapshots = slot.metricSnapshots
+            if snapshots.isEmpty {
+                if slot.colorState != .disabled {
+                    expanded.append(slot)
+                }
+            } else {
+                for snapshot in snapshots {
+                    guard snapshot.displayInMenuBar else { continue }
+                    guard snapshot.colorState != .disabled else { continue }
+                    expanded.append(SlotViewData(
+                        uuid: "\(slot.uuid)/\(snapshot.key)",
+                        displayName: snapshot.group ?? slot.displayName,
+                        shortName: snapshot.shortName ?? slot.shortName,
+                        sortOrder: slot.sortOrder * 10000 + snapshot.configIndex,
+                        provider: slot.provider,
+                        metricSnapshots: [snapshot]
+                    ))
+                }
+            }
+        }
+        expanded.sort { $0.sortOrder < $1.sortOrder }
+        return expanded
+    }
 
     private func measureSlotContent(_ slot: SlotViewData) -> CGFloat {
         let shortName = String(slot.shortName.uppercased().prefix(3))

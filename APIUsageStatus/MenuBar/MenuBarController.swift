@@ -225,15 +225,19 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
         let headerHeight: CGFloat = 24
         let padding: CGFloat = 16
 
+        // Multi-metric cards render one row per additional metric snapshot.
+        // ~22pt covers the per-metric label + value line at our standard typography.
+        let extraMetricsHeight = max(0, CGFloat(slot.metricSnapshots.count - 1)) * 22
+
         switch slot.instanceType {
         case .quota:
             // 40pt for 5h bar + text, ~20pt for optional weekly bar
             let contentHeight: CGFloat = 60
-            return headerHeight + contentHeight + padding
+            return headerHeight + contentHeight + padding + extraMetricsHeight
 
         case .balance(_, _, let grantedBalance, let isAvailable, _):
             if !isAvailable {
-                return headerHeight + 16 + padding
+                return headerHeight + 16 + padding + extraMetricsHeight
             }
             var contentHeight: CGFloat = 20
             if let today = slot.todayUsage, !today.isEmpty {
@@ -249,7 +253,7 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
                 contentHeight += 10
             }
             contentHeight += 10
-            return headerHeight + contentHeight + padding
+            return headerHeight + contentHeight + padding + extraMetricsHeight
         }
     }
 
@@ -257,7 +261,7 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
         guard let button = statusItem?.button else { return }
         guard let renderer = iconRenderer else { return }
 
-        let enabledCount = latestInstances.filter { $0.enabled }.count
+        let enabledCount = latestInstances.filter { $0.trackingEnabled }.count
         let totalCount = latestInstances.count
 
         let isDarkBackground: Bool = {

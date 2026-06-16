@@ -113,7 +113,12 @@ struct SlotViewData: Identifiable, Equatable {
 
     // MARK: - Computed (from metricSnapshots)
 
+    /// Preserved `InstanceType` from the balance path init. When non-nil,
+    /// `instanceType` returns this instead of deriving from snapshots.
+    private let balanceInstanceType: InstanceType?
+
     var instanceType: InstanceType {
+        if let balance = balanceInstanceType { return balance }
         guard let first = metricSnapshots.first else {
             return .quota(percent: 0, usageValue: "", limitValue: "", cycleRemainingSeconds: nil)
         }
@@ -188,6 +193,15 @@ struct SlotViewData: Identifiable, Equatable {
         self.todayUsage = todayUsage
         self.dailyAverages = dailyAverages
         self.weeklyDebug = weeklyDebug
+
+        // Balance path: preserve the full InstanceType so the menu bar and
+        // usage panel render balance content (amount/currency) instead of
+        // deriving a fake .quota from the synthetic MetricSnapshot.
+        if case .balance = instanceType {
+            self.balanceInstanceType = instanceType
+        } else {
+            self.balanceInstanceType = nil
+        }
 
         if !metricSnapshots.isEmpty {
             self.metricSnapshots = metricSnapshots

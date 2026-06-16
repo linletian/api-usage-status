@@ -188,7 +188,9 @@ final class MenuBarIconRenderer {
                         uuid: "\(slot.uuid)/\(snapshot.key)",
                         displayName: snapshot.group ?? slot.displayName,
                         shortName: snapshot.shortName ?? slot.shortName,
+                        instanceType: slot.instanceType,
                         sortOrder: slot.sortOrder * 10000 + snapshot.configIndex,
+                        colorState: slot.colorState,
                         provider: slot.provider,
                         metricSnapshots: [snapshot]
                     ))

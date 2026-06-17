@@ -351,8 +351,9 @@
 - 通过 Popover 内的设置按钮和右键菜单「打开设置」均可打开
 
 #### 4b. SettingsView（SwiftUI）
-- 标签页式或列表式布局
+- macOS sidebar 导航布局（Services / General / About，180pt 宽，SF Symbols 图标）
 - **实例列表**：
+  - 实例以 InstanceCardView 卡片形式展示，含 StatusDotView 追踪状态指示，空状态时显示 EmptyStateGuideView 引导添加首个实例
   - 现有实例列表（启用/禁用切换）
   - 添加实例按钮 → 进入 `InstanceEditorView`
   - 编辑按钮 → 进入 `InstanceEditorView`
@@ -390,6 +391,13 @@
 - 实例列表支持通过拖拽手势调整 `sort_order`
 - 拖拽完成后自动保存到 `instances.json`
 
+#### 4f. Color+Theme 语义色彩系统
+- Color+Theme.swift 定义 surface/text/status/accent 四类语义色彩令牌
+- 完整支持 Light/Dark 模式
+
+#### 4g. Provider+Icon SF Symbols 扩展
+- Provider+Icon.swift，每个 Provider 映射到 SF Symbol 图标名称
+
 ### 不在范围内
 
 - SMAppService 实际注册（Phase 7）
@@ -402,7 +410,7 @@
 | PRD | §3.3 供应商与统计维度 | 实例管理 |
 | PRD | §3.5 偏好设置 | 服务实例管理、配色与阈值、通用设置全部字段 |
 | PRD | §3.8 配置数据持久化 | instances.json schema + 字段说明 + 实例删除清理规则 |
-| ARCHITECTURE | §2.5 设置窗口 | SettingsWindow / SettingsViewModel |
+| ARCHITECTURE | §2.5 设置窗口 | SettingsWindow / SettingsViewModel / sidebar 导航 / InstanceCardView / StatusDotView / EmptyStateGuideView / Color+Theme / Provider+Icon |
 | ARCHITECTURE | §3.4 设置写入流程 | 设置数据写入流程 |
 | ARCHITECTURE | §4.1 内存模型 | Instance / GlobalSettings / Thresholds 等 Swift struct |
 | ARCHITECTURE | §9 状态管理方案 | 状态管理设计 |

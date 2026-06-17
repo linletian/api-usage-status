@@ -56,6 +56,12 @@ extension Color {
     /// Border line of an elevated card surface.
     static let cardBorder = Color(light: 0xE0E0E0, dark: 0x3A3A3C)
 
+    /// Background track behind a progress bar (the unfilled portion).
+    static let progressTrackBg = Color(light: 0xE5E5EA, dark: 0x48484A)
+
+    /// Shadow color for elevated card surfaces. Use with a small opacity (e.g. 0.06 light / 0.12 dark).
+    static let cardShadow = Color(light: 0x000000, dark: 0x000000)
+
     // MARK: Text
 
     /// Primary text — used for headings, body copy and primary content.
@@ -88,4 +94,50 @@ extension Color {
 
     /// Critical — quota exhausted, hard stop.
     static let criticalRed = Color(light: 0xDC3545, dark: 0xFF453A)
+
+    /// Warning background — soft attention surface for warning/error bars.
+    static let warningBg = Color(light: 0xFFF3E0, dark: 0x4A3A00)
 }
+
+#if canImport(AppKit)
+// MARK: - MenuBar NSColor Companions
+//
+// AppKit-only `NSColor` companions for `MenuBarIconRenderer`, which draws the
+// menu-bar icon via `CGContext` (Core Graphics) and therefore cannot consume the
+// SwiftUI `Color` tokens above (those resolve to dynamic assets that may not be
+// representable in a raw CGContext fill).
+//
+// Each companion is a single static color (no light/dark variant) because the
+// menu-bar template icon must remain legible in both appearances; the existing
+// MenuBarIconRenderer previously inlined these as `NSColor(red:green:blue:alpha:)`
+// literals — they are extracted here so the renderer can reference a single
+// source of truth.
+//
+// Relationship to the SwiftUI tokens above:
+//   • menuBarWarning  (0xFFC107) ≈ warningYellow  (0xFFC107) — same hue; the
+//     menu bar reuses the warning hue as a static value.
+//   • menuBarCritical (0xF44336) ≠ criticalRed   (0xDC3545) — intentionally
+//     different. The SwiftUI `criticalRed` follows the iOS "system red" palette
+//     (DC3545) for in-app error states, whereas the menu bar uses Material
+//     "Red 500" (F44336) which reads better at 8pt on a monochrome template
+//     icon. Do NOT unify them — they live in different semantic contexts.
+//   • menuBarDim      (0xD6D0A0) ≈ trackingOff — both signal "disabled /
+//     inactive / loading / error", but the menu bar needs a warm gray that
+//     stays visible against the menu bar background, not the neutral gray
+//     used for in-app disabled controls.
+extension NSColor {
+    /// Dim gray used for disabled / unavailable / loading / error menu-bar slots.
+    static let menuBarDim = NSColor(srgbHex: 0xD6D0A0)
+
+    /// Safe green used for healthy / under-threshold menu-bar slots.
+    static let menuBarSafe = NSColor(srgbHex: 0x4CAF50)
+
+    /// Warning amber used for approaching-threshold menu-bar slots.
+    static let menuBarWarning = NSColor(srgbHex: 0xFFC107)
+
+    /// Critical red used for exhausted-quota / hard-stop menu-bar slots.
+    /// Intentionally distinct from the SwiftUI `Color.criticalRed` — see
+    /// the comment above for the rationale.
+    static let menuBarCritical = NSColor(srgbHex: 0xF44336)
+}
+#endif

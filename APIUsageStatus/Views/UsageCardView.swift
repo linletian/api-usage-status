@@ -68,7 +68,7 @@ struct UsageCardView: View {
                             .font(.system(size: 9))
                     }
                     .buttonStyle(.borderless)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.textSecondary)
                 }
 
                 Spacer()
@@ -76,18 +76,18 @@ struct UsageCardView: View {
                 if let lastRefresh = lastRefreshAt {
                     Text(formattedTime(lastRefresh))
                         .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.textSecondary)
                 }
             }
         }
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color(NSColor.controlBackgroundColor))
+                .fill(Color.cardBg)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
+                .stroke(Color.progressTrackBg, lineWidth: 0.5)
         )
     }
 
@@ -142,7 +142,7 @@ struct UsageCardView: View {
                 if let remaining = formatRemainingTime(cycleRemainingSeconds) {
                     Text(remaining)
                         .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.textSecondary)
                 }
             }
 
@@ -160,27 +160,27 @@ struct UsageCardView: View {
                 HStack(spacing: 4) {
                     Text("Weekly")
                         .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.textSecondary)
                     Spacer()
                     Text("∞ unlimited")
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.textSecondary)
                 }
                 FlowingGlowBar()
             } else {
                 HStack(spacing: 4) {
                     Text("Weekly · \(String(format: "%.1f", weekly.remaining))% left")
                         .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.textSecondary)
                     Spacer()
                     Text("\(Int(weekly.percent))%")
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundColor(weekly.percent >= 95 ? .red : (weekly.percent >= 80 ? .orange : .secondary))
+                        .foregroundColor(weekly.percent >= 95 ? .dangerRed : (weekly.percent >= 80 ? .warningYellow : .textSecondary))
                 }
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.secondary.opacity(0.15))
+                            .fill(Color.progressTrackBg)
                             .frame(height: 3)
                         RoundedRectangle(cornerRadius: 2)
                             .fill(progressColor(for: weekly.percent))
@@ -236,11 +236,11 @@ struct UsageCardView: View {
         HStack(spacing: 4) {
             Text(quotaSummaryText(usageValue: usageValue, limitValue: limitValue))
                 .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(.secondary)
+                .foregroundColor(.textSecondary)
             Spacer()
             Text("\(Int(percent))%")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundColor(percent >= 95 ? .red : (percent >= 80 ? .orange : .primary))
+                .foregroundColor(percent >= 95 ? .dangerRed : (percent >= 80 ? .warningYellow : .textPrimary))
         }
     }
 
@@ -249,7 +249,7 @@ struct UsageCardView: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.secondary.opacity(0.15))
+                    .fill(Color.progressTrackBg)
                     .frame(height: height)
                 RoundedRectangle(cornerRadius: 2)
                     .fill(progressColor(for: percent))
@@ -287,7 +287,7 @@ struct UsageCardView: View {
                 if let today = slot.todayUsage, !today.isEmpty {
                     Text("≈ \(currency?.currencySymbol ?? "¥")\(today) today")
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.textSecondary)
                 }
 
                 // Daily averages
@@ -295,7 +295,7 @@ struct UsageCardView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Daily avg")
                             .font(.system(size: 9, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.textSecondary)
                         ForEach(
                             Array(averages.keys.sorted { $0.rawValue < $1.rawValue }),
                             id: \.self
@@ -304,11 +304,11 @@ struct UsageCardView: View {
                                 HStack {
                                     Text(period.displayName)
                                         .font(.system(size: 9))
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(.textSecondary)
                                     Spacer()
                                     Text(formattedDecimal(avg, currency: currency))
                                         .font(.system(size: 9, design: .monospaced))
-                                        .foregroundColor(.primary)
+                                        .foregroundColor(.textPrimary)
                                 }
                             }
                         }
@@ -320,31 +320,31 @@ struct UsageCardView: View {
                     HStack {
                         Text("Topped Up")
                             .font(.system(size: 9))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.textSecondary)
                         Spacer()
                         Text((currency?.currencySymbol ?? "¥") + amount)
                             .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.textSecondary)
                     }
                     if !grantedBalance.isEmpty && grantedBalance != "0" && grantedBalance != "0.00" {
                         HStack {
                             Text("Granted")
                                 .font(.system(size: 9))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(.textSecondary)
                             Spacer()
                             Text((currency?.currencySymbol ?? "¥") + grantedBalance)
                                 .font(.system(size: 9, design: .monospaced))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(.textSecondary)
                         }
                     }
                     HStack {
                         Text("Total")
                             .font(.system(size: 9))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.textSecondary)
                         Spacer()
                         Text((currency?.currencySymbol ?? "¥") + totalBalance)
                             .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.textSecondary)
                     }
                 }
                 .padding(.top, 2)
@@ -353,7 +353,7 @@ struct UsageCardView: View {
             HStack {
                 Text("N/A - Unavailable")
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.textSecondary)
                 Spacer()
             }
         }
@@ -379,7 +379,7 @@ struct UsageCardView: View {
                     Spacer()
                     Text(remaining)
                         .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.textSecondary)
                 }
             }
         }
@@ -406,7 +406,7 @@ struct UsageCardView: View {
                     if !groupKey.isEmpty {
                         Text(groupKey.capitalized)
                             .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.textSecondary)
                     }
 
                     let sorted = snapshots.sorted { windowSortOrder($0.window) < windowSortOrder($1.window) }
@@ -437,11 +437,11 @@ struct UsageCardView: View {
                 HStack(spacing: 4) {
                     Text(metricLabel(for: snapshot))
                         .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.textSecondary)
                     Spacer()
                     Text("∞ unlimited")
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.textSecondary)
                 }
                 FlowingGlowBar()
                     .frame(height: 3)
@@ -451,11 +451,11 @@ struct UsageCardView: View {
                 HStack(spacing: 4) {
                     Text(metricLabel(for: snapshot))
                         .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.textSecondary)
                     if !snapshot.displayLimit.isEmpty {
                         Text("\(snapshot.displayUsage) / \(snapshot.displayLimit)")
                             .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.textSecondary)
                     }
                     Spacer()
                     Text("\(Int(snapshot.percent))%")
@@ -478,9 +478,9 @@ struct UsageCardView: View {
     }
 
     private func percentTextColor(for percent: Double) -> Color {
-        if percent >= 95 { return .red }
-        if percent >= 80 { return .orange }
-        return .primary
+        if percent >= 95 { return .dangerRed }
+        if percent >= 80 { return .warningYellow }
+        return .textPrimary
     }
 
     private func windowSortOrder(_ window: String?) -> Int {
@@ -500,11 +500,11 @@ struct UsageCardView: View {
 
     private func progressColor(for percent: Double) -> Color {
         if percent >= 95 {
-            return .red
+            return .dangerRed
         } else if percent >= 80 {
-            return .orange
+            return .warningYellow
         }
-        return .green
+        return .trackingOn
     }
 
     private func formattedTime(_ date: Date) -> String {
@@ -532,17 +532,17 @@ struct ColorStateBadge: View {
                 .frame(width: 8, height: 8)
             Text(stateText)
                 .font(.system(size: 9))
-                .foregroundColor(.secondary)
+                .foregroundColor(.textSecondary)
         }
     }
 
     private var stateColor: Color {
         switch state {
-        case .normal:       return .green
-        case .warning:      return .yellow
-        case .critical:     return .red
+        case .normal:       return .trackingOn
+        case .warning:      return .warningYellow
+        case .critical:     return .dangerRed
         case .disabled, .unavailable, .loading, .error:
-            return .gray
+            return .textTertiary
         }
     }
 

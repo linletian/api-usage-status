@@ -93,10 +93,11 @@ Then press Cmd+R to run. After the app launches, a `?` icon will appear in the m
 ### 4. First-time Setup
 
 1. Click the menu bar icon → **Settings**
-2. Click **+** to add an instance
-3. Choose the provider, fill in the dimension, enter the API Key (stored in Keychain)
-4. Configure alert thresholds
-5. The menu bar icon will automatically refresh to reflect usage status
+2. Click **+** (or **Add Your First Instance** on first run) to add an instance
+3. Select the provider — for MiniMax, choose which models to track and their windows (5h / weekly); for other providers, metrics are pre-configured
+4. Enter a display name and a 2-3 character short name (for the menu bar), then paste your API Key (stored in Keychain)
+5. Configure alert thresholds
+6. The menu bar icon will automatically refresh to reflect usage status
 
 ## Running Tests
 
@@ -109,7 +110,7 @@ xcodebuild -project APIUsageStatus.xcodeproj \
 
 Or press Cmd+U in Xcode.
 
-### Test Suites (113 cases in total, excluding deprecated)
+### Test Suites (159 cases in total, excluding deprecated)
 
 | Suite | Count | Coverage |
 |-------|-------|----------|
@@ -124,6 +125,12 @@ Or press Cmd+U in Xcode.
 | OpenCodeResponseParserTests | 11 | Real fixture parsing, window algorithm tests, makeResponse shape |
 | ShellProcessRunnerTests | 4 | Success, executable-not-found, non-zero exit, timeout |
 | BreathingMathTests | 17 | Breathing animation phase, shadow radius, shadow opacity, config validation |
+| InstanceCardViewTests | 12 | Rendering (display name, subtitle, shortName badge, toggle, buttons), edit/delete callbacks, provider display mapping |
+| SettingsViewModelTests | 12 | Sidebar navigation (Services/General/About), form bindings (refresh interval, color mode, launch at login, notifications) |
+| ProviderPickerAndThresholdTests | 13 | Provider picker UI, MiniMax model selection, threshold validation (quota + balance) |
+| StatusDotViewTests | 2 | Pixel-level color resolution for trackingOn/trackingOff via snapshot |
+| EmptyStateGuideViewTests | 4 | Empty state rendering (icon, text, CTA button), button action callback |
+| ProviderIconTests | 3 | SF Symbol name mapping for all 4 providers |
 | ~~PixelFontEngineTests~~ | ~~58~~ | ~~(Deprecated) Original pixel font engine tests; code is commented out and does not run~~ |
 
 ## Deploy to /Applications

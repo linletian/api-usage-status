@@ -27,13 +27,13 @@ struct UsagePanelView: View {
                     Spacer()
                     Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
                         .font(.system(size: 28))
-                        .foregroundColor(.secondary.opacity(0.6))
+                        .foregroundColor(Color.textSecondary.opacity(0.6))
                     Text("Unable to load usage data")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.primary)
+                        .foregroundColor(Color.textPrimary)
                     Text("All instances failed to refresh. Tap Refresh to retry.")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color.textSecondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 240)
                     Spacer()
@@ -83,7 +83,7 @@ struct UsagePanelView: View {
                 if !appStateProxy.isRefreshing {
                     Text("Next refresh: ≈ \(nextRefreshMinutes)m")
                         .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color.textSecondary)
                 }
 
                 Spacer()
@@ -131,7 +131,7 @@ struct PlaceholderContentView: View {
                 .font(.headline)
             Text("(Pending development)")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(Color.textSecondary)
             Spacer()
         }
         .padding(20)
@@ -150,13 +150,13 @@ struct ErrorBarView: View {
             ForEach(errors) { error in
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
+                        .foregroundColor(Color.warningYellow)
                         .font(.system(size: 10))
                         .padding(.top, 1)
 
                     Text("\(error.displayName): \(formattedMessage(for: error.errorType))")
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color.textSecondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -164,7 +164,7 @@ struct ErrorBarView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.orange.opacity(0.08))
+        .background(Color.warningBg)
     }
 
     private func formattedMessage(for errorType: ErrorType) -> String {

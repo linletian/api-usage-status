@@ -14,10 +14,10 @@ final class MenuBarIconRenderer {
 
     // MARK: - Colour constants
 
-    private static let dimColor       = NSColor(red: 0.839, green: 0.816, blue: 0.627, alpha: 1.0) // #D6D0A0
-    private static let safeColor      = NSColor(red: 0.298, green: 0.686, blue: 0.314, alpha: 1.0) // #4CAF50
-    private static let warningColor   = NSColor(red: 1.000, green: 0.757, blue: 0.027, alpha: 1.0) // #FFC107
-    private static let criticalColor  = NSColor(red: 0.957, green: 0.263, blue: 0.212, alpha: 1.0) // #F44336
+    private static let dimColor       = NSColor.menuBarDim      // #D6D0A0  see Color+Theme.swift
+    private static let safeColor      = NSColor.menuBarSafe     // #4CAF50  see Color+Theme.swift
+    private static let warningColor   = NSColor.menuBarWarning  // #FFC107  see Color+Theme.swift
+    private static let criticalColor  = NSColor.menuBarCritical // #F44336  see Color+Theme.swift
 
     // MARK: - Font constants
 

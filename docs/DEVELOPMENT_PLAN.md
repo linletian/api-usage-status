@@ -351,8 +351,9 @@
 - 通过 Popover 内的设置按钮和右键菜单「打开设置」均可打开
 
 #### 4b. SettingsView（SwiftUI）
-- 标签页式或列表式布局
+- macOS sidebar 导航布局（Services / General / About，180pt 宽，SF Symbols 图标）
 - **实例列表**：
+  - 实例以 InstanceCardView 卡片形式展示，含 StatusDotView 追踪状态指示，空状态时显示 EmptyStateGuideView 引导添加首个实例
   - 现有实例列表（启用/禁用切换）
   - 添加实例按钮 → 进入 `InstanceEditorView`
   - 编辑按钮 → 进入 `InstanceEditorView`
@@ -366,11 +367,14 @@
 
 #### 4c. InstanceEditorView（添加/编辑实例表单）
 - **基本字段**：
-  - 供应商选择（MiniMax / DeepSeek）
-  - 统计维度选择（与供应商联动：MiniMax → 文本模型 5h/非文本每日/周累计；DeepSeek → 余额）
+  - 供应商选择（MiniMax / DeepSeek / GitHub Copilot / OpenCode Go，带 SF Symbol 图标的下拉菜单）
+  - 指标配置（与供应商联动）：
+    - MiniMax → 自动发现的能力桶卡片列表，每张卡片可独立勾选 + 选择窗口（5h / weekly），各有独立 shortName
+    - OpenCode Go → 窗口列表（5h / weekly / monthly），可独立勾选 + 独立 shortName
+    - DeepSeek / GitHub Copilot → 固定单一指标（Account Balance / Premium Interactions）
   - 显示名（用户自定义，默认空）
-  - 显示名简称（2 个大写字母，默认空）
-  - API Key（输入框，保存到 Keychain）
+  - 显示名简称（2-3 个大写字母或数字，默认空，自动大写 + 截断）
+  - API Key（`NSSecureTextField` 安全输入，保存到 Keychain）
   - 货币类型（仅余额型实例出现，默认 CNY，可选 CNY/USD）
 - **阈值配置**（根据实例类型动态展示）：
   - 配额型：用量百分比警告线 / 严重线滑块
@@ -388,7 +392,14 @@
 
 #### 4e. 拖拽排序
 - 实例列表支持通过拖拽手势调整 `sort_order`
-- 拖拽完成后自动保存到 `instances.json`
+- 拖拽仅更新内存中的排序，需点击「Save Changes」统一写入 `instances.json`
+
+#### 4f. Color+Theme 语义色彩系统
+- Color+Theme.swift 定义 surface/text/status/accent 四类语义色彩令牌
+- 完整支持 Light/Dark 模式
+
+#### 4g. Provider+Icon SF Symbols 扩展
+- Provider+Icon.swift，每个 Provider 映射到 SF Symbol 图标名称
 
 ### 不在范围内
 
@@ -402,7 +413,7 @@
 | PRD | §3.3 供应商与统计维度 | 实例管理 |
 | PRD | §3.5 偏好设置 | 服务实例管理、配色与阈值、通用设置全部字段 |
 | PRD | §3.8 配置数据持久化 | instances.json schema + 字段说明 + 实例删除清理规则 |
-| ARCHITECTURE | §2.5 设置窗口 | SettingsWindow / SettingsViewModel |
+| ARCHITECTURE | §2.5 设置窗口 | SettingsWindow / SettingsViewModel / sidebar 导航 / InstanceCardView / StatusDotView / EmptyStateGuideView / Color+Theme / Provider+Icon |
 | ARCHITECTURE | §3.4 设置写入流程 | 设置数据写入流程 |
 | ARCHITECTURE | §4.1 内存模型 | Instance / GlobalSettings / Thresholds 等 Swift struct |
 | ARCHITECTURE | §9 状态管理方案 | 状态管理设计 |

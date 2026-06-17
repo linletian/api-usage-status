@@ -92,10 +92,11 @@ open APIUsageStatus.xcodeproj
 ### 4. 首次配置
 
 1. 点击菜单栏图标 → **Settings**
-2. 点击 **+** 添加实例
-3. 选择供应商、填入维度、输入 API Key（保存在 Keychain 中）
-4. 配置告警阈值
-5. 菜单栏图标将自动刷新为用量状态
+2. 点击 **+**（首次使用点击 **Add Your First Instance**）添加实例
+3. 选择供应商 —— MiniMax 可选择要跟踪的模型及窗口（5h / weekly）；其他供应商自动配置默认指标
+4. 输入显示名和 2-3 个字符的简称（用于菜单栏），粘贴 API Key（保存在 Keychain 中）
+5. 配置告警阈值
+6. 菜单栏图标将自动刷新为用量状态
 
 ## 运行测试
 
@@ -108,7 +109,7 @@ xcodebuild -project APIUsageStatus.xcodeproj \
 
 或在 Xcode 中按 Cmd+U。
 
-### 测试套件（共 113 个用例，不含已弃用）
+### 测试套件（共 159 个用例，不含已弃用）
 
 | 套件 | 数量 | 覆盖范围 |
 |------|------|---------|
@@ -123,6 +124,12 @@ xcodebuild -project APIUsageStatus.xcodeproj \
 | OpenCodeResponseParserTests | 11 | 真实数据解析、窗口算法测试、makeResponse 结构验证 |
 | ShellProcessRunnerTests | 4 | 成功执行、可执行文件不存在、非零退出码、超时 |
 | BreathingMathTests | 17 | 呼吸动画相位、阴影半径、阴影透明度、配置校验 |
+| InstanceCardViewTests | 12 | 渲染（显示名、subtitle、shortName 徽章、切换开关、按钮）、编辑/删除回调、供应商显示名映射 |
+| SettingsViewModelTests | 12 | 侧边栏导航（Services/General/About）、表单绑定（刷新间隔、色彩模式、开机自启、通知） |
+| ProviderPickerAndThresholdTests | 13 | 供应商选择器 UI、MiniMax 模型选择、阈值校验（配额 + 余额） |
+| StatusDotViewTests | 2 | trackingOn/trackingOff 颜色令牌的像素级快照验证 |
+| EmptyStateGuideViewTests | 4 | 空状态渲染（图标、文字、CTA 按钮）、按钮回调 |
+| ProviderIconTests | 3 | 全部 4 个供应商的 SF Symbol 名称映射 |
 | ~~PixelFontEngineTests~~ | ~~58~~ | ~~（已弃用）原像素字模引擎测试，代码已注释，不参与运行~~ |
 
 ## 部署到 /Applications

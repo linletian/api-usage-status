@@ -1,6 +1,14 @@
 import Foundation
 import Combine
 
+// MARK: - SidebarItem
+
+enum SidebarItem: String, CaseIterable {
+    case services
+    case general
+    case about
+}
+
 // MARK: - SettingsViewModel
 
 @MainActor
@@ -14,6 +22,8 @@ final class SettingsViewModel: ObservableObject {
     @Published var saveError: String?
     @Published var isSaving = false
     @Published var launchAtLoginError: String?
+    @Published var expandedInstanceUUIDs: Set<String> = []
+    @Published var selectedSidebarItem: SidebarItem = .services
 
     private var originalInstances: [Instance] = []
     private var originalSettings: GlobalSettings = .default
@@ -239,6 +249,16 @@ final class SettingsViewModel: ObservableObject {
     private func recomputeSortOrders() {
         for index in instances.indices {
             instances[index].sortOrder = index
+        }
+    }
+
+    // MARK: - Sidebar / Expansion
+
+    func toggleExpanded(uuid: String) {
+        if expandedInstanceUUIDs.contains(uuid) {
+            expandedInstanceUUIDs.remove(uuid)
+        } else {
+            expandedInstanceUUIDs.insert(uuid)
         }
     }
 }

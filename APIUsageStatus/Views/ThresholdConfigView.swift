@@ -25,17 +25,27 @@ struct ThresholdConfigView: View {
                 Text("Warning")
                 Spacer()
                 Text("\(quotaWarning)%")
+                    .font(.caption)
                     .monospacedDigit()
+                    .foregroundStyle(Color.warningYellow)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.warningYellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
             }
-            Slider(value: quotaWarningBinding, in: 0 ... 100, step: 1)
+            GradientSlider(value: quotaWarningBinding, range: 0 ... 100)
 
             HStack {
                 Text("Critical")
                 Spacer()
                 Text("\(quotaCritical)%")
+                    .font(.caption)
                     .monospacedDigit()
+                    .foregroundStyle(Color.criticalRed)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.criticalRed.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
             }
-            Slider(value: quotaCriticalBinding, in: 0 ... 100, step: 1)
+            GradientSlider(value: quotaCriticalBinding, range: 0 ... 100)
 
             if quotaWarning >= quotaCritical {
                 Text("Warning must be less than critical")
@@ -214,5 +224,26 @@ struct ThresholdConfigView: View {
                 }
             }
         )
+    }
+}
+
+// MARK: - GradientSlider
+
+/// A slider with a gradient-filled track that transitions from
+/// `warningYellow` (left) to `criticalRed` (right), giving a visual
+/// cue that higher percentages are more severe.
+struct GradientSlider: View {
+    @Binding var value: Double
+    var range: ClosedRange<Double>
+
+    var body: some View {
+        Slider(value: $value, in: range)
+            .tint(
+                LinearGradient(
+                    colors: [Color.warningYellow, Color.criticalRed],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
     }
 }

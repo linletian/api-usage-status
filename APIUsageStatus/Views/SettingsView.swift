@@ -155,7 +155,6 @@ struct SettingsView: View {
                     ForEach(viewModel.instances) { instance in
                         InstanceCardView(
                             instance: instance,
-                            isExpanded: viewModel.expandedInstanceUUIDs.contains(instance.uuid),
                             onEdit: {
                                 viewModel.editingInstance = instance
                                 viewModel.isPresentingEditor = true
@@ -167,16 +166,6 @@ struct SettingsView: View {
                                 viewModel.setInstanceTrackingEnabled(
                                     uuid: instance.uuid,
                                     enabled: !instance.trackingEnabled
-                                )
-                            },
-                            onToggleExpand: {
-                                viewModel.toggleExpanded(uuid: instance.uuid)
-                            },
-                            onToggleMetric: { index, enabled in
-                                viewModel.setMetricDisplayInMenuBar(
-                                    uuid: instance.uuid,
-                                    metricIndex: index,
-                                    enabled: enabled
                                 )
                             }
                         )

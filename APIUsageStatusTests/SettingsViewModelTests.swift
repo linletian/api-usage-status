@@ -1,26 +1,14 @@
 import XCTest
 @testable import APIUsageStatus
 
-/// Tests for the sidebar / expansion behaviour added to `SettingsViewModel`.
+/// Tests for `SettingsViewModel`.
 ///
 /// The view-model is `@MainActor`, so every test must run on the main actor.
 /// The class also depends on six services, but the tests below only exercise
-/// the new local-state properties and the pure `toggleExpanded(uuid:)` method,
-/// so the service instances are built just to satisfy the initializer —
-/// none of them are ever invoked.
+/// local-state properties and form bindings — the service instances are built
+/// just to satisfy the initializer; none of them are ever invoked.
 @MainActor
 final class SettingsViewModelTests: XCTestCase {
-
-    // MARK: - Default state
-
-    /// A freshly initialised `SettingsViewModel` must expose an empty
-    /// `expandedInstanceUUIDs` set. The view layer depends on this default
-    /// to render every instance row collapsed on first appearance.
-    func testExpandedInstanceUUIDsIsEmptyByDefault() {
-        let viewModel = Self.makeViewModel()
-
-        XCTAssertTrue(viewModel.expandedInstanceUUIDs.isEmpty)
-    }
 
     /// The sidebar must default to the `services` tab on first appearance,
     /// which is where the user lands immediately after opening Settings.
@@ -28,89 +16,6 @@ final class SettingsViewModelTests: XCTestCase {
         let viewModel = Self.makeViewModel()
 
         XCTAssertEqual(viewModel.selectedSidebarItem, .services)
-    }
-
-    // MARK: - toggleExpanded
-
-    /// Toggling an unseen UUID adds it to the expansion set. This drives
-    /// the disclosure indicator and the per-instance details panel.
-    func testToggleExpandedAddsUUID() {
-        let viewModel = Self.makeViewModel()
-        let uuid = "instance-A"
-
-        viewModel.toggleExpanded(uuid: uuid)
-
-        XCTAssertTrue(viewModel.expandedInstanceUUIDs.contains(uuid))
-        XCTAssertEqual(viewModel.expandedInstanceUUIDs.count, 1)
-    }
-
-    /// Toggling an already-expanded UUID removes it. This is the contract
-    /// that turns a disclosure triangle into a collapse action.
-    func testToggleExpandedRemovesUUID() {
-        let viewModel = Self.makeViewModel()
-        let uuid = "instance-B"
-        viewModel.toggleExpanded(uuid: uuid)
-        XCTAssertTrue(viewModel.expandedInstanceUUIDs.contains(uuid))
-
-        viewModel.toggleExpanded(uuid: uuid)
-
-        XCTAssertFalse(viewModel.expandedInstanceUUIDs.contains(uuid))
-        XCTAssertTrue(viewModel.expandedInstanceUUIDs.isEmpty)
-    }
-
-    /// Toggling the same UUID twice yields the original state. This
-    /// property is what keeps the disclosure UI predictable when the view
-    /// re-renders during a parent state change.
-    func testToggleExpandedIsIdempotent() {
-        let viewModel = Self.makeViewModel()
-        let uuid = "instance-C"
-
-        viewModel.toggleExpanded(uuid: uuid)
-        viewModel.toggleExpanded(uuid: uuid)
-
-        XCTAssertFalse(viewModel.expandedInstanceUUIDs.contains(uuid))
-        XCTAssertEqual(viewModel.expandedInstanceUUIDs.count, 0)
-    }
-
-    /// Multiple UUIDs can be expanded independently and simultaneously.
-    /// The set semantics must not collapse or coalesce entries.
-    func testMultipleUUIDsCanBeExpandedIndependently() {
-        let viewModel = Self.makeViewModel()
-        let uuids = ["alpha", "beta", "gamma"]
-
-        for uuid in uuids {
-            viewModel.toggleExpanded(uuid: uuid)
-        }
-
-        XCTAssertEqual(viewModel.expandedInstanceUUIDs.count, uuids.count)
-        for uuid in uuids {
-            XCTAssertTrue(
-                viewModel.expandedInstanceUUIDs.contains(uuid),
-                "Expected \(uuid) to be present in the expansion set"
-            )
-        }
-    }
-
-    // MARK: - Side effects
-
-    /// Expansion state is a UI concern; it must not flip the
-    /// `hasUnsavedChanges` flag that gates the Save button. A bug here
-    /// would make every disclosure toggle dirty the document.
-    func testToggleDoesNotAffectHasUnsavedChanges() {
-        let viewModel = Self.makeViewModel()
-        XCTAssertFalse(
-            viewModel.hasUnsavedChanges,
-            "A fresh view-model must report no unsaved changes"
-        )
-
-        viewModel.toggleExpanded(uuid: "x")
-        viewModel.toggleExpanded(uuid: "y")
-        viewModel.toggleExpanded(uuid: "y")
-
-        XCTAssertFalse(
-            viewModel.hasUnsavedChanges,
-            "Expanding/collapsing rows must not mark the document dirty"
-        )
     }
 
     // MARK: - SidebarItem

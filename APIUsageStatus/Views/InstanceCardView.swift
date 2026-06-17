@@ -8,36 +8,26 @@ import SwiftUI
 ///   StatusDotView → VStack(displayName + subtitle) → shortName badge →
 ///   tracking Toggle → edit button → delete button
 ///
-/// This is the **collapsed** state; the expanded metrics section lives in a
-/// separate view (Task 8).
+/// Metric visibility (displayInMenuBar) is managed through the instance editor,
+/// not here — no inline expansion needed.
 struct InstanceCardView: View {
     let instance: Instance
-    let isExpanded: Bool
     let onEdit: () -> Void
     let onDelete: () -> Void
     let onToggleTracking: () -> Void
-    let onToggleExpand: () -> Void
-    let onToggleMetric: (Int, Bool) -> Void
 
     // MARK: - Body
 
     var body: some View {
-        VStack(spacing: 0) {
-            collapsedRow
-            if isExpanded {
-                Divider()
-                    .padding(.horizontal, 16)
-                expandedMetrics
-            }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.cardBg)
-        )
-        .shadow(color: Color.cardShadow.opacity(0.06), radius: 2, x: 0, y: 1)
+        cardRow
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.cardBg)
+            )
+            .shadow(color: Color.cardShadow.opacity(0.06), radius: 2, x: 0, y: 1)
     }
 
-    private var collapsedRow: some View {
+    private var cardRow: some View {
         HStack(spacing: 10) {
             // 1. Status dot
             StatusDotView(isTracking: instance.trackingEnabled)
@@ -91,51 +81,6 @@ struct InstanceCardView: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 52)
-    }
-
-    // MARK: - Expanded
-
-    private var expandedMetrics: some View {
-        ForEach(Array(instance.metrics.enumerated()), id: \.element.key) { index, metric in
-            HStack(spacing: 8) {
-                Toggle("", isOn: Binding(
-                    get: { metric.displayInMenuBar },
-                    set: { newValue in onToggleMetric(index, newValue) }
-                ))
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-
-                Text(metricLabel(metric))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.textSecondary)
-                    .lineLimit(1)
-
-                if let short = metric.shortName {
-                    Text(short)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color.textSecondary)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.cardBorder)
-                        )
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 44)
-            .padding(.vertical, 4)
-        }
-    }
-
-    private func metricLabel(_ metric: MetricConfig) -> String {
-        switch (metric.group, metric.window) {
-        case let (group?, window?): return "\(group) · \(window)"
-        case let (group?, nil):    return group
-        case let (nil, window?):    return window
-        case (nil, nil):            return metric.key
-        }
     }
 
     // MARK: - Computed

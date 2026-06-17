@@ -6,7 +6,7 @@ import AppKit
 /// Tests for `InstanceCardView`.
 ///
 /// The view is a leaf SwiftUI component rendered through an `NSHostingController`.
-/// We walk the view hierarchy to verify the seven expected UI elements are present,
+/// We walk the view hierarchy to verify the UI elements are present,
 /// and we trigger the edit/delete buttons to confirm their callbacks fire.
 @MainActor
 final class InstanceCardViewTests: XCTestCase {
@@ -141,11 +141,9 @@ final class InstanceCardViewTests: XCTestCase {
         let instance = makeInstance()
         let view = InstanceCardView(
             instance: instance,
-            isExpanded: false,
             onEdit: { editCallCount += 1 },
             onDelete: {},
-            onToggleTracking: {},
-            onToggleExpand: {}
+            onToggleTracking: {}
         )
         let host = NSHostingController(rootView: view)
         host.loadView()
@@ -163,7 +161,7 @@ final class InstanceCardViewTests: XCTestCase {
 
         // The edit button is the first of the two action buttons.
         // SwiftUI HStack renders left-to-right, so pencil (edit) comes first.
-        buttons[0].performClick(nil)
+        buttons[0].performClick(nil as Any?)
 
         XCTAssertEqual(
             editCallCount, 1,
@@ -177,11 +175,9 @@ final class InstanceCardViewTests: XCTestCase {
         let instance = makeInstance()
         let view = InstanceCardView(
             instance: instance,
-            isExpanded: false,
             onEdit: {},
             onDelete: { deleteCallCount += 1 },
-            onToggleTracking: {},
-            onToggleExpand: {}
+            onToggleTracking: {}
         )
         let host = NSHostingController(rootView: view)
         host.loadView()
@@ -194,7 +190,7 @@ final class InstanceCardViewTests: XCTestCase {
         }
 
         // The delete button is the second of the two action buttons.
-        buttons[1].performClick(nil)
+        buttons[1].performClick(nil as Any?)
 
         XCTAssertEqual(
             deleteCallCount, 1,
@@ -237,11 +233,9 @@ final class InstanceCardViewTests: XCTestCase {
     private func testView(instance: Instance) -> some View {
         InstanceCardView(
             instance: instance,
-            isExpanded: false,
             onEdit: {},
             onDelete: {},
-            onToggleTracking: {},
-            onToggleExpand: {}
+            onToggleTracking: {}
         )
         .frame(width: 500, height: 60)
     }

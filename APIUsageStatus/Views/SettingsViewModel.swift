@@ -22,7 +22,6 @@ final class SettingsViewModel: ObservableObject {
     @Published var saveError: String?
     @Published var isSaving = false
     @Published var launchAtLoginError: String?
-    @Published var expandedInstanceUUIDs: Set<String> = []
     @Published var selectedSidebarItem: SidebarItem = .services
 
     private var originalInstances: [Instance] = []
@@ -144,11 +143,27 @@ final class SettingsViewModel: ObservableObject {
             await refreshService.triggerManualRefresh()
 
             // Reload instances to pick up auto-discovered MiniMax metrics
-            // (added during the refresh above). Without this the settings list
-            // shows stale pre-refresh data.
-            let (refreshedInstances, _, _) = await persistenceService.loadInstances()
-            instances = refreshedInstances.sorted { $0.sortOrder < $1.sortOrder }
-            originalInstances = instances
+            // (added during the refresh above). Retry up to 3 times with
+            // increasing delay; if all attempts fail, log a warning but
+            // keep the pre-reload state — the save already succeeded and
+            // the new metrics will appear on the next load/refresh.
+            var reloadSucceeded = false
+            for attempt in 1...3 {
+                do {
+                    let (refreshed, _, _) = try await persistenceService.loadInstances()
+                    instances = refreshed.sorted { $0.sortOrder < $1.sortOrder }
+                    reloadSucceeded = true
+                    break
+                } catch {
+                    logger.warning("Reload after save attempt \(attempt)/3 failed: \(error.localizedDescription)")
+                    if attempt < 3 {
+                        try? await Task.sleep(nanoseconds: UInt64(attempt) * 100_000_000)
+                    }
+                }
+            }
+            if !reloadSucceeded {
+                logger.warning("Reload after save failed after 3 attempts; keeping pre-reload state")
+            }
 
             // Sync launch-at-login registration if changed
             if settings.launchAtLogin != originalSettings.launchAtLogin {
@@ -227,13 +242,6 @@ final class SettingsViewModel: ObservableObject {
         setInstanceTrackingEnabled(uuid: uuid, enabled: enabled)
     }
 
-    func setMetricDisplayInMenuBar(uuid: String, metricIndex: Int, enabled: Bool) {
-        if let index = instances.firstIndex(where: { $0.uuid == uuid }) {
-            guard metricIndex >= 0, metricIndex < instances[index].metrics.count else { return }
-            instances[index].metrics[metricIndex].displayInMenuBar = enabled
-        }
-    }
-
     // MARK: - Notifications
 
     /// Called when the notifications toggle changes in the UI.
@@ -249,16 +257,6 @@ final class SettingsViewModel: ObservableObject {
     private func recomputeSortOrders() {
         for index in instances.indices {
             instances[index].sortOrder = index
-        }
-    }
-
-    // MARK: - Sidebar / Expansion
-
-    func toggleExpanded(uuid: String) {
-        if expandedInstanceUUIDs.contains(uuid) {
-            expandedInstanceUUIDs.remove(uuid)
-        } else {
-            expandedInstanceUUIDs.insert(uuid)
         }
     }
 }

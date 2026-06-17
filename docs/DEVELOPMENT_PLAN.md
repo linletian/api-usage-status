@@ -367,11 +367,14 @@
 
 #### 4c. InstanceEditorView（添加/编辑实例表单）
 - **基本字段**：
-  - 供应商选择（MiniMax / DeepSeek）
-  - 统计维度选择（与供应商联动：MiniMax → 文本模型 5h/非文本每日/周累计；DeepSeek → 余额）
+  - 供应商选择（MiniMax / DeepSeek / GitHub Copilot / OpenCode Go，带 SF Symbol 图标的下拉菜单）
+  - 指标配置（与供应商联动）：
+    - MiniMax → 自动发现的能力桶卡片列表，每张卡片可独立勾选 + 选择窗口（5h / weekly），各有独立 shortName
+    - OpenCode Go → 窗口列表（5h / weekly / monthly），可独立勾选 + 独立 shortName
+    - DeepSeek / GitHub Copilot → 固定单一指标（Account Balance / Premium Interactions）
   - 显示名（用户自定义，默认空）
-  - 显示名简称（2 个大写字母，默认空）
-  - API Key（输入框，保存到 Keychain）
+  - 显示名简称（2-3 个大写字母或数字，默认空，自动大写 + 截断）
+  - API Key（`NSSecureTextField` 安全输入，保存到 Keychain）
   - 货币类型（仅余额型实例出现，默认 CNY，可选 CNY/USD）
 - **阈值配置**（根据实例类型动态展示）：
   - 配额型：用量百分比警告线 / 严重线滑块
@@ -389,7 +392,7 @@
 
 #### 4e. 拖拽排序
 - 实例列表支持通过拖拽手势调整 `sort_order`
-- 拖拽完成后自动保存到 `instances.json`
+- 拖拽仅更新内存中的排序，需点击「Save Changes」统一写入 `instances.json`
 
 #### 4f. Color+Theme 语义色彩系统
 - Color+Theme.swift 定义 surface/text/status/accent 四类语义色彩令牌

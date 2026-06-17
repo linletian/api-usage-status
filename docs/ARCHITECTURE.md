@@ -168,15 +168,15 @@
 
 **职责**：实例管理与全局设置。
 
-- `SettingsWindow`：包裹 SwiftUI `SettingsView` 的 `NSWindow`，窗口失焦时自动保存
+- `SettingsWindow`：包裹 SwiftUI `SettingsView` 的 `NSWindow`，窗口关闭时若存在未保存变更则弹出提示框
 - `SettingsView`：基于 macOS sidebar 导航（Services / General / About 三个分区，180pt 宽，SF Symbols 图标）
-  - Services 分区：实例列表，每行使用 `InstanceCardView`（含 StatusDot 跟踪状态指示器、displayName + subtitle、shortName monospace 徽章、可展开的 metrics 开关列表），支持拖拽排序（`.onMove`）
+  - Services 分区：实例列表，每行使用 `InstanceCardView`（含 StatusDot 跟踪状态指示器、displayName + subtitle、shortName monospace 徽章、跟踪开关、编辑/删除按钮），支持拖拽排序（`.onMove`）
   - General 分区：全局设置（刷新间隔、菜单栏图标风格、开机自启、通知开关），使用 `.formStyle(.grouped)`
   - About 分区：应用图标 + 版本号
   - 底部 Save Changes 按钮仅在 `hasUnsavedChanges` 为 true 时显示
 - `SettingsViewModel`：在设置 UI 与 `PersistenceService`/`AppState` 之间协调，跟踪 `hasUnsavedChanges` 状态
 - 子组件：
-  - `InstanceCardView`：紧凑型实例卡片行，布局为 StatusDotView → VStack(displayName + subtitle) → shortName 徽章 → 跟踪开关 → 编辑/删除按钮。展开后显示各 metric 的 `displayInMenuBar` 开关列表
+  - `InstanceCardView`：紧凑型实例卡片行，布局为 StatusDotView → VStack(displayName + subtitle) → shortName 徽章 → 跟踪开关 → 编辑/删除按钮。指标可见性（`displayInMenuBar`）统一在 `InstanceEditorView` 中管理
   - `StatusDotView`：10×10pt 圆形指示器，`isTracking == true` 时为绿色（`Color.trackingOn`），否则灰色（`Color.trackingOff`）
   - `EmptyStateGuideView`：无实例时显示的居中引导视图，含 server.rack SF Symbol 图标、说明文字及「Add Your First Instance」CTA 按钮
 - `Settings` 窗口通过 `Color+Theme.swift` 语义色彩令牌完全支持 Light/Dark 模式切换
@@ -1341,7 +1341,7 @@ APIUsageStatus/
 │   ├── Views/
 │   │   ├── EmptyStateGuideView.swift     # 无实例时的居中引导视图（CTA 按钮）
 │   │   ├── EmptyStateView.swift          # （旧版）空状态视图
-│   │   ├── InstanceCardView.swift        # 实例卡片行（StatusDot + shortName 徽章 + 可展开 metrics）
+│   │   ├── InstanceCardView.swift        # 实例卡片行（StatusDot + shortName 徽章 + 跟踪开关 + 编辑/删除按钮）
 │   │   ├── InstanceDetailPanel.swift     # 通知点击后打开的独立 NSPanel（单实例用量详情）
 │   │   ├── InstanceEditorView.swift      # 添加/编辑实例表单
 │   │   ├── SettingsView.swift            # 设置窗口 SwiftUI 根视图（sidebar 导航）

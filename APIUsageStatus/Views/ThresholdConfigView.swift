@@ -50,7 +50,7 @@ struct ThresholdConfigView: View {
             if quotaWarning >= quotaCritical {
                 Text("Warning must be less than critical")
                     .font(.caption)
-                    .foregroundColor(.red)
+                    .foregroundColor(Color.criticalRed)
             }
         }
     }
@@ -114,7 +114,7 @@ struct ThresholdConfigView: View {
             {
                 Text("Warning must be greater than critical")
                     .font(.caption)
-                    .foregroundColor(.red)
+                    .foregroundColor(Color.criticalRed)
             }
 
             Text("Average daily periods")

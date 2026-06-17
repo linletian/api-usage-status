@@ -82,7 +82,7 @@ struct InstanceEditorView: View {
             if let error = validationError {
                 Text(error)
                     .font(.caption)
-                    .foregroundColor(.red)
+                    .foregroundStyle(Color.dangerRed)
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
             }

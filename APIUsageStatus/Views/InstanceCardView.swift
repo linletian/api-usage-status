@@ -34,7 +34,7 @@ struct InstanceCardView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.cardBg)
         )
-        .shadow(color: .black.opacity(0.06), radius: 2, x: 0, y: 1)
+        .shadow(color: Color.cardShadow.opacity(0.06), radius: 2, x: 0, y: 1)
     }
 
     private var collapsedRow: some View {
@@ -78,7 +78,7 @@ struct InstanceCardView: View {
             // 5. Edit button
             Button(action: onEdit) {
                 Image(systemName: "pencil")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.textSecondary)
             }
             .buttonStyle(.borderless)
 

@@ -19,7 +19,7 @@ struct SettingsView: View {
                 if let error = viewModel.saveError {
                     Text(error)
                         .font(.caption)
-                        .foregroundColor(.red)
+                        .foregroundColor(Color.dangerRed)
                         .lineLimit(3)
                         .frame(maxWidth: 300, alignment: .trailing)
                 }
@@ -31,7 +31,7 @@ struct SettingsView: View {
                         .controlSize(.small)
                     Text("Saving...")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color.textSecondary)
                 } else if viewModel.hasUnsavedChanges {
                     Button("Save Changes") {
                         Task {
@@ -234,7 +234,7 @@ struct SettingsView: View {
                     if let error = viewModel.launchAtLoginError {
                         Text(error)
                             .font(.caption)
-                            .foregroundColor(.orange)
+                            .foregroundColor(Color.warningYellow)
                     }
                 }
 
@@ -265,7 +265,7 @@ struct SettingsView: View {
 
             Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundColor(Color.textSecondary)
 
             Spacer()
         }

@@ -19,7 +19,7 @@ final class InstanceDecodingTests: XCTestCase {
           "tracking_enabled": true,
           "sort_order": 0,
           "currency": "USD",
-          "thresholds": { "quota": { "warning": 80, "critical": 95 } }
+          "thresholds": { "usage_warning_percent": 80, "usage_critical_percent": 95 }
         }
         """.data(using: .utf8)!
 
@@ -42,7 +42,7 @@ final class InstanceDecodingTests: XCTestCase {
           "api_key_ref": "key-minimax",
           "tracking_enabled": true,
           "sort_order": 0,
-          "thresholds": { "quota": { "warning": 80, "critical": 95 } },
+          "thresholds": { "usage_warning_percent": 80, "usage_critical_percent": 95 },
           "metrics": [
             { "key": "general:5h", "group": "general", "window": "5h", "display_in_menu_bar": true },
             { "key": "general:weekly", "group": "general", "window": "weekly", "display_in_menu_bar": false }
@@ -77,7 +77,7 @@ final class InstanceDecodingTests: XCTestCase {
           "api_key_ref": "key-oc",
           "tracking_enabled": true,
           "sort_order": 1,
-          "thresholds": { "quota": { "warning": 80, "critical": 95 } }
+          "thresholds": { "usage_warning_percent": 80, "usage_critical_percent": 95 }
         }
         """.data(using: .utf8)!
 
@@ -102,7 +102,7 @@ final class InstanceDecodingTests: XCTestCase {
           "tracking_enabled": false,
           "sort_order": 2,
           "currency": "CNY",
-          "thresholds": { "balance": { "increase": 50, "decrease": 10 } },
+          "thresholds": { "balance_warning": 50.00, "balance_critical": 10.00 },
           "metrics": [
             { "key": "deepseek.balance", "window": null, "group": null, "display_in_menu_bar": true }
           ]
@@ -138,7 +138,7 @@ final class InstanceDecodingTests: XCTestCase {
           "api_key_ref": "key-mv",
           "tracking_enabled": true,
           "sort_order": 3,
-          "thresholds": { "quota": { "warning": 80, "critical": 95 } },
+          "thresholds": { "usage_warning_percent": 80, "usage_critical_percent": 95 },
           "metrics": [
             { "key": "video:5h", "group": "video", "window": "5h", "display_in_menu_bar": true }
           ]

@@ -253,15 +253,16 @@ final class RefreshServiceMappingTests: XCTestCase {
         XCTAssertEqual(s.displayUsage, "50.00")
         XCTAssertEqual(s.displayLimit, "")
 
-        // Computed instanceType returns .quota with balance data as usageValue
-        guard case .quota(let p, let u, let l, let crs) = result.instanceType else {
-            XCTFail("Expected quota instance type, got \(result.instanceType)")
+        // Computed instanceType preserves .balance via balanceInstanceType
+        guard case .balance(let amount, let totalBalance, let grantedBalance, let isAvailable, let currency) = result.instanceType else {
+            XCTFail("Expected balance instance type, got \(result.instanceType)")
             return
         }
-        XCTAssertEqual(p, 0.0)
-        XCTAssertEqual(u, "50.00")
-        XCTAssertEqual(l, "")
-        XCTAssertNil(crs)
+        XCTAssertEqual(amount, "50.00")
+        XCTAssertEqual(totalBalance, "100.00")
+        XCTAssertEqual(grantedBalance, "10.00")
+        XCTAssertTrue(isAvailable)
+        XCTAssertEqual(currency, "CNY")
 
         // Color state: 50.00 > 10.00 warning → normal
         XCTAssertEqual(result.colorState, .normal)

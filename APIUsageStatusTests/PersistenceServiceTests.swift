@@ -13,7 +13,7 @@ import XCTest
 /// - `Instance` uses snake_case keys (`display_name`, `short_name`,
 ///   `api_key_ref`, `sort_order`).
 /// - The `instance` JSON object envelope is intact end-to-end (`uuid`,
-///   `provider`, `enabled`, `thresholds`).
+///   `provider`, `tracking_enabled`, `thresholds`).
 ///
 /// File I/O is exercised against a per-test temporary directory (via
 /// `FileManager.default.temporaryDirectory`) so the real Application Support
@@ -124,9 +124,9 @@ final class PersistenceServiceTests: XCTestCase {
     // MARK: - Test 4 — Instance uses snake_case keys
 
     /// `Instance` must serialize with snake_case keys (`display_name`,
-    /// `short_name`, `api_key_ref`, `sort_order`). The legacy `dimension`
-    /// string is preserved as a top-level field on the current model so
-    /// pre-refactor readers keep working.
+    /// `short_name`, `api_key_ref`, `sort_order`, `tracking_enabled`).
+    /// `dimension` and `enabled` are computed properties and never appear
+    /// in the encoded JSON.
     func testInstanceEncodesWithSnakeCaseKeys() throws {
         let instance = Self.makeInstance(
             dimension: "minimax.general.5h",
@@ -149,7 +149,9 @@ final class PersistenceServiceTests: XCTestCase {
         XCTAssertEqual(encoded["short_name"] as? String, "M5h")
         XCTAssertEqual(encoded["api_key_ref"] as? String, instance.apiKeyRef)
         XCTAssertEqual(encoded["sort_order"] as? Int, 0)
-        XCTAssertEqual(encoded["dimension"] as? String, "minimax.general.5h")
+        XCTAssertEqual(encoded["tracking_enabled"] as? Bool, true)
+        // dimension is computed from metrics, not a stored field
+        XCTAssertNil(encoded["dimension"], "dimension is computed, never encoded as a top-level key")
     }
 
     // MARK: - Test 5 — Instance JSON envelope shape
@@ -171,7 +173,7 @@ final class PersistenceServiceTests: XCTestCase {
 
         XCTAssertEqual(encoded["uuid"] as? String, instance.uuid)
         XCTAssertEqual(encoded["provider"] as? String, instance.provider)
-        XCTAssertEqual(encoded["enabled"] as? Bool, true)
+        XCTAssertEqual(encoded["tracking_enabled"] as? Bool, true)
         XCTAssertNotNil(encoded["thresholds"], "thresholds sub-document must be present")
     }
 

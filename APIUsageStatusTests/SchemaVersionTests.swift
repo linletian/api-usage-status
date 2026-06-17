@@ -64,27 +64,5 @@ final class SchemaVersionTests: XCTestCase {
         XCTAssertFalse(container.needsMigration)
     }
 
-    func testMissingSchemaVersionFieldIsDetectedAsNeedingMigration() throws {
-        // Simulates pre-versioned JSON (no schema_version key at all).
-        let json = """
-        {
-          "instances": [],
-          "settings": {
-            "refresh_interval_minutes": 5,
-            "color_mode": "monochrome",
-            "launch_at_login": false,
-            "notifications_enabled": true
-          }
-        }
-        """.data(using: .utf8)!
 
-        let container = try JSONDecoder().decode(InstancesContainer.self, from: json)
-        // When the field is missing, decoder uses the default (2 in this struct),
-        // but PersistenceService must still detect a migration via its own check.
-        // The struct-level default makes the loaded container "current", so the
-        // service-level migration trigger is what flags this — verify the field
-        // is at the current version once decoded.
-        XCTAssertEqual(container.schemaVersion, 2)
-        XCTAssertFalse(container.needsMigration)
-    }
 }

@@ -104,12 +104,21 @@ final class OpenCodeResponseParserTests: XCTestCase {
     }
 
     func testNextMondayMidnightFromMidweek() {
-        // Pick a Wednesday, 2026-06-17 12:00 UTC.
         let wednesday = Date(timeIntervalSince1970: 1_783_432_800)
         let reset = OpenCodeResponseParser.nextMondayMidnightUTC(from: wednesday)
-        // 4 days + 12 hours ahead = 2026-06-22 (Monday) 00:00 UTC
-        let expected = Date(timeIntervalSince1970: 1_783_948_800)
-        XCTAssertEqual(reset.timeIntervalSince(expected), 0, accuracy: 60)
+
+        // Compute the expected next Monday 00:00 UTC dynamically instead of
+        // hardcoding a timestamp that drifts across timezones.
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        var mondayComps = DateComponents()
+        mondayComps.weekday = 2
+        mondayComps.hour = 0
+        mondayComps.minute = 0
+        mondayComps.second = 0
+        let expectedMonday = cal.nextDate(after: wednesday, matching: mondayComps, matchingPolicy: .nextTime)!
+
+        XCTAssertEqual(reset.timeIntervalSince(expectedMonday), 0, accuracy: 60)
     }
 
     func testAnchoredMonthEndInPastThisMonth() {

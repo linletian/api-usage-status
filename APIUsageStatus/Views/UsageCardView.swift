@@ -36,22 +36,26 @@ struct UsageCardView: View {
             }
 
             // Content
-            switch slot.instanceType {
-            case .quota(let percent, let usageValue, let limitValue, let cycleRemainingSeconds):
-                quotaContent(
-                    percent: percent,
-                    usageValue: usageValue,
-                    limitValue: limitValue,
-                    cycleRemainingSeconds: cycleRemainingSeconds
-                )
-            case .balance(let amount, let totalBalance, let grantedBalance, let isAvailable, let currency):
-                balanceContent(
-                    amount: amount,
-                    totalBalance: totalBalance,
-                    grantedBalance: grantedBalance,
-                    isAvailable: isAvailable,
-                    currency: currency
-                )
+            if slot.metricSnapshots.count > 1 {
+                multiMetricContent
+            } else {
+                switch slot.instanceType {
+                case .quota(let percent, let usageValue, let limitValue, let cycleRemainingSeconds):
+                    quotaContent(
+                        percent: percent,
+                        usageValue: usageValue,
+                        limitValue: limitValue,
+                        cycleRemainingSeconds: cycleRemainingSeconds
+                    )
+                case .balance(let amount, let totalBalance, let grantedBalance, let isAvailable, let currency):
+                    balanceContent(
+                        amount: amount,
+                        totalBalance: totalBalance,
+                        grantedBalance: grantedBalance,
+                        isAvailable: isAvailable,
+                        currency: currency
+                    )
+                }
             }
 
             // Footer: See details button + Last refresh time
@@ -353,6 +357,143 @@ struct UsageCardView: View {
                 Spacer()
             }
         }
+    }
+
+    // MARK: - Multi-Metric Content
+
+    @ViewBuilder
+    private var multiMetricContent: some View {
+        let visibleSnapshots = slot.metricSnapshots.filter { $0.displayInMenuBar }
+        VStack(alignment: .leading, spacing: 4) {
+            if visibleSnapshots.isEmpty {
+                // All metrics hidden — show placeholder matching single-metric fallback
+                quotaFallbackContent
+            } else if slot.provider == Provider.minimax.rawValue {
+                groupedMetricContent(snapshots: visibleSnapshots)
+            } else {
+                flatMetricContent(snapshots: visibleSnapshots)
+            }
+
+            if let remaining = formatRemainingTime(firstCycleRemaining) {
+                HStack {
+                    Spacer()
+                    Text(remaining)
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private var quotaFallbackContent: some View {
+        let first = slot.metricSnapshots.first
+        return quotaContent(
+            percent: first?.percent ?? 0,
+            usageValue: first?.displayUsage ?? "",
+            limitValue: first?.displayLimit ?? "",
+            cycleRemainingSeconds: first?.cycleRemainingSeconds
+        )
+    }
+
+    @ViewBuilder
+    private func groupedMetricContent(snapshots: [MetricSnapshot]) -> some View {
+        let groups = Dictionary(grouping: snapshots, by: { $0.group ?? "" })
+        let sortedGroupKeys = groups.keys.sorted()
+
+        ForEach(sortedGroupKeys, id: \.self) { groupKey in
+            if let snapshots = groups[groupKey] {
+                VStack(alignment: .leading, spacing: 2) {
+                    if !groupKey.isEmpty {
+                        Text(groupKey.capitalized)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
+
+                    let sorted = snapshots.sorted { windowSortOrder($0.window) < windowSortOrder($1.window) }
+                    ForEach(sorted, id: \.key) { snapshot in
+                        metricRow(snapshot: snapshot)
+                    }
+                }
+
+                if groupKey != sortedGroupKeys.last {
+                    Divider().padding(.vertical, 1)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func flatMetricContent(snapshots: [MetricSnapshot]) -> some View {
+        let sorted = snapshots.sorted { windowSortOrder($0.window) < windowSortOrder($1.window) }
+        ForEach(sorted, id: \.key) { snapshot in
+            metricRow(snapshot: snapshot)
+        }
+    }
+
+    @ViewBuilder
+    private func metricRow(snapshot: MetricSnapshot) -> some View {
+        if snapshot.isUnlimited {
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 4) {
+                    Text(metricLabel(for: snapshot))
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("∞ unlimited")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                FlowingGlowBar()
+                    .frame(height: 3)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 4) {
+                    Text(metricLabel(for: snapshot))
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                    if !snapshot.displayLimit.isEmpty {
+                        Text("\(snapshot.displayUsage) / \(snapshot.displayLimit)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Text("\(Int(snapshot.percent))%")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(percentTextColor(for: snapshot.percent))
+                }
+                quotaProgressBar(percent: snapshot.percent, height: 3)
+            }
+        }
+    }
+
+    private func metricLabel(for snapshot: MetricSnapshot) -> String {
+        guard let window = snapshot.window else { return snapshot.key }
+        switch window {
+        case "5h": return "5h"
+        case "weekly": return "Weekly"
+        case "monthly": return "Monthly"
+        default: return window.capitalized
+        }
+    }
+
+    private func percentTextColor(for percent: Double) -> Color {
+        if percent >= 95 { return .red }
+        if percent >= 80 { return .orange }
+        return .primary
+    }
+
+    private func windowSortOrder(_ window: String?) -> Int {
+        switch window {
+        case "5h": return 0
+        case "weekly": return 1
+        case "monthly": return 2
+        default: return 3
+        }
+    }
+
+    private var firstCycleRemaining: Int? {
+        slot.metricSnapshots.first(where: { $0.cycleRemainingSeconds != nil })?.cycleRemainingSeconds
     }
 
     // MARK: - Helpers

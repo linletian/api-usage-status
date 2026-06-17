@@ -145,6 +145,38 @@ actor RefreshService {
                    let modelNamesStr = response.rawData["_model_names"] {
                     let names = modelNamesStr.split(separator: ",").map(String.init)
                     await appState.setMiniMaxModelNames(names)
+
+                    // Auto-discover: add 5h + weekly metrics for model names
+                    // not yet tracked by any MiniMax instance in this group.
+                    var autoDiscoveredUUIDs: Set<String> = []
+                    for var instance in instancesInGroup where instance.provider == Provider.minimax.rawValue {
+                        let existingGroups = Set(instance.metrics.compactMap { $0.group }).filter { !$0.isEmpty }
+                        let newGroups = names.filter { !existingGroups.contains($0) }
+                        guard !newGroups.isEmpty else { continue }
+                        for name in newGroups {
+                            instance.metrics.append(MetricConfig(key: name, group: name, window: "5h"))
+                            instance.metrics.append(MetricConfig(key: "\(name):weekly_percent", group: name, window: "weekly"))
+                        }
+                        await appState.updateInstance(instance)
+                        autoDiscoveredUUIDs.insert(instance.uuid)
+                        logger.info("Auto-discovered \(newGroups.count) MiniMax model(s) for \(instance.shortName): \(newGroups.joined(separator: ", "))")
+                    }
+                    if !autoDiscoveredUUIDs.isEmpty {
+                        // Re-map slot data for instances whose metrics changed,
+                        // so the menu bar picks up the newly discovered dimensions
+                        // immediately instead of on the next refresh.
+                        let updatedInstances = await appState.getInstances()
+                        for uuid in autoDiscoveredUUIDs {
+                            guard let updated = updatedInstances.first(where: { $0.uuid == uuid }) else { continue }
+                            let newSlot = mapInstanceToSlotData(instance: updated, response: response)
+                            if let idx = allSlotData.firstIndex(where: { $0.uuid == uuid }) {
+                                allSlotData[idx] = newSlot
+                            }
+                        }
+
+                        let settings = await appState.getGlobalSettings()
+                        try? await persistenceService.saveInstances(updatedInstances, settings: settings)
+                    }
                 }
             } catch let error as RefreshError {
                 // Handle fetch error - mark all instances in this group as error
@@ -277,10 +309,7 @@ actor RefreshService {
 
     // MARK: - Helper Methods
 
-    private func mapInstanceToSlotData(instance: Instance, response: SupplierResponse) -> SlotViewData {
-        let instanceType: InstanceType
-        let colorState: ColorState
-        var weekly: WeeklyQuota? = nil
+    func mapInstanceToSlotData(instance: Instance, response: SupplierResponse) -> SlotViewData {
 #if DEBUG
         var weeklyDebug: String? = "isQuota=\(instance.isQuotaType) dim=\(instance.dimension)"
 #else
@@ -288,66 +317,100 @@ actor RefreshService {
 #endif
 
         if instance.isQuotaType {
-            // Quota-type instance
-            let dim = instance.dimension
-            let valueString = response.value(forDimension: dim) ?? "0"
-            let percent = parsePercent(from: valueString)
+            // Quota-type instance: iterate instance.metrics to produce one
+            // MetricSnapshot per MetricConfig (1:N mapping). The first
+            // snapshot drives instanceType, dimension, colorState; the
+            // first snapshot with window=="weekly" drives the weekly bar.
+            var metricSnapshots: [MetricSnapshot] = []
 
-            // Compute cycle remaining seconds from interval end_time (ms timestamp).
-            // The view layer formats this as "Xd" / "Xh Ym" / "Xm" based on magnitude.
-            let cycleRemainingSeconds: Int? = {
-                if let ets = response.value(forDimension: "\(dim):end_time"),
-                   let endTimeMs = Int64(ets), endTimeMs > 0 {
-                    let endDate = Date(timeIntervalSince1970: TimeInterval(endTimeMs) / 1000.0)
-                    let remaining = endDate.timeIntervalSinceNow
-                    return max(0, Int(remaining))
-                }
-                return nil
-            }()
+            for (index, metricConfig) in instance.metrics.enumerated() {
+                let configIndex = index + 1
+                let key = metricConfig.key
 
-            // Provider-specific display values. Copilot stores absolute
-            // credit counts, so the panel shows used/total credits. OpenCode
-            // exposes both used and limit in dollars (the supplier
-            // pre-formats them as "%.2f" strings). MiniMax only exposes a
-            // percent from the API — we pass an empty `displayLimit` so the
-            // view renders just "<value>%" instead of "<value> / 100" (the
-            // "/ 100" is a meaningless constant since the API doesn't
-            // expose a real denominator for these providers).
-            let displayUsage: String
-            let displayLimit: String
-            if instance.provider == Provider.githubCopilot.rawValue {
-                let entitlement = Int(response.value(forDimension: "\(dim):entitlement") ?? "0") ?? 0
-                let remaining = Int(response.value(forDimension: "\(dim):remaining") ?? "0") ?? 0
-                let isUnlimited = response.value(forDimension: "\(dim):unlimited") == "true"
-                if isUnlimited {
-                    displayUsage = "∞"
-                    displayLimit = String(entitlement)
+                let valueString = response.value(forDimension: key) ?? "0"
+                let percent = parsePercent(from: valueString)
+
+                // Compute cycle remaining seconds from interval end_time
+                // (ms timestamp). The view layer formats this as "Xd" /
+                // "Xh Ym" / "Xm" based on magnitude.
+                let cycleRemainingSeconds: Int? = {
+                    if let ets = response.value(forDimension: "\(key):end_time"),
+                       let endTimeMs = Int64(ets), endTimeMs > 0 {
+                        let endDate = Date(timeIntervalSince1970: TimeInterval(endTimeMs) / 1000.0)
+                        let remaining = endDate.timeIntervalSinceNow
+                        return max(0, Int(remaining))
+                    }
+                    return nil
+                }()
+
+                // Provider-specific display values. Copilot stores absolute
+                // credit counts, so the panel shows used/total credits.
+                // OpenCode exposes both used and limit in dollars (the
+                // supplier pre-formats them as "%.2f" strings). MiniMax
+                // only exposes a percent from the API — we pass an empty
+                // `displayLimit` so the view renders just "<value>%" instead
+                // of "<value> / 100" (the "/ 100" is a meaningless constant
+                // since the API doesn't expose a real denominator for these
+                // providers).
+                let displayUsage: String
+                let displayLimit: String
+                if instance.provider == Provider.githubCopilot.rawValue {
+                    let entitlement = Int(response.value(forDimension: "\(key):entitlement") ?? "0") ?? 0
+                    let remaining = Int(response.value(forDimension: "\(key):remaining") ?? "0") ?? 0
+                    let isUnlimited = response.value(forDimension: "\(key):unlimited") == "true"
+                    if isUnlimited {
+                        displayUsage = "∞"
+                        displayLimit = String(entitlement)
+                    } else {
+                        let used = max(0, entitlement - remaining)
+                        displayUsage = String(used)
+                        displayLimit = String(entitlement)
+                    }
+                } else if instance.provider == Provider.opencode.rawValue {
+                    let used = response.value(forDimension: "\(key):used") ?? "0"
+                    let limit = response.value(forDimension: "\(key):limit") ?? "0"
+                    displayUsage = "$\(used)"
+                    displayLimit = "$\(limit)"
                 } else {
-                    let used = max(0, entitlement - remaining)
-                    displayUsage = String(used)
-                    displayLimit = String(entitlement)
+                    displayUsage = valueString
+                    displayLimit = ""
                 }
-            } else if instance.provider == Provider.opencode.rawValue {
-                let used = response.value(forDimension: "\(dim):used") ?? "0"
-                let limit = response.value(forDimension: "\(dim):limit") ?? "0"
-                displayUsage = "$\(used)"
-                displayLimit = "$\(limit)"
-            } else {
-                displayUsage = valueString
-                displayLimit = ""
+
+                let colorState = determineColorState(percent: percent, thresholds: instance.thresholds)
+
+                // Unlimited-plan detection for weekly windows.
+                // MiniMax: current_weekly_status != 1 means the plan
+                // does not enforce a weekly limit (e.g. legacy / grandfathered
+                // plans). The UI renders a flowing glow bar instead of a
+                // progress bar.
+                let isUnlimited: Bool
+                if metricConfig.window == "weekly", let group = metricConfig.group {
+                    let statusKey = "\(group):weekly_status"
+                    let statusString = response.value(forDimension: statusKey) ?? "1"
+                    isUnlimited = Int(statusString) != 1
+                } else {
+                    isUnlimited = false
+                }
+
+                metricSnapshots.append(MetricSnapshot(
+                    key: key,
+                    group: metricConfig.group,
+                    window: metricConfig.window,
+                    percent: percent,
+                    displayUsage: displayUsage,
+                    displayLimit: displayLimit,
+                    cycleRemainingSeconds: cycleRemainingSeconds,
+                    colorState: colorState,
+                    configIndex: configIndex,
+                    displayInMenuBar: metricConfig.displayInMenuBar,
+                    isUnlimited: isUnlimited,
+                    shortName: metricConfig.shortName
+                ))
             }
 
-            instanceType = .quota(
-                percent: percent,
-                usageValue: displayUsage,
-                limitValue: displayLimit,
-                cycleRemainingSeconds: cycleRemainingSeconds
-            )
-
-            colorState = determineColorState(percent: percent, thresholds: instance.thresholds)
-            weekly = WeeklyQuota.from(response: response, dimension: dim)
 #if DEBUG
             // Build debug string for UI
+            let dim = instance.dimension
             let wsKey = "\(dim):weekly_status"
             let wpKey = "\(dim):weekly_percent"
             let wrKey = "\(dim):weekly_remaining"
@@ -356,8 +419,21 @@ actor RefreshService {
             let wr = response.value(forDimension: wrKey) ?? "nil"
             weeklyDebug = "dim=\(dim) ws=\(ws) wp=\(wp) wr=\(wr) totalKeys=\(response.rawData.count)"
 #endif
+
+            return SlotViewData(
+                uuid: instance.uuid,
+                displayName: instance.displayName,
+                shortName: instance.shortName,
+                sortOrder: instance.sortOrder,
+                provider: instance.provider,
+                metricSnapshots: metricSnapshots,
+                weeklyDebug: weeklyDebug
+            )
         } else {
             // Balance-type instance
+            let instanceType: InstanceType
+            let colorState: ColorState
+
             let balance = response.value(forDimension: "balance") ?? "0"
             let totalBalance = response.value(forDimension: "total_balance") ?? balance
             let grantedBalance = response.value(forDimension: "granted_balance") ?? "0"
@@ -381,20 +457,19 @@ actor RefreshService {
                 )
                 colorState = determineBalanceColorState(balance: balance, thresholds: instance.thresholds)
             }
-        }
 
-        return SlotViewData(
-            uuid: instance.uuid,
-            displayName: instance.displayName,
-            shortName: instance.shortName,
-            instanceType: instanceType,
-            sortOrder: instance.sortOrder,
-            colorState: colorState,
-            provider: instance.provider,
-            dimension: instance.dimension,
-            weekly: weekly,
-            weeklyDebug: weeklyDebug
-        )
+            return SlotViewData(
+                uuid: instance.uuid,
+                displayName: instance.displayName,
+                shortName: instance.shortName,
+                instanceType: instanceType,
+                sortOrder: instance.sortOrder,
+                colorState: colorState,
+                provider: instance.provider,
+                dimension: instance.dimension,
+                weeklyDebug: weeklyDebug
+            )
+        }
     }
 
     private func parsePercent(from value: String) -> Double {

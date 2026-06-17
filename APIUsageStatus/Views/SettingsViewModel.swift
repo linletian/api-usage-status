@@ -54,7 +54,7 @@ final class SettingsViewModel: ObservableObject {
     }
 
     func load() async {
-        let (loadedInstances, loadedSettings) = await persistenceService.loadInstances()
+        let (loadedInstances, loadedSettings, _) = await persistenceService.loadInstances()
         let sortedInstances = loadedInstances.sorted { $0.sortOrder < $1.sortOrder }
         instances = sortedInstances
         settings = loadedSettings
@@ -129,6 +129,17 @@ final class SettingsViewModel: ObservableObject {
                 await refreshService.restartTimer(interval: TimeInterval(settings.refreshIntervalMinutes))
             }
 
+            // Trigger an immediate refresh so newly added/edited instances
+            // show up right away instead of waiting for the next timer tick.
+            await refreshService.triggerManualRefresh()
+
+            // Reload instances to pick up auto-discovered MiniMax metrics
+            // (added during the refresh above). Without this the settings list
+            // shows stale pre-refresh data.
+            let (refreshedInstances, _, _) = await persistenceService.loadInstances()
+            instances = refreshedInstances.sorted { $0.sortOrder < $1.sortOrder }
+            originalInstances = instances
+
             // Sync launch-at-login registration if changed
             if settings.launchAtLogin != originalSettings.launchAtLogin {
                 if settings.launchAtLogin {
@@ -195,9 +206,21 @@ final class SettingsViewModel: ObservableObject {
         recomputeSortOrders()
     }
 
-    func setInstanceEnabled(uuid: String, enabled: Bool) {
+    func setInstanceTrackingEnabled(uuid: String, enabled: Bool) {
         if let index = instances.firstIndex(where: { $0.uuid == uuid }) {
-            instances[index].enabled = enabled
+            instances[index].trackingEnabled = enabled
+        }
+    }
+
+    @available(*, deprecated, message: "Use setInstanceTrackingEnabled instead")
+    func setInstanceEnabled(uuid: String, enabled: Bool) {
+        setInstanceTrackingEnabled(uuid: uuid, enabled: enabled)
+    }
+
+    func setMetricDisplayInMenuBar(uuid: String, metricIndex: Int, enabled: Bool) {
+        if let index = instances.firstIndex(where: { $0.uuid == uuid }) {
+            guard metricIndex >= 0, metricIndex < instances[index].metrics.count else { return }
+            instances[index].metrics[metricIndex].displayInMenuBar = enabled
         }
     }
 

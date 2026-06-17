@@ -77,11 +77,20 @@ final class NotificationManager: NSObject {
             guard let instance = instances.first(where: { $0.uuid == slot.uuid }) else { continue }
             guard instance.enabled else { continue }
 
-            switch slot.instanceType {
-            case .quota(let percent, _, _, _):
-                evaluateQuota(instance: instance, percent: percent)
-            case .balance(let amount, _, _, let isAvailable, _):
-                evaluateBalance(instance: instance, amount: amount, isAvailable: isAvailable)
+            // For multi-metric quota instances, evaluate each metric snapshot
+            // independently so a critical weekly window triggers a notification
+            // even when the 5h window is below threshold.
+            if instance.isQuotaType, !slot.metricSnapshots.isEmpty {
+                for snapshot in slot.metricSnapshots {
+                    evaluateQuota(instance: instance, percent: snapshot.percent)
+                }
+            } else {
+                switch slot.instanceType {
+                case .quota(let percent, _, _, _):
+                    evaluateQuota(instance: instance, percent: percent)
+                case .balance(let amount, _, _, let isAvailable, _):
+                    evaluateBalance(instance: instance, amount: amount, isAvailable: isAvailable)
+                }
             }
         }
     }

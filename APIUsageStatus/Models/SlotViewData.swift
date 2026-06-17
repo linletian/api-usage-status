@@ -91,14 +91,8 @@ struct SlotViewData: Identifiable, Equatable {
     let uuid: String
     let displayName: String
     let shortName: String
-    let instanceType: InstanceType
     let sortOrder: Int
-    let colorState: ColorState
     let provider: String
-    /// The dimension string from the source `Instance` (e.g. "5h", "weekly",
-    /// "monthly" for OpenCode; "premium_interactions" for Copilot). The UI
-    /// layer reads this to pick the right per-window label.
-    let dimension: String
 
     var id: String { uuid }
 
@@ -106,23 +100,86 @@ struct SlotViewData: Identifiable, Equatable {
     var todayUsage: String?
     var dailyAverages: [AvgDailyPeriod: Decimal]?
 
-    // Quota-specific: weekly cycle breakdown. nil when not applicable
-    // (e.g. DeepSeek, or when the API does not return weekly data).
-    var weekly: WeeklyQuota?
-
     // TODO: Remove after confirming weekly feature is stable on all user plans.
     // Temporary diagnostic: keys looked up in rawData for weekly.
     var weeklyDebug: String?
 
+    // MARK: - Runtime metric snapshots
+
+    /// Runtime snapshots derived from `MetricConfig` + supplier response on
+    /// every refresh. The first snapshot drives `instanceType`, `dimension`,
+    /// `colorState` and (post-Task 8) `weekly`.
+    var metricSnapshots: [MetricSnapshot]
+
+    // MARK: - Computed (from metricSnapshots)
+
+    /// Preserved `InstanceType` from the balance path init. When non-nil,
+    /// `instanceType` returns this instead of deriving from snapshots.
+    private let balanceInstanceType: InstanceType?
+
+    var instanceType: InstanceType {
+        if let balance = balanceInstanceType { return balance }
+        guard let first = metricSnapshots.first else {
+            return .quota(percent: 0, usageValue: "", limitValue: "", cycleRemainingSeconds: nil)
+        }
+        return .quota(
+            percent: first.percent,
+            usageValue: first.displayUsage,
+            limitValue: first.displayLimit,
+            cycleRemainingSeconds: first.cycleRemainingSeconds
+        )
+    }
+
+    /// Worst color state across all metric snapshots. Priority:
+    /// critical > warning > error > unavailable > disabled > loading > normal.
+    var colorState: ColorState {
+        let states = metricSnapshots.map(\.colorState)
+        guard !states.isEmpty else { return .loading }
+        if states.contains(.critical) { return .critical }
+        if states.contains(.warning) { return .warning }
+        if states.contains(.error) { return .error }
+        if states.contains(.unavailable) { return .unavailable }
+        if states.contains(.disabled) { return .disabled }
+        if states.contains(.loading) { return .loading }
+        return .normal
+    }
+
+    /// The dimension string from the source `Instance` (e.g. "5h", "weekly",
+    /// "monthly" for OpenCode; "premium_interactions" for Copilot). The UI
+    /// layer reads this to pick the right per-window label.
+    var dimension: String {
+        metricSnapshots.first?.key ?? ""
+    }
+
+    var weekly: WeeklyQuota? {
+        guard let s = metricSnapshots.first(where: { $0.window == "weekly" }) else {
+            return nil
+        }
+        return WeeklyQuota(
+            percent: s.percent,
+            remaining: max(0, 100 - s.percent),
+            isUnlimited: s.isUnlimited
+        )
+    }
+
+    // MARK: - Init
+
+    /// `instanceType`, `colorState`, `dimension` and `weekly` are kept as
+    /// init parameters so existing call sites compile unchanged. When
+    /// `metricSnapshots` is non-empty the passed-in values are ignored
+    /// (the computed properties derive from `metricSnapshots`).
+    /// When `metricSnapshots` is empty, a single synthetic snapshot is
+    /// constructed from the legacy params.
     init(
         uuid: String,
         displayName: String,
         shortName: String,
-        instanceType: InstanceType,
+        instanceType: InstanceType = .quota(percent: 0, usageValue: "", limitValue: "", cycleRemainingSeconds: nil),
         sortOrder: Int,
-        colorState: ColorState,
+        colorState: ColorState = .loading,
         provider: String,
-        dimension: String,
+        dimension: String = "",
+        metricSnapshots: [MetricSnapshot] = [],
         todayUsage: String? = nil,
         dailyAverages: [AvgDailyPeriod: Decimal]? = nil,
         weekly: WeeklyQuota? = nil,
@@ -131,14 +188,56 @@ struct SlotViewData: Identifiable, Equatable {
         self.uuid = uuid
         self.displayName = displayName
         self.shortName = shortName
-        self.instanceType = instanceType
         self.sortOrder = sortOrder
-        self.colorState = colorState
         self.provider = provider
-        self.dimension = dimension
         self.todayUsage = todayUsage
         self.dailyAverages = dailyAverages
-        self.weekly = weekly
         self.weeklyDebug = weeklyDebug
+
+        // Balance path: preserve the full InstanceType so the menu bar and
+        // usage panel render balance content (amount/currency) instead of
+        // deriving a fake .quota from the synthetic MetricSnapshot.
+        if case .balance = instanceType {
+            self.balanceInstanceType = instanceType
+        } else {
+            self.balanceInstanceType = nil
+        }
+
+        if !metricSnapshots.isEmpty {
+            self.metricSnapshots = metricSnapshots
+        } else {
+            let snapshotPercent: Double
+            let displayUsage: String
+            let displayLimit: String
+            let cycleRemaining: Int?
+            let snapshotColor: ColorState
+
+            switch instanceType {
+            case .quota(let p, let u, let l, let c):
+                snapshotPercent = p
+                displayUsage = u
+                displayLimit = l
+                cycleRemaining = c
+                snapshotColor = colorState
+            case .balance(let amount, _, _, let isAvailable, _):
+                snapshotPercent = 0
+                displayUsage = amount
+                displayLimit = ""
+                cycleRemaining = nil
+                snapshotColor = isAvailable ? colorState : .unavailable
+            }
+
+            self.metricSnapshots = [MetricSnapshot(
+                key: dimension,
+                group: nil,
+                window: nil,
+                percent: snapshotPercent,
+                displayUsage: displayUsage,
+                displayLimit: displayLimit,
+                cycleRemainingSeconds: cycleRemaining,
+                colorState: snapshotColor,
+                configIndex: 0
+            )]
+        }
     }
 }

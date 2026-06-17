@@ -51,7 +51,7 @@ struct InstanceEditorView: View {
     let onCancel: () -> Void
 
     @State private var provider: Provider = .minimax
-    @State private var dimension: String = ""
+    @State private var selectedMetrics: [MetricConfig] = []
     @State private var displayName: String = ""
     @State private var shortName: String = ""
     @State private var apiKey: String = ""
@@ -69,7 +69,7 @@ struct InstanceEditorView: View {
                         get: { provider },
                         set: { newProvider in
                             provider = newProvider
-                            updateDimensionsForProvider()
+                            resetMetricsForProvider()
                             validationError = nil
                         }
                     )) {
@@ -78,17 +78,7 @@ struct InstanceEditorView: View {
                         }
                     }
 
-                    Picker("Dimension", selection: $dimension) {
-                        if provider == .minimax {
-                            ForEach(miniMaxDimensionOptions, id: \.self) { name in
-                                Text(name).tag(name)
-                            }
-                        } else {
-                            ForEach(availableDimensions, id: \.self) { dim in
-                                Text(dimensionDisplayName(dim)).tag(dim)
-                            }
-                        }
-                    }
+                    metricsEditorSection
 
                     TextField("Display Name", text: $displayName)
 
@@ -160,31 +150,243 @@ struct InstanceEditorView: View {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Metrics Editor
 
-    private var miniMaxDimensionOptions: [String] {
-        var options = miniMaxModelNames
-        if !dimension.isEmpty && !options.contains(dimension) {
-            options.append(dimension)
+    @ViewBuilder
+    private var metricsEditorSection: some View {
+        switch provider {
+        case .minimax:
+            miniMaxMetricsEditor
+        case .opencode:
+            openCodeMetricsEditor
+        case .deepseek, .githubCopilot:
+            singleMetricLabel
         }
-        if options.isEmpty {
-            options.append("MiniMax-M2.7")
-        }
-        return options
     }
 
-    private var availableDimensions: [String] {
+    @ViewBuilder
+    private var miniMaxMetricsEditor: some View {
+        if miniMaxModelNames.isEmpty {
+            Text("No models detected yet. Add the instance and refresh to discover available models.")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+        } else {
+            ForEach(miniMaxModelNames, id: \.self) { modelName in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: miniMaxModelIsSelected(modelName) ? "checkmark.square" : "square")
+                            .foregroundColor(miniMaxModelIsSelected(modelName) ? .accentColor : .secondary)
+                        Text(modelName)
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggleMiniMaxModel(modelName) }
+
+                    if miniMaxModelIsSelected(modelName) {
+                        HStack(spacing: 16) {
+                            metricWindowToggle(modelName: modelName, window: "5h")
+                            metricWindowToggle(modelName: modelName, window: "weekly")
+                        }
+                        .padding(.leading, 24)
+
+                        HStack(spacing: 10) {
+                            metricShortNameField(modelName: modelName, window: "5h")
+                            metricShortNameField(modelName: modelName, window: "weekly")
+                        }
+                        .padding(.leading, 24)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var openCodeMetricsEditor: some View {
+        ForEach(openCodeMetricOptions, id: \.key) { metric in
+            HStack {
+                Image(systemName: openCodeMetricIsSelected(metric.window ?? "") ? "checkmark.square" : "square")
+                    .foregroundColor(openCodeMetricIsSelected(metric.window ?? "") ? .accentColor : .secondary)
+                Text(openCodeWindowDisplayName(metric.window ?? ""))
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { toggleOpenCodeMetric(metric.window ?? "") }
+
+            if openCodeMetricIsSelected(metric.window ?? "") {
+                openCodeShortNameField(window: metric.window ?? "")
+                    .padding(.leading, 24)
+            }
+        }
+    }
+
+    private var singleMetricLabel: some View {
+        Text("\(dimensionDisplayName(singleMetricForProvider.key)) — always tracked")
+            .font(.system(size: 11))
+            .foregroundColor(.secondary)
+    }
+
+    @ViewBuilder
+    private func metricWindowToggle(modelName: String, window: String) -> some View {
+        let isSelected = miniMaxWindowIsSelected(modelName: modelName, window: window)
+        HStack(spacing: 4) {
+            Image(systemName: isSelected ? "checkmark.square" : "square")
+                .foregroundColor(isSelected ? .accentColor : .secondary)
+                .font(.system(size: 11))
+            Text(window)
+                .font(.system(size: 11))
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { toggleMiniMaxWindow(modelName: modelName, window: window) }
+    }
+
+    // MARK: - Metrics State Helpers
+
+    private var openCodeMetricOptions: [MetricConfig] {
+        ["5h", "weekly", "monthly"].map { window in
+            MetricConfig(key: window, group: nil, window: window, displayInMenuBar: true)
+        }
+    }
+
+    private var singleMetricForProvider: MetricConfig {
         switch provider {
         case .deepseek:
-            return ["balance"]
+            return MetricConfig(key: "deepseek.balance", group: nil, window: nil, displayInMenuBar: true)
         case .githubCopilot:
-            return ["premium_interactions"]
-        case .opencode:
-            return ["5h", "weekly", "monthly"]
-        case .minimax:
-            return []
+            return MetricConfig(key: "premium_interactions", group: nil, window: nil, displayInMenuBar: true)
+        default:
+            return MetricConfig(key: "", displayInMenuBar: true)
         }
     }
+
+    private func miniMaxModelIsSelected(_ modelName: String) -> Bool {
+        selectedMetrics.contains { $0.group == modelName && $0.displayInMenuBar }
+    }
+
+    private func miniMaxWindowIsSelected(modelName: String, window: String) -> Bool {
+        selectedMetrics.contains { $0.group == modelName && $0.window == window && $0.displayInMenuBar }
+    }
+
+    private func toggleMiniMaxModel(_ modelName: String) {
+        let modelMetrics = selectedMetrics.filter { $0.group == modelName }
+        if modelMetrics.isEmpty {
+            // Add both 5h and weekly by default.
+            // Keys must match rawData from MiniMaxResponseParser:
+            //   5h    → rawData["<modelName>"] (usage percent)
+            //   weekly → rawData["<modelName>:weekly_percent"]
+            selectedMetrics.append(MetricConfig(key: modelName, group: modelName, window: "5h"))
+            selectedMetrics.append(MetricConfig(key: "\(modelName):weekly_percent", group: modelName, window: "weekly"))
+        } else {
+            // Toggle enabled state instead of removing.
+            // Keeping the metrics in the array prevents auto-discovery
+            // from re-adding them on the next refresh.
+            let newState = !modelMetrics.contains { $0.displayInMenuBar }
+            for idx in selectedMetrics.indices where selectedMetrics[idx].group == modelName {
+                selectedMetrics[idx].displayInMenuBar = newState
+            }
+        }
+    }
+
+    private func toggleMiniMaxWindow(modelName: String, window: String) {
+        let key: String
+        switch window {
+        case "5h":   key = modelName
+        case "weekly": key = "\(modelName):weekly_percent"
+        default:     key = "\(modelName):\(window)"
+        }
+        if let idx = selectedMetrics.firstIndex(where: { $0.group == modelName && $0.window == window }) {
+            selectedMetrics[idx].displayInMenuBar.toggle()
+        } else {
+            selectedMetrics.append(MetricConfig(key: key, group: modelName, window: window))
+        }
+    }
+
+    private func openCodeMetricIsSelected(_ window: String) -> Bool {
+        selectedMetrics.contains { $0.window == window }
+    }
+
+    private func toggleOpenCodeMetric(_ window: String) {
+        if let idx = selectedMetrics.firstIndex(where: { $0.window == window }) {
+            selectedMetrics.remove(at: idx)
+        } else {
+            selectedMetrics.append(MetricConfig(key: window, group: nil, window: window))
+        }
+    }
+
+    private func openCodeWindowDisplayName(_ window: String) -> String {
+        switch window {
+        case "5h": return "5-Hour Window"
+        case "weekly": return "Weekly Window"
+        case "monthly": return "Monthly Window"
+        default: return window
+        }
+    }
+
+    // MARK: - Metric Short Name Fields
+
+    @ViewBuilder
+    private func metricShortNameField(modelName: String, window: String) -> some View {
+        let binding = Binding<String>(
+            get: { metricShortName(for: modelName, window: window) },
+            set: { setMetricShortName(for: modelName, window: window, name: $0) }
+        )
+        HStack(spacing: 4) {
+            Text("Name")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+            TextField(window, text: binding)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 10, design: .monospaced))
+                .frame(width: 36)
+                .onChange(of: binding.wrappedValue) { newValue in
+                    let filtered = String(newValue.prefix(3)).uppercased()
+                    if filtered != newValue {
+                        binding.wrappedValue = filtered
+                    }
+                }
+        }
+    }
+
+    @ViewBuilder
+    private func openCodeShortNameField(window: String) -> some View {
+        let binding = Binding<String>(
+            get: { metricShortName(for: nil, window: window) },
+            set: { setMetricShortName(for: nil, window: window, name: $0) }
+        )
+        HStack(spacing: 4) {
+            Text("Name")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+            TextField(window, text: binding)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 10, design: .monospaced))
+                .frame(width: 36)
+                .onChange(of: binding.wrappedValue) { newValue in
+                    let filtered = String(newValue.prefix(3)).uppercased()
+                    if filtered != newValue {
+                        binding.wrappedValue = filtered
+                    }
+                }
+        }
+    }
+
+    private func metricShortName(for group: String?, window: String) -> String {
+        selectedMetrics.first(where: {
+            ($0.group == group || (group == nil && $0.group == nil))
+            && $0.window == window
+        })?.shortName ?? ""
+    }
+
+    private func setMetricShortName(for group: String?, window: String, name: String) {
+        let cleaned = String(name.prefix(3)).uppercased()
+        if let idx = selectedMetrics.firstIndex(where: {
+            ($0.group == group || (group == nil && $0.group == nil))
+            && $0.window == window
+        }) {
+            selectedMetrics[idx].shortName = cleaned.isEmpty ? nil : cleaned
+        }
+    }
+
+    // MARK: - Other Helpers
 
     private var isBalanceType: Bool {
         provider == .deepseek
@@ -199,25 +401,40 @@ struct InstanceEditorView: View {
     }
 
     private var isFormFilled: Bool {
-        !shortName.isEmpty && shortName.count >= 2 && shortName.count <= 3
+        let hasValidShortName = !shortName.isEmpty && shortName.count >= 2 && shortName.count <= 3
+
+        // First-time MiniMax instance: model names aren't discovered yet
+        // (no instance exists → no refresh has run → AppState.miniMaxModelNames is empty).
+        // Allow adding the instance without metrics so a refresh can discover them;
+        // the user can then re-edit to select specific capability buckets.
+        if provider == .minimax && miniMaxModelNames.isEmpty && !isEditing {
+            return hasValidShortName
+        }
+
+        return hasValidShortName && !selectedMetrics.isEmpty
     }
 
-    private func dimensionDisplayName(_ dim: String) -> String {
-        switch dim {
-        case "balance":
+    private func dimensionDisplayName(_ key: String) -> String {
+        switch key {
+        case "deepseek.balance":
             return "Account Balance"
-        case "premium_interactions":
+        case "githubCopilot.premium_interactions":
             return "Premium Interactions"
         default:
-            return dim
+            return key
         }
     }
 
-    private func updateDimensionsForProvider() {
-        if provider == .minimax {
-            dimension = miniMaxDimensionOptions.first ?? ""
-        } else {
-            dimension = availableDimensions.first ?? ""
+    private func resetMetricsForProvider() {
+        switch provider {
+        case .minimax:
+            selectedMetrics = []
+        case .opencode:
+            selectedMetrics = openCodeMetricOptions
+        case .deepseek:
+            selectedMetrics = [MetricConfig(key: "deepseek.balance", group: nil, window: nil)]
+        case .githubCopilot:
+            selectedMetrics = [MetricConfig(key: "premium_interactions", group: nil, window: nil)]
         }
         thresholds = isBalanceType ? .defaultBalance : .defaultQuota
     }
@@ -225,22 +442,18 @@ struct InstanceEditorView: View {
     private func loadExistingData() {
         if let instance = existingInstance {
             provider = Provider(rawValue: instance.provider) ?? .minimax
-            dimension = instance.dimension
+            selectedMetrics = instance.metrics.filter { !$0.key.isEmpty }
             displayName = instance.displayName
             shortName = instance.shortName
             currency = instance.currency ?? "CNY"
             thresholds = instance.thresholds
             apiKey = "" // User must re-enter to change
         } else {
-            updateDimensionsForProvider()
+            resetMetricsForProvider()
         }
     }
 
     private func makeInstance() -> Instance {
-        // OpenCode instances share one fixed apiKeyRef (the placeholder
-        // stored in KeychainService). Three separate Instances (5h / weekly
-        // / monthly) point to the same ref so RefreshService de-dupes
-        // their fetch into a single CLI call.
         let apiKeyRef: String
         if let existing = existingInstance {
             apiKeyRef = existing.apiKeyRef
@@ -253,7 +466,8 @@ struct InstanceEditorView: View {
         return Instance(
             uuid: existingInstance?.uuid ?? UUID().uuidString,
             provider: provider.rawValue,
-            dimension: dimension,
+            dimension: "",
+            metrics: selectedMetrics,
             displayName: displayName,
             shortName: shortName,
             apiKeyRef: apiKeyRef,

@@ -396,4 +396,95 @@ final class MenuBarIconRendererTests: XCTestCase {
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         assertSnapshot(image, named: "critical_breathing_inhale")
     }
+
+    // MARK: - Unlimited metric snapshots
+
+    private func makeUnlimitedSlot(
+        uuid: String = UUID().uuidString,
+        colorState: ColorState = .normal,
+        shortName: String = "TU",
+        sortOrder: Int = 0
+    ) -> SlotViewData {
+        let snapshot = MetricSnapshot(
+            key: "weekly",
+            group: "general",
+            window: "weekly",
+            percent: 0.0,
+            displayUsage: "0.0",
+            displayLimit: "",
+            cycleRemainingSeconds: nil,
+            colorState: colorState,
+            configIndex: 1,
+            displayInMenuBar: true,
+            isUnlimited: true,
+            shortName: nil
+        )
+        return SlotViewData(
+            uuid: uuid,
+            displayName: "Test Unlimited",
+            shortName: shortName,
+            sortOrder: sortOrder,
+            provider: "minimax",
+            metricSnapshots: [snapshot]
+        )
+    }
+
+    /// Unlimited metric snapshots must render ∞ (single char) instead of the
+    /// percent-based text (e.g. "0%"). Since ∞ and 0% have different widths
+    /// in the monospaced value font, the rendered image widths must differ.
+    /// Single-char shortName so value width (∞ vs 0%) dominates slot width.
+    /// Otherwise a wide shortName like "TU" masks the difference via max().
+    func testUnlimitedSlotWidthDiffersFromZeroPercentSlot() {
+        let unlimitedSlot = makeUnlimitedSlot(uuid: "ul-slot", shortName: "U")
+        let zeroPercentSlot = makeSlot(
+            uuid: "zero-slot",
+            colorState: .normal,
+            instanceType: .quota(percent: 0, usageValue: "0", limitValue: "", cycleRemainingSeconds: nil),
+            shortName: "U"
+        )
+
+        let ulImage = renderer.render(
+            slotViewDataList: [unlimitedSlot],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+
+        let zpImage = renderer.render(
+            slotViewDataList: [zeroPercentSlot],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+
+        XCTAssertEqual(ulImage.size.height, 22, accuracy: 0.1)
+        XCTAssertEqual(zpImage.size.height, 22, accuracy: 0.1)
+        XCTAssertGreaterThan(ulImage.size.width, 0)
+        XCTAssertGreaterThan(zpImage.size.width, 0)
+        // "∞" (1 monospaced char) vs "0%" (2 monospaced chars) —
+        // widths must differ. If equal, the unlimited check is likely broken.
+        XCTAssertNotEqual(ulImage.size.width, zpImage.size.width, accuracy: 0.1,
+                          "Unlimited slot (∞) must differ in width from 0% slot")
+    }
+
+    /// Unlimited slot snapshot — golden reference for the ∞ rendering.
+    func testSnapshotUnlimitedNormal() {
+        let slot = makeUnlimitedSlot(uuid: "snap-unlimited")
+        renderer.updateBreathingState(slotViewDataList: [slot])
+
+        let image = renderer.render(
+            slotViewDataList: [slot],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
+        assertSnapshot(image, named: "unlimited_normal")
+    }
 }

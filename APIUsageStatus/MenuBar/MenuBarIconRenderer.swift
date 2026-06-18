@@ -208,7 +208,9 @@ final class MenuBarIconRenderer {
         let valueWidth: CGFloat
         switch slot.instanceType {
         case .quota(let percent, _, _, _):
-            valueWidth = textWidth("\(Int(percent))%", font: Self.monoFont)
+            valueWidth = slot.metricSnapshots.first?.isUnlimited == true
+                ? textWidth("∞", font: Self.monoFont)
+                : textWidth("\(Int(percent))%", font: Self.monoFont)
         case .balance(let amount, _, _, _, let currency):
             let symbol = currency?.currencySymbol ?? "¥"
             valueWidth = textWidth(symbol + balanceInt(amount), font: Self.font)
@@ -360,8 +362,10 @@ final class MenuBarIconRenderer {
         let valueFont: NSFont
         switch data.instanceType {
         case .quota(let percent, _, _, _):
-            valueText = "\(Int(percent))%"
             valueFont = Self.monoFont
+            valueText = data.metricSnapshots.first?.isUnlimited == true
+                ? "∞"
+                : "\(Int(percent))%"
         case .balance(let amount, _, _, _, let currency):
             let symbol = currency?.currencySymbol ?? "¥"
             valueText = symbol + balanceInt(amount)

@@ -388,6 +388,8 @@ actor RefreshService {
                     let statusKey = "\(group):weekly_status"
                     let statusString = response.value(forDimension: statusKey) ?? "1"
                     isUnlimited = Int(statusString) != 1
+                } else if instance.provider == Provider.githubCopilot.rawValue {
+                    isUnlimited = response.value(forDimension: "\(key):unlimited") == "true"
                 } else {
                     isUnlimited = false
                 }

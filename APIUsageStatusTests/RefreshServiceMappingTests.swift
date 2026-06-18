@@ -348,4 +348,194 @@ final class RefreshServiceMappingTests: XCTestCase {
         XCTAssertEqual(s.colorState, .normal)
         XCTAssertEqual(s.configIndex, 1)
     }
+
+    // MARK: - Copilot unlimited → MetricSnapshot.isUnlimited
+
+    /// When the Copilot API reports `unlimited: true`, the MetricSnapshot
+    /// must carry `isUnlimited: true` so the menu bar renderer can show ∞
+    /// instead of 0%.
+    func testCopilotUnlimitedPropagatesToSnapshot() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+
+        let metrics: [MetricConfig] = [
+            MetricConfig(key: "premium_interactions", group: nil, window: nil),
+        ]
+
+        let instance = Instance(
+            uuid: "copilot-ul-1",
+            provider: Provider.githubCopilot.rawValue,
+            dimension: "premium_interactions",
+            metrics: metrics,
+            displayName: "Copilot Unlimited",
+            shortName: "CU",
+            apiKeyRef: "copilot-key",
+            enabled: true,
+            sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+
+        var rawData: [String: String] = [:]
+        rawData["premium_interactions"] = "0.0"
+        rawData["premium_interactions:unlimited"] = "true"
+        rawData["premium_interactions:entitlement"] = "1000"
+        rawData["premium_interactions:remaining"] = "1000"
+
+        let response = SupplierResponse(rawData: rawData, currency: nil, isAvailable: true)
+
+        let result = await service.mapInstanceToSlotData(
+            instance: instance, response: response
+        )
+
+        XCTAssertEqual(result.metricSnapshots.count, 1)
+        let s = result.metricSnapshots[0]
+        XCTAssertTrue(s.isUnlimited, "Copilot unlimited plan must set isUnlimited on snapshot")
+        XCTAssertEqual(s.displayUsage, "∞", "Unlimited Copilot should show ∞ usage")
+        XCTAssertEqual(s.displayLimit, "1000")
+        XCTAssertEqual(s.percent, 0.0)
+    }
+
+    /// Copilot limited plans must NOT set isUnlimited.
+    func testCopilotLimitedDoesNotSetUnlimited() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+
+        let metrics: [MetricConfig] = [
+            MetricConfig(key: "premium_interactions", group: nil, window: nil),
+        ]
+
+        let instance = Instance(
+            uuid: "copilot-limited-1",
+            provider: Provider.githubCopilot.rawValue,
+            dimension: "premium_interactions",
+            metrics: metrics,
+            displayName: "Copilot Limited",
+            shortName: "CL",
+            apiKeyRef: "copilot-key",
+            enabled: true,
+            sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+
+        var rawData: [String: String] = [:]
+        rawData["premium_interactions"] = "30.0"
+        rawData["premium_interactions:unlimited"] = "false"
+        rawData["premium_interactions:entitlement"] = "300"
+        rawData["premium_interactions:remaining"] = "210"
+
+        let response = SupplierResponse(rawData: rawData, currency: nil, isAvailable: true)
+
+        let result = await service.mapInstanceToSlotData(
+            instance: instance, response: response
+        )
+
+        XCTAssertEqual(result.metricSnapshots.count, 1)
+        let s = result.metricSnapshots[0]
+        XCTAssertFalse(s.isUnlimited, "Copilot limited plan must not set isUnlimited")
+        // 300 - 210 = 90 used, percent = 30%
+        XCTAssertEqual(s.percent, 30.0, accuracy: 0.01)
+        XCTAssertEqual(s.displayUsage, "90")
+    }
+
+    // MARK: - MiniMax weekly unlimited → MetricSnapshot.isUnlimited
+
+    /// When MiniMax weekly_status != 1, the weekly MetricSnapshot must carry
+    /// isUnlimited: true so the menu bar renders ∞ instead of 0%.
+    func testMiniMaxWeeklyUnlimitedPropagatesToSnapshot() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+
+        let metrics: [MetricConfig] = [
+            MetricConfig(key: "general", group: "general", window: nil),
+            MetricConfig(key: "general:weekly_percent", group: "general", window: "weekly"),
+        ]
+
+        let instance = Instance(
+            uuid: "mini-weekly-ul-1",
+            provider: Provider.minimax.rawValue,
+            dimension: "general",
+            metrics: metrics,
+            displayName: "MiniMax Weekly UL",
+            shortName: "MW",
+            apiKeyRef: "minimax-key",
+            enabled: true,
+            sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+
+        let endTimeMs: Int64 = Int64(
+            Date().addingTimeInterval(3600).timeIntervalSince1970 * 1000
+        )
+        var rawData: [String: String] = [:]
+        rawData["general"] = "30.0"
+        rawData["general:status"] = "1"
+        rawData["general:remaining"] = "70.0"
+        rawData["general:weekly_status"] = "3"       // status != 1 → unlimited
+        rawData["general:weekly_remaining"] = "100.0"
+        rawData["general:weekly_percent"] = "0.0"
+        rawData["general:end_time"] = String(endTimeMs)
+
+        let response = SupplierResponse(rawData: rawData, currency: nil, isAvailable: true)
+
+        let result = await service.mapInstanceToSlotData(
+            instance: instance, response: response
+        )
+
+        XCTAssertEqual(result.metricSnapshots.count, 2)
+        // First snapshot (5h quota) — not unlimited
+        XCTAssertFalse(result.metricSnapshots[0].isUnlimited)
+
+        // Second snapshot (weekly) — unlimited
+        let weeklySnapshot = result.metricSnapshots[1]
+        XCTAssertTrue(weeklySnapshot.isUnlimited,
+                       "MiniMax weekly_status=3 must set isUnlimited on weekly snapshot")
+        XCTAssertEqual(weeklySnapshot.window, "weekly")
+    }
+
+    /// When MiniMax weekly_status == 1, weekly is limited.
+    func testMiniMaxWeeklyLimitedNotUnlimited() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+
+        let metrics: [MetricConfig] = [
+            MetricConfig(key: "general:weekly_percent", group: "general", window: "weekly"),
+        ]
+
+        let instance = Instance(
+            uuid: "mini-weekly-lim-1",
+            provider: Provider.minimax.rawValue,
+            dimension: "general",
+            metrics: metrics,
+            displayName: "MiniMax Weekly Limited",
+            shortName: "ML",
+            apiKeyRef: "minimax-key",
+            enabled: true,
+            sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+
+        var rawData: [String: String] = [:]
+        rawData["general:weekly_percent"] = "50.0"
+        rawData["general:weekly_status"] = "1"       // status == 1 → limited
+        rawData["general:weekly_remaining"] = "50.0"
+
+        let response = SupplierResponse(rawData: rawData, currency: nil, isAvailable: true)
+
+        let result = await service.mapInstanceToSlotData(
+            instance: instance, response: response
+        )
+
+        XCTAssertEqual(result.metricSnapshots.count, 1)
+        let s = result.metricSnapshots[0]
+        XCTAssertFalse(s.isUnlimited, "MiniMax weekly_status=1 must not be unlimited")
+        XCTAssertEqual(s.percent, 50.0, accuracy: 0.01)
+    }
 }

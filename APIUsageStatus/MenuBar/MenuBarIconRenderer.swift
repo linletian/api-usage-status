@@ -207,14 +207,10 @@ final class MenuBarIconRenderer {
 
         let valueWidth: CGFloat
         switch slot.instanceType {
-        case .quota:
-            if slot.metricSnapshots.first?.isUnlimited == true {
-                valueWidth = textWidth("∞", font: Self.monoFont)
-            } else if case .quota(let percent, _, _, _) = slot.instanceType {
-                valueWidth = textWidth("\(Int(percent))%", font: Self.monoFont)
-            } else {
-                valueWidth = 0
-            }
+        case .quota(let percent, _, _, _):
+            valueWidth = slot.metricSnapshots.first?.isUnlimited == true
+                ? textWidth("∞", font: Self.monoFont)
+                : textWidth("\(Int(percent))%", font: Self.monoFont)
         case .balance(let amount, _, _, _, let currency):
             let symbol = currency?.currencySymbol ?? "¥"
             valueWidth = textWidth(symbol + balanceInt(amount), font: Self.font)
@@ -365,17 +361,11 @@ final class MenuBarIconRenderer {
         let valueText: String
         let valueFont: NSFont
         switch data.instanceType {
-        case .quota:
-            if data.metricSnapshots.first?.isUnlimited == true {
-                valueText = "∞"
-                valueFont = Self.monoFont
-            } else if case .quota(let percent, _, _, _) = data.instanceType {
-                valueText = "\(Int(percent))%"
-                valueFont = Self.monoFont
-            } else {
-                valueText = "?"
-                valueFont = Self.monoFont
-            }
+        case .quota(let percent, _, _, _):
+            valueFont = Self.monoFont
+            valueText = data.metricSnapshots.first?.isUnlimited == true
+                ? "∞"
+                : "\(Int(percent))%"
         case .balance(let amount, _, _, _, let currency):
             let symbol = currency?.currencySymbol ?? "¥"
             valueText = symbol + balanceInt(amount)

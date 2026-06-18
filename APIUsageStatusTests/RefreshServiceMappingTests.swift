@@ -538,4 +538,52 @@ final class RefreshServiceMappingTests: XCTestCase {
         XCTAssertFalse(s.isUnlimited, "MiniMax weekly_status=1 must not be unlimited")
         XCTAssertEqual(s.percent, 50.0, accuracy: 0.01)
     }
+
+    // MARK: - Copilot weekly-window fallthrough to Copilot branch
+
+    /// A Copilot MetricConfig with `window: "weekly"` and `group: nil` must
+    /// fall through the MiniMax-weekly branch (which requires group != nil)
+    /// and hit the Copilot `else if`, reading the `:unlimited` dimension.
+    /// This locks in the if/else-if fallthrough contract for weekly Copilot
+    /// configs that don't carry a group key.
+    func testCopilotWeeklyWithoutGroupFallsThroughToCopilotBranch() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+
+        let metrics: [MetricConfig] = [
+            MetricConfig(key: "premium_weekly", group: nil, window: "weekly"),
+        ]
+
+        let instance = Instance(
+            uuid: "copilot-weekly-no-group",
+            provider: Provider.githubCopilot.rawValue,
+            dimension: "premium_weekly",
+            metrics: metrics,
+            displayName: "Copilot Weekly (no group)",
+            shortName: "CW",
+            apiKeyRef: "copilot-key",
+            enabled: true,
+            sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+
+        var rawData: [String: String] = [:]
+        rawData["premium_weekly"] = "0.0"
+        rawData["premium_weekly:unlimited"] = "true"
+
+        let response = SupplierResponse(rawData: rawData, currency: nil, isAvailable: true)
+
+        let result = await service.mapInstanceToSlotData(
+            instance: instance, response: response
+        )
+
+        XCTAssertEqual(result.metricSnapshots.count, 1)
+        XCTAssertTrue(
+            result.metricSnapshots[0].isUnlimited,
+            "Copilot weekly window without group must fall through to Copilot branch and honor :unlimited"
+        )
+        XCTAssertEqual(result.metricSnapshots[0].window, "weekly")
+    }
 }

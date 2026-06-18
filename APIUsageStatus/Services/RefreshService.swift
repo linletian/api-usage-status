@@ -140,8 +140,17 @@ actor RefreshService {
                     allSlotData.append(slotData)
                 }
 
+                // 3d-2. For OpenCode, keep the workspace-ID cache fresh so
+                //        the "See details" deep link stays correct across
+                //        account switches. Fire-and-forget; does not block
+                //        the current refresh cycle.
+                if let first = instancesInGroup.first,
+                   first.provider == Provider.opencode.rawValue {
+                    OpenCodeWorkspaceResolver.refreshCache()
+                }
+
                 // 3e. For MiniMax, extract model names for InstanceEditorView dimension picker
-                if instancesInGroup[0].provider == "minimax",
+                if instancesInGroup.first?.provider == Provider.minimax.rawValue,
                    let modelNamesStr = response.rawData["_model_names"] {
                     let names = modelNamesStr.split(separator: ",").map(String.init)
                     await appState.setMiniMaxModelNames(names)

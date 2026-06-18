@@ -160,7 +160,7 @@
 **职责**：按实例展示用量卡片的 UI。
 
 - `UsagePanelView`：承载可滚动的卡片列表 + 错误摘要栏 + 刷新按钮 + 设置入口（窗口内）
-- `UsageCardView`：单实例卡片 —— 配额型显示进度条 + 下次刷新剩余时间（分钟数），自然天/周配额型额外显示周期剩余天数；余额型显示余额 + 每日统计。卡片底部 footer 区域左侧显示「See details」按钮（仅当 provider 有对应 Web 控制台 URL 时可见），点击通过 `NSWorkspace.shared.open(_:)` 在默认浏览器打开用量详情页；右侧显示最近一次刷新时间
+- `UsageCardView`：单实例卡片 —— 配额型显示进度条 + 下次刷新剩余时间（分钟数），自然天/周配额型额外显示周期剩余天数；余额型显示余额 + 每日统计。卡片底部 footer 区域左侧显示「See details」按钮（仅当 provider 有对应 Web 控制台 URL 时可见），点击通过 `NSWorkspace.shared.open(_:)` 在默认浏览器打开用量详情页。URL 映射逻辑集中在 `UsageCardView.providerURL`（按 `Provider` enum 派发）：DeepSeek / MiniMax / GitHub Copilot 直接返回硬编码 URL；OpenCode 调用 `OpenCodeWorkspaceResolver.cachedWorkspaceID()`（零 IO 同步读 UserDefaults），缓存未命中时兜底到 `https://opencode.ai/zh/go`。日志扫描在 App 启动时由 `OpenCodeWorkspaceResolver.prewarm()` 后台完成（详见 §2.15）；右侧显示最近一次刷新时间
 - `InstanceDetailPanel`：点击通知后弹出的独立 `NSPanel`，展示单个实例的完整用量详情（与 UsageCardView 展示相同信息，但以独立窗口形式呈现，失活时自动关闭）
 - 以上均为观察 `AppStateProxy` 的 SwiftUI 视图
 
@@ -287,6 +287,21 @@ struct SupplierResponse {
 - 可用供应商及其维度的注册中心
 - 工厂方法：根据 `provider` 字符串返回对应 `Supplier` 实例
 - 被 `RefreshService` 用于分发 API 调用
+
+### 2.15 Workspace ID 解析器（`OpenCodeWorkspaceResolver.swift`）
+
+**职责**：为 OpenCode "See details" 按钮提供 workspace ID。
+
+OpenCode 不在本地存储 workspace ID（详细排查见 `docs/provider-interfaces/opencode_workspace_resolver.md`），该解析器通过 `grep ~/.local/share/opencode/log/*.log` 抽取 Zen 后端在余额不足错误体中嵌入的 workspace URL，将 wrk_id 缓存到 `UserDefaults`（key：`opencode.workspaceID`）。
+
+为避免 SwiftUI 视图层在主线程被 grep 阻塞，API 拆成三档：
+
+- `cachedWorkspaceID()` —— 同步、零 IO，只读 UserDefaults。**view 层专用**。
+- `resolveWorkspaceID()` —— 同步、可能阻塞 5s。供测试用。
+- `prewarm()` —— `Task.detached(priority: .utility)`，在 `AppDelegate.applicationDidFinishLaunching` 末尾调用，清缓存后后台扫描。
+- `refreshCache()` —— `Task.detached(priority: .utility)`，由 `RefreshService` 在每次 OpenCode 刷新成功后调用，清缓存后异步重扫，确保切换账号后无需重启即可感知 workspace ID 变化。
+
+view 层始终调 `cachedWorkspaceID()`；缓存为空时 `UsageCardView.providerURL` 兜底到 `https://opencode.ai/zh/go`。
 
 ---
 

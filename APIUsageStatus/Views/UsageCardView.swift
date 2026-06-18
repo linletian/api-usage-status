@@ -12,15 +12,27 @@ struct UsageCardView: View {
     }
 
     private var providerURL: URL? {
-        switch slot.provider.lowercased() {
-        case "deepseek":
+        // Match on the enum so `slot.provider`'s exact rawValue string is what
+        // we dispatch on — the previous `slot.provider.lowercased()` form
+        // silently dropped GitHub Copilot because its rawValue is the
+        // camelCase "githubCopilot" and lowercasing the input produces
+        // "githubcopilot".
+        guard let provider = Provider(rawValue: slot.provider) else { return nil }
+        switch provider {
+        case .deepseek:
             return URL(string: "https://platform.deepseek.com/usage")
-        case "minimax":
+        case .minimax:
             return URL(string: "https://platform.minimaxi.com/user-center/payment/token-plan")
-        case "githubcopilot":
+        case .githubCopilot:
             return URL(string: "https://github.com/settings/billing/ai_usage")
-        default:
-            return nil
+        case .opencode:
+            // Read the cache only — log scanning happens off-thread at app
+            // launch via `OpenCodeWorkspaceResolver.prewarm()`. On a cold
+            // cache, fall through to the public Go landing page.
+            if let id = OpenCodeWorkspaceResolver.cachedWorkspaceID() {
+                return URL(string: "https://opencode.ai/workspace/\(id)/go")
+            }
+            return URL(string: "https://opencode.ai/zh/go")
         }
     }
 

@@ -93,6 +93,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 manager.requestPermission()
             }
         }
+
+        // 6. Pre-warm the OpenCode workspace ID cache off the main thread so
+        //    the popup "See details" button never has to block on the grep
+        //    scan. The view layer reads `cachedWorkspaceID()` only; this
+        //    populates that cache.
+        OpenCodeWorkspaceResolver.prewarm()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

@@ -16,6 +16,9 @@ settings:
     GENERATE_INFOPLIST_FILE: NO
     CLANG_ENABLE_MODULES: YES
     BUILD_LIBRARY_FOR_DISTRIBUTION: NO
+  configs:
+    Debug:
+      ENABLE_TESTABILITY: YES
 
 targets:
   APIUsageStatus:

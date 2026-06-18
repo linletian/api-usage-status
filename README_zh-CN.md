@@ -11,6 +11,7 @@
 - **用量面板** — 点击图标弹出浮动窗口，展示用量卡片、错误汇总、手动刷新和设置入口
 - **周配额展示** — MiniMax 实例卡片底部展示周窗口进度条；无限额计划用青蓝辉光条动画呈现
 - **阈值告警** — 配额百分比或余额金额触发 macOS 系统通知，点击通知查看详情
+- **Web 控制台深链** — 每张卡片底部「See details」按钮一键在默认浏览器打开对应供应商的用量详情页（DeepSeek / MiniMax / GitHub Copilot 用静态 URL；OpenCode 解析本地日志得到 workspace ID 后跳转到 `https://opencode.ai/workspace/<id>/go`，未拿到时兜底到 `https://opencode.ai/zh/go`）
 - **余额追踪** — 记录历史快照，按周/月/近7天/近30天展示日均消耗
 - **零外部依赖** — 仅使用 AppKit、SwiftUI、Security 等系统框架。OpenCode Go 供应商需本地安装 `opencode` CLI
 
@@ -46,7 +47,7 @@
   - Token 对应的 GitHub 账号必须已开通 Copilot 订阅（Free / Pro / Pro+ / Business / Enterprise 均可）
   - 可随时在 https://github.com/settings/tokens 撤销
 
-- **OpenCode Go** — 无需 API Key。供应商通过 shell 调用本地 `opencode` CLI（需安装在 `~/.opencode/bin/opencode`、`/usr/local/bin/opencode` 或 `/opt/homebrew/bin/opencode`），直接读取 OpenCode SQLite 数据库（`~/.local/share/opencode/opencode.db`）中的用量数据。详见 `docs/provider-interfaces/opencode_go.md`
+- **OpenCode Go** — 无需 API Key。供应商通过 shell 调用本地 `opencode` CLI（需安装在 `~/.opencode/bin/opencode`、`/usr/local/bin/opencode` 或 `/opt/homebrew/bin/opencode`），直接读取 OpenCode SQLite 数据库（`~/.local/share/opencode/opencode.db`）中的用量数据。数据层详见 `docs/provider-interfaces/opencode_go.md`；为「See details」深链提供 workspace ID 的离线恢复机制详见 `docs/provider-interfaces/opencode_workspace_resolver.md`
 
 ## 系统要求
 

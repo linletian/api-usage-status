@@ -82,6 +82,8 @@
 		C212695F2413957E6E8E07A9 /* SettingsViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF0B7FEFD12D5FF83477573E /* SettingsViewModelTests.swift */; };
 		C238517F88ABB497BBE90BEF /* ShellCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCFC6B3B9299C7DDB8264B6C /* ShellCommand.swift */; };
 		C4AAA208BE49AADD8A6F8CDE /* OpenCodeSupplier.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8FFA4B43B75607CCB79AF92 /* OpenCodeSupplier.swift */; };
+		FFEEDDCCBBAA001122334455 /* OpenCodeWorkspaceResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFEEDDCCBBAA001122334456 /* OpenCodeWorkspaceResolver.swift */; };
+		FFEEDDCCBBAA001122334457 /* OpenCodeWorkspaceResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFEEDDCCBBAA001122334458 /* OpenCodeWorkspaceResolverTests.swift */; };
 		C5D25734AD3B2C8F77B4BC2F /* MiniMaxResponseParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20CC79379A5CEC0A1BFCC6E2 /* MiniMaxResponseParser.swift */; };
 		C9DB590820DD74C7B9923EAB /* MenuBarIconRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AA4335ECDEFC0A614346853 /* MenuBarIconRendererTests.swift */; };
 		D125D32B242ACE4998F9D078 /* UsagePanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33300DBD3D95EF5828EFC529 /* UsagePanelView.swift */; };
@@ -207,6 +209,8 @@
 		E579BF96EE109EAF0D663C7A /* MetricConfigCodableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricConfigCodableTests.swift; sourceTree = "<group>"; };
 		E5A3B76ED15429C57FF92148 /* UsageCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageCardView.swift; sourceTree = "<group>"; };
 		E8FFA4B43B75607CCB79AF92 /* OpenCodeSupplier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeSupplier.swift; sourceTree = "<group>"; };
+		FFEEDDCCBBAA001122334456 /* OpenCodeWorkspaceResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeWorkspaceResolver.swift; sourceTree = "<group>"; };
+		FFEEDDCCBBAA001122334458 /* OpenCodeWorkspaceResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeWorkspaceResolverTests.swift; sourceTree = "<group>"; };
 		EBC7EEF697AA7D5377571AFD /* phase_075.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = phase_075.png; sourceTree = "<group>"; };
 		F16FBA74B21012D0E40E8212 /* ProviderPickerAndThresholdTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderPickerAndThresholdTests.swift; sourceTree = "<group>"; };
 		F1C0764D7DF1B841E40D805B /* SlotViewData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlotViewData.swift; sourceTree = "<group>"; };
@@ -318,6 +322,7 @@
 				B1BF1F07D60E2B7A0201E07E /* OpenCodeGoLimits.swift */,
 				939046C7F712FC1A97C68CA8 /* OpenCodeResponseParser.swift */,
 				E8FFA4B43B75607CCB79AF92 /* OpenCodeSupplier.swift */,
+				FFEEDDCCBBAA001122334456 /* OpenCodeWorkspaceResolver.swift */,
 				41ADBBBDA1659A6F00F29A4E /* Supplier.swift */,
 				73A7A208048CE06C739A89AF /* SupplierRegistry.swift */,
 			);
@@ -369,6 +374,7 @@
 				E579BF96EE109EAF0D663C7A /* MetricConfigCodableTests.swift */,
 				FC5D83D4218C5C4635B415E8 /* MiniMaxResponseParserTests.swift */,
 				54E0FF0096226D1B5582C23B /* OpenCodeResponseParserTests.swift */,
+				FFEEDDCCBBAA001122334458 /* OpenCodeWorkspaceResolverTests.swift */,
 				518462B60B626955B6AF736E /* PersistenceServiceTests.swift */,
 				BE990C87099D3307658BA5DF /* PixelFontEngineTests.swift */,
 				2204828AE88393BAC31A2283 /* ProviderIconTests.swift */,
@@ -617,6 +623,7 @@
 				4A659D89DC0108129C681CE8 /* OpenCodeGoLimits.swift in Sources */,
 				0BDA0D5210CD0BDA53455453 /* OpenCodeResponseParser.swift in Sources */,
 				C4AAA208BE49AADD8A6F8CDE /* OpenCodeSupplier.swift in Sources */,
+				FFEEDDCCBBAA001122334455 /* OpenCodeWorkspaceResolver.swift in Sources */,
 				20756AFFFD3B48846BC11690 /* PersistenceService.swift in Sources */,
 				F5E0A4C29EE9AA1690A55B29 /* PixelFontEngine.swift in Sources */,
 				FCF788F48696E08375EADBFF /* Provider+Icon.swift in Sources */,
@@ -658,6 +665,7 @@
 				C0C5B498FB0510184D279BA0 /* MetricConfigCodableTests.swift in Sources */,
 				2B1CC113637594900496DAD2 /* MiniMaxResponseParserTests.swift in Sources */,
 				75CAC32EA2305241E6226B0D /* OpenCodeResponseParserTests.swift in Sources */,
+				FFEEDDCCBBAA001122334457 /* OpenCodeWorkspaceResolverTests.swift in Sources */,
 				86A8DE171ACA7D1F3A91677B /* PersistenceServiceTests.swift in Sources */,
 				17EAB28C7F6AD40431966A2A /* PixelFontEngineTests.swift in Sources */,
 				806AE3DE3F60A3B0B7D7D9D8 /* ProviderIconTests.swift in Sources */,
@@ -746,6 +754,7 @@
 				CODE_SIGN_ENTITLEMENTS = APIUsageStatus/APIUsageStatus.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_TESTABILITY = YES;
 				INFOPLIST_FILE = APIUsageStatus/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

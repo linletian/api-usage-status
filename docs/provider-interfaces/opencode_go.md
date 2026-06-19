@@ -298,3 +298,107 @@ enum OpenCodeGoLimits {
 | 用户未安装 / 未认证 opencode CLI | `isExecutableFile` 失败 | `Supplier.isAvailable()` 返回 false，UI 提示"opencode CLI 未找到" |
 | 数据库被 opencode 占用（写锁） | 偶发查询失败 | 退避重试（复用现有 `RetryPolicy`） |
 | 大量消息时 SQL 慢 | UI 卡顿 | 6869 条本地查询实测 < 50ms，无性能问题；后续若数据增长加 LIMIT |
+| **套餐内/外用量混算** | Monthly 百分比显示错误 | 当前无解——等官方 API（见 §7 和 §8） |
+
+---
+
+## 7. 已知限制：套餐内/外用量无法区分（2026-06-19 调研）
+
+### 7.1 问题描述
+
+用户在 OpenCode 后台开启「套餐用完后使用账户余额（Use balance）」后，当 5h 或 Weekly 额度耗尽但 Monthly 未满时，OpenCode 服务端自动从 Zen 账户余额扣费。然而本地 SQLite 的 `message` 表不区分支付来源——所有 `providerID='opencode-go'` 的消息的 `cost` 在 SQL `SUM()` 中被一视同仁地累加。
+
+**影响**：Monthly 窗口的 `used` 包含了套餐内消费和余额消费的总和，导致百分比计算错误（套餐额度明明没满，但百分比显示已满或被截断到 100%）。
+
+### 7.2 根因
+
+对 `~/.local/share/opencode/opencode.db` 的全盘字段调查（2026-06-19）确认：
+
+- `message.data` JSON 只有 20 个字段：`role`、`time.created/completed`、`parentID`、`modelID`、`providerID`、`mode`（Agent 模式，非计费模式）、`agent`、`path.cwd/root`、`cost`、`tokens.*`、`finish`、`error.*`
+- **不存在** `billing_type`、`payment_source`、`plan_exhausted`、`balance_used`、`charge_mode` 等计费元数据字段
+- `session` 表的 `metadata` 列全部为空；`event` 表为空表；`account`/`control_account` 仅存 OAuth token
+- **结论：本地 SQLite 完全不存在套餐/余额区分的基础数据**
+
+### 7.3 为何 Weekly/5h 截断方案无效（关于 Monthly）
+
+如果仅在客户端对 `used` 做 `min(used, limit)` 截断：
+- Weekly/5h 可以接受——窗口短（≤7 天），余额消费随窗口重置自然消失
+- Monthly 不行——余额消费横跨多个 Weekly 周期持续累积在 Monthly 窗口内，截断只是把问题藏起来。当新 Weekly 周期开始、之前周期的余额消费已从 Weekly 窗口消失，但它们在 Monthly 窗口内的累计仍然存在
+
+### 7.4 唯一根本解法
+
+需从 OpenCode **服务端** 获取区分套餐/余额的用量数据。见 §8 跟踪的官方 API。
+
+---
+
+## 8. 跟踪：OpenCode 官方 Go Usage API（PR #16513）
+
+> **最后更新**：2026-06-19
+> **状态**：⏳ 等待合并
+> **PR 链接**：[anomalyco/opencode#16513](https://github.com/anomalyco/opencode/pull/16513)
+
+### 8.1 PR 概要
+
+- **作者**：peculiarnewbie
+- **提交时间**：2026-03-07
+- **状态**：Open，已通过 CI checks，未合并（截至 2026-06-19 已等待 3+ 个月）
+- **社区热度**：OpenCode 仓库中第二高 👍 反应的 PR，多个外部项目（OpenUsage、opencode-quota、pi-go-bars）明确表达了依赖需求
+
+### 8.2 API 设计
+
+**端点**：`GET https://opencode.ai/zen/go/v1/usage`
+**鉴权**：`Authorization: Bearer <API Key>`
+
+**响应格式**（基于 [PR 代码](https://github.com/anomalyco/opencode/pull/16513/files)）：
+
+```json
+{
+  "useBalance": false,
+  "rollingUsage": {
+    "usage": 8.50,
+    "limit": 12.00,
+    "status": "ok",
+    "resetInSec": 7200
+  },
+  "weeklyUsage": {
+    "usage": 25.00,
+    "limit": 30.00,
+    "status": "ok",
+    "resetInSec": 86400
+  },
+  "monthlyUsage": {
+    "usage": 48.00,
+    "limit": 60.00,
+    "status": "ok",
+    "resetInSec": 518400
+  }
+}
+```
+
+### 8.3 为何能解决套餐/余额混算问题
+
+通过阅读 OpenCode 服务端计费代码（`packages/console/app/src/routes/zen/util/handler.ts`）确认：
+
+1. **`validateBilling` 函数**（第 764-850 行）：当 Go 套餐额度超限且 `useBalance=true` 时，`billingSource` 从 `"lite"` 切换为 `"balance"`，请求旁路到余额支付
+2. **`trackUsage` 函数**（第 1057 行）：`LiteTable` 的 `rollingUsage`/`weeklyUsage`/`monthlyUsage` **仅在 `billingSource === "lite"` 时累加**
+3. **结论**：API 返回的 `usage` 值**仅包含套餐内用量**，余额消费已被服务端排除在外
+
+### 8.4 对当前项目的影响
+
+**零破坏性**。PR 是纯增量——新增一个 HTTP 端点，不涉及本地 SQLite 数据库结构的任何改动。
+
+当前 `OpenCodeSupplier` 继续通过 `opencode db` 读本地 DB 正常工作。接入新 API 是可选的增强：
+
+| 接入方式 | 说明 |
+|---------|------|
+| 新增 `OpenCodeApiSupplier` | 调 HTTP API，返回区分套餐/余额的用量 |
+| 保留 `OpenCodeSupplier` | 作为 API 不可达时的 fallback |
+| 适配层 | API JSON → `SupplierResponse.rawData` 格式映射（字段基本直译） |
+| 鉴权 | 需从 `~/.opencode/` 配置提取 API Key，或让用户在 Settings 里输入 |
+
+### 8.5 跟进 TODO
+
+- [ ] 监控 [PR #16513](https://github.com/anomalyco/opencode/pull/16513) 合并状态
+- [ ] 合并后：在 Settings 中增加「优先使用官方 API」选项
+- [ ] 接入 HTTP API 后：可考虑移除 App Sandbox 关闭的需求（不再需要 shell 出 `opencode db`）
+- [ ] 接入后：`OpenCodeGoLimits` 的硬编码常量可改为从 API 返回的 `limit` 字段动态读取

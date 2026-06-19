@@ -104,25 +104,13 @@ struct InstanceEditorView: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("PROVIDER")
 
-            Picker(selection: $provider) {
-                ForEach(Provider.allCases, id: \.self) { p in
-                    HStack(spacing: 8) {
-                        Image(systemName: p.sfSymbolName)
-                            .frame(width: 16, height: 16)
-                        Text(p.displayName)
-                    }
-                    .tag(p)
-                }
-            } label: {
+            if isEditing {
                 HStack(spacing: 8) {
                     Image(systemName: provider.sfSymbolName)
                         .frame(width: 16, height: 16)
                     Text(provider.displayName)
                         .font(.system(size: 13))
                     Spacer()
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.textSecondary)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -133,11 +121,43 @@ struct InstanceEditorView: View {
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(Color.cardBorder, lineWidth: 1)
                 )
-            }
-            .pickerStyle(.menu)
-            .onChange(of: provider) { _ in
-                resetMetricsForProvider()
-                validationError = nil
+                .opacity(0.6)
+            } else {
+                Menu {
+                    ForEach(Provider.allCases, id: \.self) { p in
+                        Button(action: { provider = p }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: p.sfSymbolName)
+                                    .frame(width: 16, height: 16)
+                                Text(p.displayName)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: provider.sfSymbolName)
+                            .frame(width: 16, height: 16)
+                        Text(provider.displayName)
+                            .font(.system(size: 13))
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.textSecondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.cardBg)
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.cardBorder, lineWidth: 1)
+                    )
+                }
+                .onChange(of: provider) { _ in
+                    resetMetricsForProvider()
+                    validationError = nil
+                }
             }
         }
     }

@@ -12,6 +12,7 @@ A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek
 - **Multi-Metric Tracking** — MiniMax tracks usage for each capability bucket (`general`, `video`, `speech-hd`, etc.) independently, each with its own 5h + weekly dual-window metrics
 - **Weekly Quota Display** — MiniMax instance card shows a weekly window progress bar at the bottom; unlimited plans display a cyan-blue flowing glow bar animation
 - **Threshold Alerts** — quota percentages or balance amounts trigger macOS system notifications; click the notification to view details
+- **Deep-Link to Web Dashboard** — each card exposes a `See details` button that opens the provider's web usage page in the default browser (DeepSeek, MiniMax, GitHub Copilot → static URLs; OpenCode → `https://opencode.ai/workspace/<id>/go`, where `<id>` is recovered from `~/.local/share/opencode/log/*.log`; falls back to `https://opencode.ai/zh/go` if not yet recovered)
 - **Balance Tracking** — records historical snapshots, displays daily averages by week / month / last 7 days / last 30 days
 - **Zero External Dependencies** — only uses system frameworks like AppKit, SwiftUI, Security. OpenCode Go provider requires the `opencode` CLI to be installed locally.
 
@@ -47,7 +48,7 @@ Each provider has a different authentication model. All credentials are stored i
   - The GitHub account owning the token must have an active Copilot subscription (Free / Pro / Pro+ / Business / Enterprise all work).
   - You can revoke the token at any time at https://github.com/settings/tokens.
 
-- **OpenCode Go** — No API key required. The supplier shells out to the local `opencode` CLI (must be installed at `~/.opencode/bin/opencode`, `/usr/local/bin/opencode`, or `/opt/homebrew/bin/opencode`) and reads the usage data directly from the OpenCode SQLite database (`~/.local/share/opencode/opencode.db`). See `docs/provider-interfaces/opencode_go.md` for details.
+- **OpenCode Go** — No API key required. The supplier shells out to the local `opencode` CLI (must be installed at `~/.opencode/bin/opencode`, `/usr/local/bin/opencode`, or `/opt/homebrew/bin/opencode`) and reads the usage data directly from the OpenCode SQLite database (`~/.local/share/opencode/opencode.db`). See `docs/provider-interfaces/opencode_go.md` for the data layer and `docs/provider-interfaces/opencode_workspace_resolver.md` for how the workspace ID powering the "See details" deep link is recovered.
 
 ## System Requirements
 

@@ -41,5 +41,6 @@ extension AppLogger {
     static let keychain = AppLogger(category: "keychain")
     static let supplier = AppLogger(category: "supplier")
     static let render = AppLogger(category: "render")
+    static let opencode = AppLogger(category: "opencode")
     static let app = AppLogger(category: "app")
 }

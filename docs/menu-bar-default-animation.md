@@ -71,7 +71,7 @@
 默认状态动画的生命周期由三个方法控制：
 
 - **`startDefaultAnimation()`**：创建一个 1.0 秒间隔、重复执行的 `Timer.scheduledTimer`。Timer 的闭包弱引用捕获 `self`，每 tick 调用 `advanceDefaultAnimationCycle()` 更新循环索引并触发 `onNeedsDisplay`。如果动画已在运行（`defaultAnimationTimer` 不为 nil），则直接跳过。
-- **`stopDefaultAnimation()`**：对当前 Timer 调用 `invalidate()` 使其停止触发，随后将 Timer 置为 nil。调用后循环索引停留在最后一帧，直到下一次 `startDefaultAnimation()` 从索引 0 恢复。
+- **`stopDefaultAnimation()`**：对当前 Timer 调用 `invalidate()` 使其停止触发，随后将 Timer 置为 nil。循环索引保留在停止时的值，下次 `startDefaultAnimation()` 将从此索引继续推进（首个 tick 便会进入下一帧），不重置为 0。
 - **`isDefaultAnimationRunning`**：计算属性，通过 `defaultAnimationTimer != nil` 判断当前动画是否运行中。
 
 **deinit 清理**：`MenuBarIconRenderer` 的 `deinit` 中调用 `defaultAnimationTimer?.invalidate()`，确保对象销毁时 Timer 一并失效，避免闭包逃逸导致野指针访问。

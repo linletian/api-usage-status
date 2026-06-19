@@ -540,33 +540,50 @@ final class MenuBarIconRendererTests: XCTestCase {
                        "Cycle index should wrap back to 0 after third tick (3-step cycle)")
     }
 
-    func testDefaultAnimationCycleTextValues() {
+    /// Each animation frame should produce a distinct render output
+    /// (different bottom texts give different image widths). Verifies
+    /// behaviour via render output rather than duplicating the internal
+    /// text-to-index mapping. Also confirms the 3-frame cycle wraps
+    /// back to the starting output.
+    func testDefaultAnimationCycleProducesDistinctFrames() {
+        let renderDefault: () -> NSImage = { [self] in
+            renderer.render(
+                slotViewDataList: [],
+                colorMode: .color,
+                refreshState: .idle,
+                instancesCount: 0,
+                enabledCount: 0,
+                isDarkBackground: false
+            )
+        }
+
+        let frame0 = renderDefault()
+        XCTAssertEqual(renderer.defaultAnimationCycleIndex, 0)
+
+        renderer.advanceDefaultAnimationCycle()
+        let frame1 = renderDefault()
+        XCTAssertEqual(renderer.defaultAnimationCycleIndex, 1,
+                       "Index should advance to 1")
+
+        renderer.advanceDefaultAnimationCycle()
+        let frame2 = renderDefault()
+        XCTAssertEqual(renderer.defaultAnimationCycleIndex, 2,
+                       "Index should advance to 2")
+
+        renderer.advanceDefaultAnimationCycle()
+        let frame3 = renderDefault()
         XCTAssertEqual(renderer.defaultAnimationCycleIndex, 0,
-                       "Cycle index should start at 0")
+                       "Index should wrap back to 0")
 
-        let cycle0Text = renderer.defaultAnimationCycleIndex == 0 ? "%" : ""
-        XCTAssertEqual(cycle0Text, "%",
-                       "cycleIndex 0 should map to single %")
+        // Three distinct frames (different bottom texts produce different widths)
+        XCTAssertNotEqual(frame0.size.width, frame1.size.width, accuracy: 0.1,
+                          "Frame 0 and frame 1 should differ (% vs %%)")
+        XCTAssertNotEqual(frame1.size.width, frame2.size.width, accuracy: 0.1,
+                          "Frame 1 and frame 2 should differ (%% vs %%%)")
 
-        renderer.advanceDefaultAnimationCycle()
-        let cycle1Text: String
-        switch renderer.defaultAnimationCycleIndex {
-        case 1: cycle1Text = "%%"
-        case 2: cycle1Text = "%%%"
-        default: cycle1Text = "%"
-        }
-        XCTAssertEqual(cycle1Text, "%%",
-                       "cycleIndex 1 should map to %%")
-
-        renderer.advanceDefaultAnimationCycle()
-        let cycle2Text: String
-        switch renderer.defaultAnimationCycleIndex {
-        case 1: cycle2Text = "%%"
-        case 2: cycle2Text = "%%%"
-        default: cycle2Text = "%"
-        }
-        XCTAssertEqual(cycle2Text, "%%%",
-                       "cycleIndex 2 should map to %%%")
+        // Full cycle wrap: frame 3 should equal frame 0
+        XCTAssertEqual(frame3.size.width, frame0.size.width, accuracy: 0.1,
+                       "After full cycle, frame should match initial frame")
     }
 
     // MARK: - Default State (no instances) two-line rendering
@@ -648,5 +665,81 @@ final class MenuBarIconRendererTests: XCTestCase {
 
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         assertSnapshot(image, named: "default_state_no_instances")
+    }
+
+    // MARK: - Default State Monochrome Mode
+
+    func testDefaultStateMonochromeLightBackground() {
+        let image = renderer.render(
+            slotViewDataList: [],
+            colorMode: .monochrome,
+            refreshState: .idle,
+            instancesCount: 0,
+            enabledCount: 0,
+            isDarkBackground: false
+        )
+
+        XCTAssertNotNil(image, "Monochrome default state must produce a non-nil image")
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1,
+                       "Monochrome default state must keep the 22pt slot height")
+        XCTAssertGreaterThan(image.size.width, 0,
+                             "Monochrome default state must have non-zero width")
+    }
+
+    func testDefaultStateMonochromeDarkBackground() {
+        let image = renderer.render(
+            slotViewDataList: [],
+            colorMode: .monochrome,
+            refreshState: .idle,
+            instancesCount: 0,
+            enabledCount: 0,
+            isDarkBackground: true
+        )
+
+        XCTAssertNotNil(image, "Monochrome default state must produce a non-nil image")
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1,
+                       "Monochrome default state must keep the 22pt slot height")
+        XCTAssertGreaterThan(image.size.width, 0,
+                             "Monochrome default state must have non-zero width")
+    }
+
+    // MARK: - Default State Width Stability
+
+    /// Animation frame changes must not cause menu bar icon width to jitter.
+    /// All three frames (% / %% / %%% ) should produce images of identical
+    /// width — locked to the longest text (%%%) measured in the monospaced
+    /// bottom-line font. Also locks the assumption that the bottom-line font
+    /// produces wider text than the top-line proportional font for "AI".
+    func testDefaultStateWidthStableAcrossAnimationFrames() {
+        let renderCurrent: () -> NSImage = { [self] in
+            renderer.render(
+                slotViewDataList: [],
+                colorMode: .color,
+                refreshState: .idle,
+                instancesCount: 0,
+                enabledCount: 0,
+                isDarkBackground: false
+            )
+        }
+
+        let frame0 = renderCurrent()
+        renderer.advanceDefaultAnimationCycle()
+        let frame1 = renderCurrent()
+        renderer.advanceDefaultAnimationCycle()
+        let frame2 = renderCurrent()
+
+        XCTAssertEqual(frame0.size.height, 22, accuracy: 0.1)
+        XCTAssertEqual(frame1.size.height, 22, accuracy: 0.1)
+        XCTAssertEqual(frame2.size.height, 22, accuracy: 0.1)
+
+        XCTAssertEqual(frame0.size.width, frame1.size.width, accuracy: 0.1,
+                       "All animation frames must share the same slot width")
+        XCTAssertEqual(frame1.size.width, frame2.size.width, accuracy: 0.1,
+                       "All animation frames must share the same slot width")
+
+        let topWidth = singleCharWidth("A") + singleCharWidth("I")
+        let bottomMaxWidth = singleCharWidth("%") * 3
+        XCTAssertGreaterThanOrEqual(frame0.size.width, max(topWidth, bottomMaxWidth),
+                                    "Slot width must cover longest possible text to prevent jitter")
     }
 }

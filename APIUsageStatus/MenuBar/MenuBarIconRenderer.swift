@@ -67,7 +67,7 @@ final class MenuBarIconRenderer {
     ) -> NSImage {
         // Special states — single centred line
         if instancesCount == 0 {
-            return renderDefaultState()
+            return renderDefaultState(colorMode: colorMode, isDarkBackground: isDarkBackground)
         }
         if enabledCount == 0 {
             return renderSpecialCenteredText("NO API")
@@ -272,12 +272,21 @@ final class MenuBarIconRenderer {
 
     // MARK: - Private: default state rendering (two-line animated)
 
-    private func renderDefaultState() -> NSImage {
+    private func renderDefaultState(colorMode: ColorMode, isDarkBackground: Bool) -> NSImage {
         let topText = "AI"
         let bottomText = Self.defaultAnimationTexts[defaultAnimationCycleIndex]
 
+        let textColor: NSColor = {
+            switch colorMode {
+            case .monochrome:
+                return isDarkBackground ? .white : .black
+            case .color:
+                return Self.safeColor
+            }
+        }()
+
         let topWidth = textWidth(topText, font: Self.font)
-        let bottomWidth = textWidth(bottomText, font: Self.monoFont)
+        let bottomWidth = textWidth(Self.defaultAnimationTexts.last!, font: Self.monoFont)
         let width = max(topWidth, bottomWidth)
 
         let size = NSSize(width: width, height: Self.slotHeight)
@@ -288,10 +297,10 @@ final class MenuBarIconRenderer {
             let (topBaseline, bottomBaseline) = twoLineBaselines
 
             let topX = (width - topWidth) / 2
-            renderText(topText, at: CGPoint(x: topX, y: topBaseline), color: Self.dimColor, font: Self.font, in: context)
+            renderText(topText, at: CGPoint(x: topX, y: topBaseline), color: textColor, font: Self.font, in: context)
 
-            let bottomX = (width - bottomWidth) / 2
-            renderText(bottomText, at: CGPoint(x: bottomX, y: bottomBaseline), color: Self.dimColor, font: Self.monoFont, in: context)
+            let bottomX = width - textWidth(bottomText, font: Self.monoFont)
+            renderText(bottomText, at: CGPoint(x: bottomX, y: bottomBaseline), color: textColor, font: Self.monoFont, in: context)
         }
 
         image.unlockFocus()

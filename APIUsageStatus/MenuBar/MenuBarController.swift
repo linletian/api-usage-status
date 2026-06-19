@@ -161,6 +161,15 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
             }
         }
 
+        // Default animation: start when no instances, stop when instances exist.
+        if let renderer = iconRenderer {
+            if instances.isEmpty, !renderer.isDefaultAnimationRunning {
+                renderer.startDefaultAnimation()
+            } else if !instances.isEmpty, renderer.isDefaultAnimationRunning {
+                renderer.stopDefaultAnimation()
+            }
+        }
+
         renderIcon()
         updateWindowSize()
     }

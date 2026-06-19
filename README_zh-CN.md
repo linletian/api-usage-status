@@ -88,7 +88,7 @@ xcodebuild -project APIUsageStatus.xcodeproj \
 open APIUsageStatus.xcodeproj
 ```
 
-然后 Cmd+R 运行。应用启动后会在菜单栏显示 `?` 图标（无 Dock 图标）。
+然后 Cmd+R 运行。应用启动后会在菜单栏显示动画 "AI" 图标（底行循环 `%`/`%%`/`%%%`，无 Dock 图标），添加第一个实例后自动切换为数据槽位。
 
 ### 4. 首次配置
 

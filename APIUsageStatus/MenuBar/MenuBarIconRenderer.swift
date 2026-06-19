@@ -46,7 +46,7 @@ final class MenuBarIconRenderer {
 
     var onNeedsDisplay: (() -> Void)?
 
-    var defaultAnimationCycleIndex: Int = 0
+    private(set) var defaultAnimationCycleIndex: Int = 0
 
     private var defaultAnimationTimer: Timer?
 

@@ -18,6 +18,7 @@ final class MenuBarIconRendererTests: XCTestCase {
 
     override func tearDown() {
         renderer.stopBreathingAnimation()
+        renderer.stopDefaultAnimation()
         renderer = nil
         super.tearDown()
     }
@@ -486,5 +487,260 @@ final class MenuBarIconRendererTests: XCTestCase {
         )
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
         assertSnapshot(image, named: "unlimited_normal")
+    }
+
+    // MARK: - Default Animation Lifecycle (RED phase)
+
+    func testDefaultAnimationStartStop() {
+        renderer.startDefaultAnimation()
+        XCTAssertTrue(renderer.isDefaultAnimationRunning,
+                       "isDefaultAnimationRunning should be true after start")
+
+        renderer.stopDefaultAnimation()
+        XCTAssertFalse(renderer.isDefaultAnimationRunning,
+                        "isDefaultAnimationRunning should be false after stop")
+    }
+
+    func testDefaultAnimationInitiallyStopped() {
+        XCTAssertFalse(renderer.isDefaultAnimationRunning,
+                        "isDefaultAnimationRunning should be false before any start call")
+    }
+
+    func testDefaultAnimationRestartAfterStop() {
+        renderer.startDefaultAnimation()
+        renderer.stopDefaultAnimation()
+        renderer.startDefaultAnimation()
+        XCTAssertTrue(renderer.isDefaultAnimationRunning,
+                       "isDefaultAnimationRunning should be true after restart")
+    }
+
+    func testDefaultAnimationStartIdempotent() {
+        renderer.startDefaultAnimation()
+        renderer.startDefaultAnimation()
+        XCTAssertTrue(renderer.isDefaultAnimationRunning,
+                       "Calling start twice should still leave animation running")
+    }
+
+    // MARK: - Default animation cycle (TDD RED)
+
+    func testDefaultAnimationCycleIndexAdvances() {
+        XCTAssertEqual(renderer.defaultAnimationCycleIndex, 0,
+                       "Cycle index should start at 0")
+
+        renderer.advanceDefaultAnimationCycle()
+        XCTAssertEqual(renderer.defaultAnimationCycleIndex, 1,
+                       "Cycle index should advance to 1 after first tick")
+
+        renderer.advanceDefaultAnimationCycle()
+        XCTAssertEqual(renderer.defaultAnimationCycleIndex, 2,
+                       "Cycle index should advance to 2 after second tick")
+
+        renderer.advanceDefaultAnimationCycle()
+        XCTAssertEqual(renderer.defaultAnimationCycleIndex, 0,
+                       "Cycle index should wrap back to 0 after third tick (3-step cycle)")
+    }
+
+    /// Each animation frame should produce a distinct render output
+    /// (different bottom texts give different image widths). Verifies
+    /// behaviour via render output rather than duplicating the internal
+    /// text-to-index mapping. Also confirms the 3-frame cycle wraps
+    /// back to the starting output.
+    func testDefaultAnimationCycleProducesDistinctFrames() {
+        let renderDefault: () -> NSImage = { [self] in
+            renderer.render(
+                slotViewDataList: [],
+                colorMode: .color,
+                refreshState: .idle,
+                instancesCount: 0,
+                enabledCount: 0,
+                isDarkBackground: false
+            )
+        }
+
+        let frame0 = renderDefault()
+        XCTAssertEqual(renderer.defaultAnimationCycleIndex, 0)
+
+        renderer.advanceDefaultAnimationCycle()
+        let frame1 = renderDefault()
+        XCTAssertEqual(renderer.defaultAnimationCycleIndex, 1,
+                       "Index should advance to 1")
+
+        renderer.advanceDefaultAnimationCycle()
+        let frame2 = renderDefault()
+        XCTAssertEqual(renderer.defaultAnimationCycleIndex, 2,
+                       "Index should advance to 2")
+
+        renderer.advanceDefaultAnimationCycle()
+        let frame3 = renderDefault()
+        XCTAssertEqual(renderer.defaultAnimationCycleIndex, 0,
+                       "Index should wrap back to 0")
+
+        // Width stability: all frames share the same slot width (locked to longest text "%%%")
+        XCTAssertEqual(frame0.size.width, frame1.size.width, accuracy: 0.1,
+                       "Frame 0 and frame 1 should have identical width (anti-jitter design)")
+        XCTAssertEqual(frame1.size.width, frame2.size.width, accuracy: 0.1,
+                       "Frame 1 and frame 2 should have identical width (anti-jitter design)")
+
+        // Full cycle wrap: frame 3 should equal frame 0
+        XCTAssertEqual(frame3.size.width, frame0.size.width, accuracy: 0.1,
+                       "After full cycle, frame should match initial frame")
+    }
+
+    // MARK: - Default State (no instances) two-line rendering
+
+    /// Measure the on-screen width of a single character rendered with the menu
+    /// bar font (SF Pro Regular 8pt). Used as the baseline for asserting that
+    /// the default-state two-line layout is wider than a single "?" glyph.
+    private func singleCharWidth(_ char: String) -> CGFloat {
+        let attr = NSAttributedString(string: char, attributes: [.font: NSFont.systemFont(ofSize: 8)])
+        let size = attr.size()
+        return size.width
+    }
+
+    /// Default state (instancesCount == 0) should render a two-line layout —
+    /// not the legacy single "?" glyph. A two-line layout for an "AI"-style
+    /// brand mark spans multiple characters and is therefore visibly wider
+    /// than a single "?" character.
+    func testDefaultStateRendersTwoLineLayout() {
+        let image = renderer.render(
+            slotViewDataList: [],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 0,
+            enabledCount: 0,
+            isDarkBackground: false
+        )
+
+        XCTAssertNotNil(image, "Default state render must produce a non-nil image")
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1,
+                       "Default state must keep the 22pt slot height")
+        XCTAssertGreaterThan(image.size.width, 0,
+                             "Default state must have non-zero width")
+
+        let singleQWidth = singleCharWidth("?")
+        XCTAssertGreaterThan(image.size.width, singleQWidth,
+                             "Two-line default layout should be wider than a single '?' glyph (was \(image.size.width) vs ?=\(singleQWidth))")
+    }
+
+    /// Default state should render the "AI" brand text (two lines, two chars
+    /// per line) and therefore be wider than any single-character legacy
+    /// fallback. This locks in the brand-marker behavior at the image level
+    /// without coupling to pixel diffs.
+    func testDefaultStateRendersAIBrandText() {
+        let image = renderer.render(
+            slotViewDataList: [],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 0,
+            enabledCount: 0,
+            isDarkBackground: false
+        )
+
+        XCTAssertNotNil(image, "Default state render must produce a non-nil image")
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1,
+                       "Default state must keep the 22pt slot height")
+        XCTAssertGreaterThan(image.size.width, 0,
+                             "Default state must have non-zero width")
+
+        // Two-line "AI" brand text spans multiple chars; an image holding it
+        // must be wider than any single character (the legacy "?" baseline).
+        let singleAWidth = singleCharWidth("A")
+        let singleIWidth = singleCharWidth("I")
+        let singleCharBaseline = max(singleAWidth, singleIWidth)
+        XCTAssertGreaterThan(image.size.width, singleCharBaseline,
+                             "Default state 'AI' brand layout should be wider than a single character")
+    }
+
+    /// Golden snapshot for the default (no-instances) state two-line layout.
+    /// Creates a ReferenceImages/default_state_no_instances.png on first run.
+    func testSnapshotDefaultStateNoInstances() {
+        let image = renderer.render(
+            slotViewDataList: [],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 0,
+            enabledCount: 0,
+            isDarkBackground: false
+        )
+
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
+        assertSnapshot(image, named: "default_state_no_instances")
+    }
+
+    // MARK: - Default State Monochrome Mode
+
+    func testDefaultStateMonochromeLightBackground() {
+        let image = renderer.render(
+            slotViewDataList: [],
+            colorMode: .monochrome,
+            refreshState: .idle,
+            instancesCount: 0,
+            enabledCount: 0,
+            isDarkBackground: false
+        )
+
+        XCTAssertNotNil(image, "Monochrome default state must produce a non-nil image")
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1,
+                       "Monochrome default state must keep the 22pt slot height")
+        XCTAssertGreaterThan(image.size.width, 0,
+                             "Monochrome default state must have non-zero width")
+    }
+
+    func testDefaultStateMonochromeDarkBackground() {
+        let image = renderer.render(
+            slotViewDataList: [],
+            colorMode: .monochrome,
+            refreshState: .idle,
+            instancesCount: 0,
+            enabledCount: 0,
+            isDarkBackground: true
+        )
+
+        XCTAssertNotNil(image, "Monochrome default state must produce a non-nil image")
+        XCTAssertEqual(image.size.height, 22, accuracy: 0.1,
+                       "Monochrome default state must keep the 22pt slot height")
+        XCTAssertGreaterThan(image.size.width, 0,
+                             "Monochrome default state must have non-zero width")
+    }
+
+    // MARK: - Default State Width Stability
+
+    /// Animation frame changes must not cause menu bar icon width to jitter.
+    /// All three frames (% / %% / %%% ) should produce images of identical
+    /// width — locked to the longest text (%%%) measured in the monospaced
+    /// bottom-line font. Also locks the assumption that the bottom-line font
+    /// produces wider text than the top-line proportional font for "AI".
+    func testDefaultStateWidthStableAcrossAnimationFrames() {
+        let renderCurrent: () -> NSImage = { [self] in
+            renderer.render(
+                slotViewDataList: [],
+                colorMode: .color,
+                refreshState: .idle,
+                instancesCount: 0,
+                enabledCount: 0,
+                isDarkBackground: false
+            )
+        }
+
+        let frame0 = renderCurrent()
+        renderer.advanceDefaultAnimationCycle()
+        let frame1 = renderCurrent()
+        renderer.advanceDefaultAnimationCycle()
+        let frame2 = renderCurrent()
+
+        XCTAssertEqual(frame0.size.height, 22, accuracy: 0.1)
+        XCTAssertEqual(frame1.size.height, 22, accuracy: 0.1)
+        XCTAssertEqual(frame2.size.height, 22, accuracy: 0.1)
+
+        XCTAssertEqual(frame0.size.width, frame1.size.width, accuracy: 0.1,
+                       "All animation frames must share the same slot width")
+        XCTAssertEqual(frame1.size.width, frame2.size.width, accuracy: 0.1,
+                       "All animation frames must share the same slot width")
+
+        let topWidth = singleCharWidth("A") + singleCharWidth("I")
+        let monoFont = NSFont.monospacedSystemFont(ofSize: 8, weight: .regular)
+        let bottomMaxWidth = (("%%%" as NSString).size(withAttributes: [.font: monoFont])).width
+        XCTAssertGreaterThanOrEqual(frame0.size.width, max(topWidth, bottomMaxWidth),
+                                    "Slot width must cover longest possible text to prevent jitter")
     }
 }

@@ -39,3 +39,6 @@ tmp/
 .codewhale/
 AGENTS.md
 .omo/
+
+# Xcode code coverage profiling data
+*.profraw

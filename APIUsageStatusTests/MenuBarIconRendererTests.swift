@@ -575,11 +575,11 @@ final class MenuBarIconRendererTests: XCTestCase {
         XCTAssertEqual(renderer.defaultAnimationCycleIndex, 0,
                        "Index should wrap back to 0")
 
-        // Three distinct frames (different bottom texts produce different widths)
-        XCTAssertNotEqual(frame0.size.width, frame1.size.width, accuracy: 0.1,
-                          "Frame 0 and frame 1 should differ (% vs %%)")
-        XCTAssertNotEqual(frame1.size.width, frame2.size.width, accuracy: 0.1,
-                          "Frame 1 and frame 2 should differ (%% vs %%%)")
+        // Width stability: all frames share the same slot width (locked to longest text "%%%")
+        XCTAssertEqual(frame0.size.width, frame1.size.width, accuracy: 0.1,
+                       "Frame 0 and frame 1 should have identical width (anti-jitter design)")
+        XCTAssertEqual(frame1.size.width, frame2.size.width, accuracy: 0.1,
+                       "Frame 1 and frame 2 should have identical width (anti-jitter design)")
 
         // Full cycle wrap: frame 3 should equal frame 0
         XCTAssertEqual(frame3.size.width, frame0.size.width, accuracy: 0.1,
@@ -738,7 +738,8 @@ final class MenuBarIconRendererTests: XCTestCase {
                        "All animation frames must share the same slot width")
 
         let topWidth = singleCharWidth("A") + singleCharWidth("I")
-        let bottomMaxWidth = singleCharWidth("%") * 3
+        let monoFont = NSFont.monospacedSystemFont(ofSize: 8, weight: .regular)
+        let bottomMaxWidth = (("%%%" as NSString).size(withAttributes: [.font: monoFont])).width
         XCTAssertGreaterThanOrEqual(frame0.size.width, max(topWidth, bottomMaxWidth),
                                     "Slot width must cover longest possible text to prevent jitter")
     }

@@ -321,7 +321,7 @@ AppDelegate.applicationDidFinishLaunching()
     │    AppState.setInstances(...)
     │         │
     │         ▼
-    │    MenuBarController：显示 "?"（0 个实例）或 "•••" 槽位（加载中状态）
+    │    MenuBarController：显示 AI 品牌动画（0 个实例）或 "•••" 槽位（加载中状态）
     │         │
     │         ▼
     │    RefreshService.start()
@@ -1209,7 +1209,7 @@ API Key 和敏感值以 `privacy: .private` 记录，防止出现在控制台日
 
 ### 10.4 启动弹性
 
-1. 若 `instances.json` 不存在 → 以空配置启动，显示 `?`
+1. 若 `instances.json` 不存在 → 以空配置启动，显示 AI 品牌动画
 2. 若 `instances.json` 已损坏 → 记录错误日志，以空配置启动
 3. 若 Keychain 包含过期条目 → 刷新时跳过（该实例将显示错误）
 4. 若余额历史 JSON 已损坏 → 重置为全新基线（丢失历史但优雅恢复）

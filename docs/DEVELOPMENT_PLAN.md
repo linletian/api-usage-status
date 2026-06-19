@@ -34,7 +34,7 @@
 - 启用 App Sandbox（`com.apple.security.app-sandbox` = true）
 - 启用网络客户端权限（`com.apple.security.network.client` = true）
 - `NSStatusItem` 在菜单栏显示，图标内容为两行布局："AI"（顶部）+ 循环 "%"/"%%"/"%%%"（底部），使用系统字体 8pt
-- 左键单击 `?` 图标弹出 `NSPopover`
+- 左键单击 AI 图标弹出 `NSPopover`
 - `NSPopover` 内容为空（仅有占位文本或无内容的空白视图）
 - 右键菜单含「退出」选项（功能完整）
 - App 可以正常启动、显示图标、打开/关闭 Popover、退出

@@ -89,7 +89,7 @@ xcodebuild -project APIUsageStatus.xcodeproj \
 open APIUsageStatus.xcodeproj
 ```
 
-Then press Cmd+R to run. After the app launches, a `?` icon will appear in the menu bar (no Dock icon).
+Then press Cmd+R to run. After the app launches, an animated "AI" icon will appear in the menu bar (cycling %/%%/%%%, no Dock icon), which transitions to data slots once you add your first instance.
 
 ### 4. First-time Setup
 

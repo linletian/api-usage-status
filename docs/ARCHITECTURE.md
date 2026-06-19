@@ -152,7 +152,7 @@
 - 字体：SF Pro Regular 8pt，配额型百分比使用等宽变体（`.monospacedSystemFont` 8pt）以保证数字对齐
 - 1 个槽位时宽度自适应内容；2 个槽位时严格 50/50 等宽
 - 支持单色与彩色两种模式
-- 处理特殊状态：`?`（无配置）、`NO API`（全部禁用）、`•••`（加载中）、`N/A`（余额不可用）
+- 处理特殊状态：AI 品牌标识 + 循环 % 动画（两行布局，无实例时自动播放，有实例后停止，通过 startDefaultAnimation() / stopDefaultAnimation() / isDefaultAnimationRunning 管理）、`NO API`（全部禁用）、`•••`（加载中）、`N/A`（余额不可用）
 - 实现严重阈值的呼吸动画（warning 4s 周期，critical 2.0s 周期）
 
 ### 2.4 用量面板与独立详情面板（`UsagePanelView.swift`、`UsageCardView.swift`、`InstanceDetailPanel.swift`）
@@ -912,6 +912,10 @@ enum RefreshError: Error {
 - 余额型实例无呼吸动画，仅显示数值
 - **非活跃状态**：整槽以 `#D6D0A0` 渲染所有元素，不启动呼吸动画
 
+#### 默认状态（无实例）
+
+无论当前处于单色模式还是彩色模式，默认状态（无实例配置）始终以 `dimColor`（`#D6D0A0`）渲染，不区分安全/警告/严重三种阈值色，因为实例追踪尚未启动。
+
 #### 彩色模式
 - 每个槽位根据阈值独立着色：
   - 安全：绿色（`#4CAF50`）
@@ -946,11 +950,13 @@ func startFlashing(forSlot index: Int) {
 
 | 状态 | 视觉表现 | 渲染方式 |
 |------|----------|----------|
-| 无实例配置 | 单个 `?` 字符 | 以 `#D6D0A0` 系统字体渲染 |
+| 无实例配置 | 两行布局：第一行 "AI"（居中，SF Pro Regular 8pt），第二行循环 "%"/"%%"/"%%%"（等宽 8pt，居中，1秒间隔），dimColor 渲染 | MenuBarIconRenderer.renderDefaultState() |
 | 加载中（首次刷新） | `•••` | 以 `#D6D0A0` 系统字体渲染 |
 | 全部实例已禁用 | `NO API` | 以 `#D6D0A0` 系统字体渲染 |
 | 余额不可用（`is_available = false`） | `N/A` | 以 `#D6D0A0` 系统字体渲染 |
 | 刷新失败 | 上次成功数据照常显示，但全部元素以 `#D6D0A0` 渲染 | 以 `#D6D0A0` 系统字体渲染，菜单栏不展示错误文字 |
+
+> **默认动画行为**：默认动画仅在无实例配置时运行，一旦添加实例即自动停止。
 
 > **设计理由**：选择固定色值 `#D6D0A0`（低饱和暖灰）而非降低 `alphaValue` 的方式，是因为：(1) 单色模式下 alpha 叠加系统黑/白色后视觉效果不稳定；(2) 固定色值在两种色彩模式和明暗主题下均能清晰传递「非活跃」语义，且与系统菜单栏常见的灰色图标风格协调。
 
@@ -1334,6 +1340,8 @@ actor RefreshService {
 | **`Task.sleep` 循环（选用）** | 纯 Swift 结构化并发原语，无 RunLoop 依赖，取消自动传播，Actor 内天然安全 |
 
 > 注意：`Task.sleep` 以挂起而非阻塞方式等待，Actor 在 sleep 期间可响应其他调用。若需精确到秒的间隔（与 PRD 的 1–60 分钟分钟级粒度相符），`Task.sleep` 完全满足精度要求。
+>
+> **ADR：MenuBarIconRenderer 默认动画的 Timer 方案**：MenuBarIconRenderer 的默认动画使用 `Timer.scheduledTimer`（1 秒间隔），调度在 `@MainActor` 的 RunLoop 上。这与 `RefreshService` 的 `Task.sleep` 方案不同：`@MainActor` 上下文天然拥有主线程 RunLoop，Timer 适用且无需额外管理；1 秒 UI 动画不需要 `Task.sleep` 的结构化并发保证。呼吸动画使用 `CVDisplayLinkRunner`（60fps 同步），默认动画用 Timer（1Hz），两种机制互补而非矛盾。
 
 ---
 

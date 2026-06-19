@@ -34,6 +34,9 @@ final class MenuBarIconRenderer {
     /// Horizontal gap between adjacent slots.
     private static let betweenSlotGap: CGFloat = 10.0
 
+    /// Animation texts for default state (no instances): cycles through "%" → "%%" → "%%%" → "%" ...
+    private static let defaultAnimationTexts = ["%", "%%", "%%%"]
+
     // MARK: - Breathing state
 
     private var breathingSlots: Set<String> = []
@@ -42,6 +45,15 @@ final class MenuBarIconRenderer {
     var currentTimeProvider: () -> CFTimeInterval = { CACurrentMediaTime() }
 
     var onNeedsDisplay: (() -> Void)?
+
+    var defaultAnimationCycleIndex: Int = 0
+
+    private var defaultAnimationTimer: Timer?
+
+    func advanceDefaultAnimationCycle() {
+        defaultAnimationCycleIndex = (defaultAnimationCycleIndex + 1) % Self.defaultAnimationTexts.count
+        onNeedsDisplay?()
+    }
 
     // MARK: - Public API
 
@@ -55,7 +67,7 @@ final class MenuBarIconRenderer {
     ) -> NSImage {
         // Special states — single centred line
         if instancesCount == 0 {
-            return renderSpecialCenteredText("?")
+            return renderDefaultState()
         }
         if enabledCount == 0 {
             return renderSpecialCenteredText("NO API")
@@ -162,6 +174,22 @@ final class MenuBarIconRenderer {
         return displayLink?.isRunning == true
     }
 
+    // MARK: - Default Animation Lifecycle
+
+    var isDefaultAnimationRunning: Bool { defaultAnimationTimer != nil }
+
+    func startDefaultAnimation() {
+        guard defaultAnimationTimer == nil else { return }
+        defaultAnimationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.advanceDefaultAnimationCycle()
+        }
+    }
+
+    func stopDefaultAnimation() {
+        defaultAnimationTimer?.invalidate()
+        defaultAnimationTimer = nil
+    }
+
     // MARK: - Private: measurement
 
     /// Expand each `SlotViewData` into per-metric render slots so that each
@@ -240,6 +268,34 @@ final class MenuBarIconRenderer {
             default:         return Self.dimColor
             }
         }
+    }
+
+    // MARK: - Private: default state rendering (two-line animated)
+
+    private func renderDefaultState() -> NSImage {
+        let topText = "AI"
+        let bottomText = Self.defaultAnimationTexts[defaultAnimationCycleIndex]
+
+        let topWidth = textWidth(topText, font: Self.font)
+        let bottomWidth = textWidth(bottomText, font: Self.monoFont)
+        let width = max(topWidth, bottomWidth)
+
+        let size = NSSize(width: width, height: Self.slotHeight)
+        let image = NSImage(size: size)
+        image.lockFocus()
+
+        if let context = NSGraphicsContext.current?.cgContext {
+            let (topBaseline, bottomBaseline) = twoLineBaselines
+
+            let topX = (width - topWidth) / 2
+            renderText(topText, at: CGPoint(x: topX, y: topBaseline), color: Self.dimColor, font: Self.font, in: context)
+
+            let bottomX = (width - bottomWidth) / 2
+            renderText(bottomText, at: CGPoint(x: bottomX, y: bottomBaseline), color: Self.dimColor, font: Self.monoFont, in: context)
+        }
+
+        image.unlockFocus()
+        return image
     }
 
     // MARK: - Private: special state rendering (single centred line)
@@ -383,5 +439,6 @@ final class MenuBarIconRenderer {
 
     deinit {
         displayLink?.stop()
+        defaultAnimationTimer?.invalidate()
     }
 }

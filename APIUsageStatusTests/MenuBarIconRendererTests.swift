@@ -226,6 +226,52 @@ final class MenuBarIconRendererTests: XCTestCase {
                        "Second start should be idempotent and keep running")
     }
 
+    /// The breathing timer must fire onNeedsDisplay at the configured 0.2s cadence
+    /// so that shadow-phase interpolation runs smoothly across the 2-4s breathing cycle.
+    ///
+    /// Uses `XCTestExpectation` (not `Thread.sleep`) because `Thread.sleep` blocks
+    /// the main thread, which prevents the timer's run loop from firing. The test
+    /// runner's `wait(for:timeout:)` integrates with the run loop, allowing the
+    /// timer to actually fire during the wait window.
+    func testBreathingTimerFiresAtConfiguredCadence() {
+        let slot = makeSlot(colorState: .warning)
+        renderer.updateBreathingState(slotViewDataList: [slot])
+
+        var fireCount = 0
+        let originalCallback = renderer.onNeedsDisplay
+        renderer.onNeedsDisplay = { fireCount += 1 }
+        defer { renderer.onNeedsDisplay = originalCallback }
+
+        renderer.startBreathingAnimation()
+
+        // First fire happens ~0.2s after start; 0.4s timeout gives margin for slow CI
+        let firstFire = expectation(description: "first breathing timer fire")
+        let observer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
+            if fireCount >= 1 {
+                firstFire.fulfill()
+                timer.invalidate()
+            }
+        }
+        wait(for: [firstFire], timeout: 0.4)
+        observer.invalidate()
+        XCTAssertGreaterThanOrEqual(fireCount, 1,
+            "Breathing timer should fire at least once within 0.4s of start")
+        let firstWindowCount = fireCount
+
+        // Wait another 0.4s and assert a second fire — confirms ongoing ~0.2s cadence
+        let secondFire = expectation(description: "second breathing timer fire")
+        let observer2 = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
+            if fireCount - firstWindowCount >= 1 {
+                secondFire.fulfill()
+                timer.invalidate()
+            }
+        }
+        wait(for: [secondFire], timeout: 0.4)
+        observer2.invalidate()
+        XCTAssertGreaterThanOrEqual(fireCount - firstWindowCount, 1,
+            "Breathing timer should fire again within 0.4s (proves ~0.2s cadence)")
+    }
+
     // MARK: - State Update Clearing
 
     func testBreathingStateUpdateClearsRemovedUUIDs() {

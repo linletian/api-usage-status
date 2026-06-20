@@ -163,7 +163,7 @@ APIUsageStatus/
 ├── Balance/                       # 余额计算器 + 历史快照
 ├── PixelFont/                     # ⚠️ 已弃用：原像素字体引擎（代码已注释）
 ├── Extensions/                    # Date/Decimal/String 扩展
-├── Utilities/                     # 日志 + 原子写入 + CVDisplayLinkRunner（呼吸动画驱动）
+├── Utilities/                     # 日志 + 原子写入
 ├── Resources/                     # Info.plist + AppIcon 源文件
 └── Assets.xcassets/               # 编译期 AppIcon 图标集
 APIUsageStatusTests/

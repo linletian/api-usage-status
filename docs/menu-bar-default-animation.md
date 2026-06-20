@@ -58,11 +58,11 @@
 | 方案 | 适用场景 | 本项目使用 |
 |---|---|---|
 | `Timer.scheduledTimer` | 低频 UI 更新（1Hz），依赖主 RunLoop | 默认状态动画 |
-| `CVDisplayLink` | 高频显示同步更新（60fps），独立线程回调 | 呼吸动画 |
+| `Timer.scheduledTimer` | 中频 UI 更新（5Hz），依赖主 RunLoop | 呼吸动画 |
 
 **Timer 为什么在这里可用**：`Timer.scheduledTimer` 需要所在线程有一个活跃的 `RunLoop` 才能正常触发。`@MainActor` 的关联线程是主线程，而主线程的 RunLoop 由 AppKit 持续运行，永远不会停止。因此 1.0 秒间隔的 Timer 能够稳定、准时地回调闭包，在闭包中更新 `defaultAnimationCycleIndex` 并触发 `onNeedsDisplay` 重绘菜单栏图标。
 
-**与呼吸动画的对比**：呼吸动画需要 60fps 的刷新率以产生平滑的 shadow 脉冲，1Hz 的 Timer 显然无法胜任。因此呼吸动画使用 `CVDisplayLinkRunner`，通过 CoreVideo 层的显示链路与显示器刷新率同步，输出回调在独立线程执行后派发到主队列。而 1Hz 的默认动画完全没有这种精度需求，Timer 是最简单、资源消耗最小的方案。
+**与呼吸动画的对比**：呼吸动画的 shadow 插值需要足够的采样率以避免阶梯感，但 2–4s 慢周期下 5Hz（每 200ms 一次）已远超视觉平滑所需的最小采样率。1Hz 的 Timer 对纯文本轮播足够，对 shadow 插值则过低（每周期仅 2–4 个采样点会出现明显阶梯）。因此呼吸动画使用 5Hz `Timer.scheduledTimer`，与默认动画共享 `@MainActor` 主 RunLoop，区别仅在间隔（0.2s vs 1.0s）。两套机制互补而非矛盾。
 
 **与 RefreshService 的对比**：项目中 RefreshService 使用 `Task.sleep` 驱动后台网络刷新。这是因为刷新逻辑需要在后台 actor 上执行，没有主 RunLoop，且刷新间隔（5 分钟 / 30 分钟）远超 Timer 的适用场景。默认动画在主 actor 上以 1 秒间隔驱动纯粹的 UI 更新，Timer 是最自然的选择。
 
@@ -80,11 +80,11 @@
 
 | 维度 | 默认动画 | 呼吸动画 |
 |---|---|---|
-| 定时器类型 | Timer（Foundation） | CVDisplayLink（CoreVideo） |
-| 刷新率 | 1 Hz | 60 Hz（与显示同步） |
-| 启动方法 | `scheduledTimer` 单行创建 | `CVDisplayLinkRunner` 封装类 |
-| 停止方法 | `invalidate()` + 置 nil | 停止链路 + 置空引用 |
-| 状态查询 | `defaultAnimationTimer != nil` | `displayLink?.isRunning` |
+| 定时器类型 | Timer（Foundation） | Timer（Foundation） |
+| 刷新率 | 1 Hz | 5 Hz |
+| 启动方法 | `scheduledTimer` 单行创建 | `scheduledTimer` 单行创建 |
+| 停止方法 | `invalidate()` + 置 nil | `invalidate()` + 置 nil |
+| 状态查询 | `defaultAnimationTimer != nil` | `breathingTimer != nil` |
 
 ## 6. 触发条件
 

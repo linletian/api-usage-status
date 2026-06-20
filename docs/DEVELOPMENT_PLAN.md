@@ -223,7 +223,7 @@
 #### 2d. 色彩模式
 - **单色模式**：文字跟随系统菜单栏明暗主题（黑/白），进度条以填充比例编码阈值状态
 - **彩色模式**：每个槽位根据阈值独立着色（安全 `#4CAF50` / 警告 `#FFC107` / 严重 `#F44336`）
-- 严重阈值闪烁动画（1Hz，`Timer` + `alphaValue` 切换）
+- 严重阈值动画（历史版本：1Hz 闪烁；现行实现：呼吸动画，详见 `docs/menu-bar-breathing-animation.md`）
 
 #### 2e. MenuBarController 数据绑定
 - 观察 `AppStateProxy.slotViewDataList` 变化 → 自动触发重绘
@@ -240,7 +240,7 @@
 
 | 文档 | 章节 | 内容 |
 |------|------|------|
-| PRD | §3.1 菜单栏图标 | 槽位尺寸 44pt×22pt、单行布局规则、像素字模、特殊状态 ?/•••/NO API/N/A、单色/彩色模式、严重闪烁、槽位排序与截断 |
+| PRD | §3.1 菜单栏图标 | 槽位尺寸 44pt×22pt、单行布局规则、像素字模、特殊状态 ?/•••/NO API/N/A、单色/彩色模式、严重阈值动画（现行实现：呼吸动画，详见 `docs/menu-bar-breathing-animation.md`）、槽位排序与截断 |
 | ARCHITECTURE | §2.3 菜单栏图标渲染器 | MenuBarIconRenderer 设计 |
 | ARCHITECTURE | §2.11 像素字模引擎 | PixelFontEngine 设计 |
 | ARCHITECTURE | §3.3 菜单栏渲染流程 | 渲染数据流 |
@@ -258,7 +258,7 @@
 |------|------|------|
 | 像素字模在 22pt 高度可读性不达标 | 2pt/px 像素在 Retina 屏幕上可能过小 | Phase 2 早期先渲染几个采样字符截图验证，必要时调整缩放比或字符尺寸 |
 | 单色模式下阈值状态难以区分 | 仅靠进度条填充比例区分 0–50%/50–80%/80–100% | 实机测试，若不够直观可增加微妙的小标记（如进度条端点句柄） |
-| 闪烁动画与菜单栏重绘冲突 | `NSStatusBarButton` 频繁重绘可能闪烁或卡顿 | 使用 `alphaValue` 切换而非完整重绘；控制 Timer 生命周期 |
+| 闪烁动画与菜单栏重绘冲突（历史） | `NSStatusBarButton` 频繁重绘可能闪烁或卡顿 | 该方案已被呼吸动画取代，详见 `docs/menu-bar-breathing-animation.md` |
 | Retina 屏幕下像素绘制对齐问题 | 非整数坐标可能导致模糊 | 所有 `CGRect` 坐标取整，或使用 `NSView` 的 `layer` 绘制 |
 
 ### 预估工期
@@ -529,7 +529,7 @@
 
 #### 6c. 通知开关
 - 全局通知开关（`settings.notifications_enabled`），Phase 4 的 UI 在此阶段正式接入后端逻辑
-- 通知关闭时，菜单栏图标仍正常显示阈值颜色和闪烁
+- 通知关闭时，菜单栏图标仍正常显示阈值颜色和呼吸动画
 
 ### 不在范围内
 
@@ -540,7 +540,7 @@
 
 | 文档 | 章节 | 内容 |
 |------|------|------|
-| PRD | §3.1 菜单栏图标 | 严重阈值闪烁 |
+| PRD | §3.1 菜单栏图标 | 严重阈值动画（现行实现：呼吸动画，详见 `docs/menu-bar-breathing-animation.md`） |
 | PRD | §3.5 偏好设置 | 通知开关、点击通知打开独立面板 |
 | PRD | §4 用户交互流程 | 通知 → NSPanel |
 | ARCHITECTURE | §2.4 InstanceDetailPanel | 独立详情面板设计 |
@@ -583,9 +583,8 @@
 - 注册和注销逻辑
 - 错误处理（注册失败时告知用户）
 
-#### 7b. 菜单栏闪烁动画优化
-- 严重阈值 1Hz 闪烁在 Phase 2 已实现基础版本，本阶段验证其在长时间运行下的稳定性
-- 确保 Timer 在槽位退出严重状态后正确释放
+#### 7b. 菜单栏动画机制演进（历史记录）
+- **已完成** —— Phase 2 的 1Hz 闪烁已替换为呼吸动画（4s warning / 2s critical），后续性能调优将 60Hz `CVDisplayLinkRunner` 改为 5Hz `Timer.scheduledTimer`（详见 `docs/menu-bar-breathing-animation.md` §4）。本节保留以记录历史迭代。
 
 #### 7c. 错误恢复边缘情况
 - 网络恢复后自动重试（当前逻辑已有，验证完整性）
@@ -724,7 +723,7 @@ Phase 5（余额跟踪）     Phase 6（通知系统）
 - [ ] 配额型和余额型槽位布局正确
 - [ ] 单色/彩色模式均渲染正确
 - [ ] 所有特殊状态（AI 动画、•••、NO API、N/A）渲染正确
-- [ ] 严重阈值闪烁动画工作正常
+- [ ] 严重阈值呼吸动画工作正常（详见 `docs/menu-bar-breathing-animation.md`）
 - [ ] 无内存泄漏（Timer 正确释放）
 
 ### Phase 3 出口条件

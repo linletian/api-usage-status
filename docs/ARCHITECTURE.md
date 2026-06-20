@@ -425,7 +425,7 @@ MenuBarIconRenderer.render()
     │     │     ├──▶ 第二行：[配额型] 百分比数字（等宽 8pt） [余额型] 余额数值
     │     │     └──▶ 两行通过上下 margin 对称分布在 22pt 内
     │     │
-    │     └──▶ 若为 warning/critical 阈值 → 启动呼吸动画（CVDisplayLink 驱动）
+    │     └──▶ 若为 warning/critical 阈值 → 启动呼吸动画（`Timer.scheduledTimer` 0.2s = 5Hz 驱动，详见 `docs/menu-bar-breathing-animation.md` §4）
     │
     ├──▶ 设为 NSStatusBarButton.image
     │
@@ -931,21 +931,7 @@ enum RefreshError: Error {
 
 ### 7.4 呼吸动画
 
-```swift
-// 于 MenuBarIconRenderer 中
-func startFlashing(forSlot index: Int) {
-    Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
-        // 若槽位不再处于严重状态则停止
-        guard self?.slotData[index].colorState == .critical else {
-            timer.invalidate()
-            return
-        }
-        // 切换可见性 → 触发重绘
-        self?.flashingVisible.toggle()
-        self?.triggerRepaint()
-    }
-}
-```
+呼吸动画由 `MenuBarIconRenderer.startBreathingAnimation()` / `stopBreathingAnimation()` 控制（详见 `docs/menu-bar-breathing-animation.md`）。启停由 `MenuBarController` 在每次数据刷新时根据 `renderer.needsBreathingAnimation()` / `renderer.isBreathingAnimationRunning()` 双重检查驱动。
 
 ### 7.5 特殊状态
 
@@ -1344,7 +1330,7 @@ actor RefreshService {
 
 > 注意：`Task.sleep` 以挂起而非阻塞方式等待，Actor 在 sleep 期间可响应其他调用。若需精确到秒的间隔（与 PRD 的 1–60 分钟分钟级粒度相符），`Task.sleep` 完全满足精度要求。
 >
-> **ADR：MenuBarIconRenderer 默认动画的 Timer 方案**：MenuBarIconRenderer 的默认动画使用 `Timer.scheduledTimer`（1 秒间隔），调度在 `@MainActor` 的 RunLoop 上。这与 `RefreshService` 的 `Task.sleep` 方案不同：`@MainActor` 上下文天然拥有主线程 RunLoop，Timer 适用且无需额外管理；1 秒 UI 动画不需要 `Task.sleep` 的结构化并发保证。呼吸动画使用 `CVDisplayLinkRunner`（60fps 同步），默认动画用 Timer（1Hz），两种机制互补而非矛盾。
+> **ADR：MenuBarIconRenderer 的 Timer 方案**：MenuBarIconRenderer 的默认动画（1Hz `Timer`）与呼吸动画（5Hz `Timer`）都使用 `Timer.scheduledTimer`，调度在 `@MainActor` 的主 RunLoop 上。这与 `RefreshService` 的 `Task.sleep` 方案不同：`@MainActor` 上下文天然拥有主线程 RunLoop，Timer 适用且无需额外管理；UI 动画不需要 `Task.sleep` 的结构化并发保证。两者与 `RefreshService` 的分工：菜单栏 UI 动画用 Timer（1Hz 文本轮播 / 5Hz shadow 插值），后台数据刷新用 `Task.sleep`（分钟级间隔，结构化并发）。
 
 ---
 

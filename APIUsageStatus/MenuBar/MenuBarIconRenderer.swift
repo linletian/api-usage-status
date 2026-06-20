@@ -40,9 +40,17 @@ final class MenuBarIconRenderer {
     // MARK: - Breathing state
 
     private var breathingSlots: Set<String> = []
-    private var displayLink: CVDisplayLinkRunner?
+    private var breathingTimer: Timer?
     private var breathingStartTime: CFTimeInterval = 0
     var currentTimeProvider: () -> CFTimeInterval = { CACurrentMediaTime() }
+
+    /// Breathing animation redraw interval.
+    ///
+    /// The breathing cycle is 2s (critical) or 4s (warning), so 5 Hz keeps the
+    /// blur-radius interpolation visually smooth while cutting per-frame
+    /// rendering cost ~12× vs. CVDisplayLink's display-rate firing (which was
+    /// driving sustained 80+ fps redraws and burning one core).
+    private static let breathingAnimationInterval: TimeInterval = 0.2
 
     var onNeedsDisplay: (() -> Void)?
 
@@ -156,22 +164,20 @@ final class MenuBarIconRenderer {
     }
 
     func startBreathingAnimation() {
-        guard displayLink == nil else { return }
+        guard breathingTimer == nil else { return }
         breathingStartTime = currentTimeProvider()
-        displayLink = CVDisplayLinkRunner { [weak self] in
-            guard let self = self else { return }
-            self.onNeedsDisplay?()
+        breathingTimer = Timer.scheduledTimer(withTimeInterval: Self.breathingAnimationInterval, repeats: true) { [weak self] _ in
+            self?.onNeedsDisplay?()
         }
-        displayLink?.start()
     }
 
     func stopBreathingAnimation() {
-        displayLink?.stop()
-        displayLink = nil
+        breathingTimer?.invalidate()
+        breathingTimer = nil
     }
 
     func isBreathingAnimationRunning() -> Bool {
-        return displayLink?.isRunning == true
+        return breathingTimer != nil
     }
 
     // MARK: - Default Animation Lifecycle
@@ -447,7 +453,7 @@ final class MenuBarIconRenderer {
     }
 
     deinit {
-        displayLink?.stop()
+        breathingTimer?.invalidate()
         defaultAnimationTimer?.invalidate()
     }
 }

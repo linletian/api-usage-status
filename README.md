@@ -164,7 +164,7 @@ APIUsageStatus/
 ├── Balance/                       # Balance calculator + history snapshots
 ├── PixelFont/                     # ⚠️ Deprecated: original pixel font engine (code commented out)
 ├── Extensions/                    # Date/Decimal/String extensions
-├── Utilities/                     # Logging + atomic writes + CVDisplayLinkRunner (breathing animation driver)
+├── Utilities/                     # Logging + atomic writes
 ├── Resources/                     # Info.plist + AppIcon source files
 └── Assets.xcassets/               # Compiled AppIcon asset catalog
 APIUsageStatusTests/

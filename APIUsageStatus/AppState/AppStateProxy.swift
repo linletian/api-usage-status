@@ -17,6 +17,11 @@ final class AppStateProxy: ObservableObject {
     @Published private(set) var globalSettings: GlobalSettings = .default
     @Published private(set) var minimaxModelNames: [String] = []
     @Published private(set) var lastRefreshAt: Date? = nil
+    /// Derived from `slotViewDataList.allSatisfy { $0.colorState == .error }`
+    /// in `syncFromState()`. Per `docs/ARCHITECTURE.md §7.5`, `.error`
+    /// colorState = stale / cached data. The menu bar / panel read this
+    /// to decide between "show normal" vs "show stale view".
+    @Published private(set) var hasUsableStaleData: Bool = false
 
     // MARK: - Internal References
 
@@ -97,6 +102,13 @@ final class AppStateProxy: ObservableObject {
         self.globalSettings = loadedSettings
         self.minimaxModelNames = loadedModels
         self.lastRefreshAt = loadedLastRefresh
+        // Staleness is encoded directly on each slot via
+        // `slot.colorState == .error` (see `SlotViewData.colorState`). The
+        // empty `slotViewDataList` case correctly maps to "never had a
+        // success" (the existing "Unable to load" view) via the
+        // `!isEmpty` guard — no separate timestamp check needed.
+        self.hasUsableStaleData = !loadedSlots.isEmpty
+            && loadedSlots.allSatisfy { $0.colorState == .error }
     }
 
     // MARK: - Manual Refresh

@@ -22,7 +22,8 @@ struct UsagePanelView: View {
                 EmptyStateView(openSettings: openSettings)
                     .padding(.vertical, 12)
             } else if appStateProxy.slotViewDataList.isEmpty && !appStateProxy.instances.isEmpty {
-                // All instances failed or are disabled — show a compact prompt instead of dead white space
+                // All instances failed or are disabled AND we have no
+                // usable "last successful" cache for today → fully error.
                 VStack(spacing: 8) {
                     Spacer()
                     Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
@@ -40,13 +41,18 @@ struct UsagePanelView: View {
                 }
                 .padding(.vertical, 12)
             } else {
-                // Scrollable card list
+                // Scrollable card list. Staleness is encoded on each slot via
+                // `slot.colorState == .error` (per docs/ARCHITECTURE.md §7.5),
+                // so each card reads its own stale state directly — no
+                // parallel `isStale` flag at this layer.
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(appStateProxy.slotViewDataList) { slot in
                             UsageCardView(
                                 slot: slot,
-                                lastRefreshAt: appStateProxy.lastRefreshAt
+                                lastRefreshAt: appStateProxy.lastRefreshAt,
+                                staleError: errorSummaryByUUID[slot.uuid],
+                                windowExpired: isWindowExpired(slot)
                             )
                         }
                     }
@@ -119,6 +125,27 @@ struct UsagePanelView: View {
         let elapsed = Date().timeIntervalSince(lastRefresh)
         let remaining = TimeInterval(intervalMinutes * 60) - elapsed
         return max(0, Int(remaining / 60))
+    }
+
+    /// Index errors by instance UUID so each card can look up its own
+    /// `staleError` without scanning the array. Built via
+    /// `Dictionary(_:uniquingKeysWith:)` with `last-wins` so a
+    /// duplicate UUID (defensive-only — this should not happen in
+    /// normal operation) is a silent no-op rather than a fatalError.
+    private var errorSummaryByUUID: [String: ErrorSummary] {
+        Dictionary(appStateProxy.errorSummaries.map { ($0.id, $0) },
+                   uniquingKeysWith: { _, last in last })
+    }
+
+    /// True when any snapshot in the slot has an expired quota window
+    /// (`cycleRemainingSeconds != nil && cycleRemainingSeconds <= 0`).
+    /// `nil` means "the API didn't report a window" — that's not the
+    /// same as expired, so we treat it as active.
+    private func isWindowExpired(_ slot: SlotViewData) -> Bool {
+        slot.metricSnapshots.contains { snapshot in
+            guard let remaining = snapshot.cycleRemainingSeconds else { return false }
+            return remaining <= 0
+        }
     }
 }
 

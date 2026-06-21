@@ -104,6 +104,8 @@
 		F7515003CBE09BDDD608C4C4 /* ShellError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D8F9C7F481CC348B71719FC /* ShellError.swift */; };
 		FCF788F48696E08375EADBFF /* Provider+Icon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69879B60D9B0E7643EE31851 /* Provider+Icon.swift */; };
 		FF533B21141B7E91FF494C0F /* GlobalSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C73DE7CC280E8C32B5CBEC49 /* GlobalSettings.swift */; };
+2841A819732F41E0957D8B26 /* AppStateMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 986E96F7150D41D18E2F875E /* AppStateMergeTests.swift */; };
+C697FB8E85AB4745AA8C5082 /* UsageCardViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3494FB8AA7E14133A747AC95 /* UsageCardViewTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -218,6 +220,8 @@
 		F5CFD56AEC8BF420DCA4361A /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		FC5D83D4218C5C4635B415E8 /* MiniMaxResponseParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniMaxResponseParserTests.swift; sourceTree = "<group>"; };
 		FCFC6B3B9299C7DDB8264B6C /* ShellCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellCommand.swift; sourceTree = "<group>"; };
+986E96F7150D41D18E2F875E /* AppStateMergeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateMergeTests.swift; sourceTree = "<group>"; };
+3494FB8AA7E14133A747AC95 /* UsageCardViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageCardViewTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -368,6 +372,8 @@
 				0BEB57C3EF79F2722ABC4501 /* FlowingGlowBarTests.swift */,
 				D042E8620FC4A1162C5A2A5A /* InstanceCardViewTests.swift */,
 				A9B02229A006D2DADE005681 /* InstanceDecodingTests.swift */,
+				986E96F7150D41D18E2F875E /* AppStateMergeTests.swift */,
+				3494FB8AA7E14133A747AC95 /* UsageCardViewTests.swift */,
 				7AA4335ECDEFC0A614346853 /* MenuBarIconRendererTests.swift */,
 				E579BF96EE109EAF0D663C7A /* MetricConfigCodableTests.swift */,
 				FC5D83D4218C5C4635B415E8 /* MiniMaxResponseParserTests.swift */,
@@ -650,6 +656,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2841A819732F41E0957D8B26 /* AppStateMergeTests.swift in Sources */,
+				C697FB8E85AB4745AA8C5082 /* UsageCardViewTests.swift in Sources */,
 				E151C0B79689A158AD80C756 /* BalanceCalculatorTests.swift in Sources */,
 				BF9F801A979A7AE6169DC54D /* BreathingMathTests.swift in Sources */,
 				63E92BE9CFBBEFE55E5D62B6 /* CopilotResponseParserTests.swift in Sources */,

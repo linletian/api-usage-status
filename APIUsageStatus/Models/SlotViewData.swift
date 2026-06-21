@@ -100,6 +100,21 @@ struct SlotViewData: Identifiable, Equatable {
     var todayUsage: String?
     var dailyAverages: [AvgDailyPeriod: Decimal]?
 
+    /// When this slot was last successfully fetched from the supplier.
+    /// `nil` until the first successful refresh. When a refresh fails the
+    /// cached slot keeps its previous `lastFetchedAt`, so the panel can
+    /// show "Cached X ago" without a separate timestamp field.
+    var lastFetchedAt: Date?
+
+    /// True when the slot is showing cached data from a previous successful
+    /// refresh because the most recent cycle failed for this instance.
+    /// Per `docs/ARCHITECTURE.md §7.5`, stale slots are encoded as
+    /// `ColorState.error` so the menu bar's `colorForSlot` renders them
+    /// with the dim color `#D6D0A0` (NOT via alpha blending). This is the
+    /// single source of "is this slot stale?" — UI layers read
+    /// `slot.colorState == .error` instead of tracking a parallel flag.
+    var isStale: Bool
+
     // TODO: Remove after confirming weekly feature is stable on all user plans.
     // Temporary diagnostic: keys looked up in rawData for weekly.
     var weeklyDebug: String?
@@ -132,12 +147,17 @@ struct SlotViewData: Identifiable, Equatable {
 
     /// Worst color state across all metric snapshots. Priority:
     /// critical > warning > error > unavailable > disabled > loading > normal.
+    /// When `isStale == true`, returns `.error` regardless of the snapshot
+    /// states — this is the single source of "this slot is cached /
+    /// refresh failed" so UI layers don't need to track a parallel flag.
+    /// Per `docs/ARCHITECTURE.md §7.5`, `.error` renders the dim color
+    /// `#D6D0A0` (NOT an alpha-blended threshold color).
     var colorState: ColorState {
+        if isStale { return .error }
         let states = metricSnapshots.map(\.colorState)
         guard !states.isEmpty else { return .loading }
         if states.contains(.critical) { return .critical }
         if states.contains(.warning) { return .warning }
-        if states.contains(.error) { return .error }
         if states.contains(.unavailable) { return .unavailable }
         if states.contains(.disabled) { return .disabled }
         if states.contains(.loading) { return .loading }
@@ -183,7 +203,9 @@ struct SlotViewData: Identifiable, Equatable {
         todayUsage: String? = nil,
         dailyAverages: [AvgDailyPeriod: Decimal]? = nil,
         weekly: WeeklyQuota? = nil,
-        weeklyDebug: String? = nil
+        weeklyDebug: String? = nil,
+        lastFetchedAt: Date? = nil,
+        isStale: Bool = false
     ) {
         self.uuid = uuid
         self.displayName = displayName
@@ -193,6 +215,8 @@ struct SlotViewData: Identifiable, Equatable {
         self.todayUsage = todayUsage
         self.dailyAverages = dailyAverages
         self.weeklyDebug = weeklyDebug
+        self.lastFetchedAt = lastFetchedAt
+        self.isStale = isStale
 
         // Balance path: preserve the full InstanceType so the menu bar and
         // usage panel render balance content (amount/currency) instead of

@@ -53,6 +53,11 @@ extension Color {
     /// Background of an elevated card surface.
     static let cardBg = Color(light: 0xFFFFFF, dark: 0x2C2C2E)
 
+    /// Background of a card displaying stale (failed-refresh, cached) data.
+    /// Subtly different from `cardBg` so the user notices cached content at
+    /// a glance without it being visually loud.
+    static let cardBgDim = Color(light: 0xF5F5F5, dark: 0x232325)
+
     /// Border line of an elevated card surface.
     static let cardBorder = Color(light: 0xE0E0E0, dark: 0x3A3A3C)
 

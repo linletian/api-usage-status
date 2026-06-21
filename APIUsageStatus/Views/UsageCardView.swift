@@ -7,6 +7,24 @@ struct UsageCardView: View {
     let slot: SlotViewData
     let lastRefreshAt: Date?
 
+    /// Error summary for this slot's instance from the most recent
+    /// failed cycle (per UUID). Used by the footer to display the
+    /// error message alongside the "Cached X ago" copy.
+    var staleError: ErrorSummary? = nil
+
+    /// True when the quota cycle window has passed (e.g., a 5h window
+    /// that ended). Rendered as a "Window expired" hint.
+    var windowExpired: Bool = false
+
+    /// Stale/cached data flag — read from `slot.colorState == .error`
+    /// (per docs/ARCHITECTURE.md §7.5, `.error` colorState means the
+    /// slot is showing cached data from a previous successful fetch).
+    /// Single source of truth for staleness; the menu bar, panel, and
+    /// this card all read from the same `colorState` value.
+    private var isStale: Bool {
+        slot.colorState == .error
+    }
+
     private var displayTitle: String {
         slot.displayName.isEmpty ? slot.shortName : slot.displayName
     }
@@ -70,8 +88,8 @@ struct UsageCardView: View {
                 }
             }
 
-            // Footer: See details button + Last refresh time
-            HStack {
+            // Footer: See details button + Last refresh time / stale info
+            HStack(alignment: .firstTextBaseline) {
                 if let url = providerURL {
                     Button {
                         NSWorkspace.shared.open(url)
@@ -85,22 +103,87 @@ struct UsageCardView: View {
 
                 Spacer()
 
-                if let lastRefresh = lastRefreshAt {
-                    Text(formattedTime(lastRefresh))
-                        .font(.system(size: 9))
-                        .foregroundColor(.textSecondary)
-                }
+                footerStatusView
             }
         }
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.cardBg)
+                .fill(isStale ? Color.cardBgDim : Color.cardBg)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.progressTrackBg, lineWidth: 0.5)
         )
+    }
+
+    /// Right-aligned status text in the footer. Three layouts:
+    ///   1. Stale (cached) → "⚠ {error}" + "Cached X ago" + optional "Window expired"
+    ///   2. Fresh + window expired → "Window expired"
+    ///   3. Fresh + window active → "Updated HH:MM"
+    @ViewBuilder
+    private var footerStatusView: some View {
+        if isStale {
+            VStack(alignment: .trailing, spacing: 2) {
+                if let message = staleError?.errorMessage {
+                    HStack(spacing: 3) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 9))
+                        Text(message)
+                    }
+                    .font(.system(size: 9))
+                    .foregroundColor(Color.warningYellow)
+                }
+                if let cachedAt = effectiveCachedAt {
+                    Text("Cached \(formatTimeSince(cachedAt)) ago")
+                        .font(.system(size: 9))
+                        .foregroundColor(Color.textSecondary)
+                }
+                if windowExpired {
+                    Text("Window expired")
+                        .font(.system(size: 9))
+                        .foregroundColor(Color.textSecondary)
+                }
+            }
+        } else if windowExpired {
+            Text("Window expired")
+                .font(.system(size: 9))
+                .foregroundColor(Color.textSecondary)
+        } else if let lastRefresh = lastRefreshAt {
+            Text(formattedTime(lastRefresh))
+                .font(.system(size: 9))
+                .foregroundColor(.textSecondary)
+        }
+    }
+
+    /// Timestamp to use for the "Cached X ago" copy. Precedence:
+    ///   1. `slot.lastFetchedAt` — stamped by the refresh service on each
+    ///      successful fetch and preserved across failed cycles.
+    ///   2. `lastRefreshAt` — fallback for the empty-state rendering path
+    ///      where `slot.lastFetchedAt` may be nil.
+    private var effectiveCachedAt: Date? {
+        slot.lastFetchedAt ?? lastRefreshAt
+    }
+
+    /// Format seconds elapsed as "Xm" / "Xh Ym" / "Xd". Mirrors the style
+    /// of `formatRemainingTime` so the UI reads consistently.
+    private func formatTimeSince(_ date: Date) -> String {
+        let elapsed = max(0, Date().timeIntervalSince(date))
+        let totalSeconds = Int(elapsed)
+        if totalSeconds >= 86_400 {
+            let days = totalSeconds / 86_400
+            return "\(days)d"
+        } else if totalSeconds >= 3_600 {
+            let hours = totalSeconds / 3_600
+            let minutes = (totalSeconds % 3_600) / 60
+            if minutes == 0 {
+                return "\(hours)h"
+            }
+            return "\(hours)h \(minutes)m"
+        } else {
+            let minutes = max(1, totalSeconds / 60)
+            return "\(minutes)m"
+        }
     }
 
     // MARK: - Quota Content

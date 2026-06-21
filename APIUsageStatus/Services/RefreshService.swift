@@ -135,8 +135,10 @@ actor RefreshService {
                 }
 
                 // 3d. Map response to each instance's SlotViewData
+                let fetchTime = Date()
                 for instance in instancesInGroup {
-                    let slotData = mapInstanceToSlotData(instance: instance, response: response)
+                    var slotData = mapInstanceToSlotData(instance: instance, response: response)
+                    slotData.lastFetchedAt = fetchTime
                     allSlotData.append(slotData)
                 }
 
@@ -177,7 +179,8 @@ actor RefreshService {
                         let updatedInstances = await appState.getInstances()
                         for uuid in autoDiscoveredUUIDs {
                             guard let updated = updatedInstances.first(where: { $0.uuid == uuid }) else { continue }
-                            let newSlot = mapInstanceToSlotData(instance: updated, response: response)
+                            var newSlot = mapInstanceToSlotData(instance: updated, response: response)
+                            newSlot.lastFetchedAt = fetchTime
                             if let idx = allSlotData.firstIndex(where: { $0.uuid == uuid }) {
                                 allSlotData[idx] = newSlot
                             }
@@ -275,7 +278,8 @@ actor RefreshService {
                         provider: instance.provider,
                         dimension: slot.dimension,
                         todayUsage: update.snapshot.todayUsage,
-                        dailyAverages: displayAverages
+                        dailyAverages: displayAverages,
+                        lastFetchedAt: slot.lastFetchedAt ?? Date()
                     )
                     allSlotData[index] = updatedSlot
 
@@ -304,10 +308,21 @@ actor RefreshService {
         )
 
         // 6. Update AppState
-        await appState.updateSlotData(allSlotData)
         await appState.setErrorSummaries(errorSummaries)
         await appState.setRefreshState(.idle)
         await appState.setLastRefreshAt(Date())
+
+        // 7. Merge this cycle's result into `_slotViewDataList` atomically.
+        //    The merge reads `appState._instances` internally to detect
+        //    deleted-instance UUIDs — no caller-side snapshot needed,
+        //    so there's no TOCTOU window between reading instances and
+        //    applying the merge. The actor boundary guarantees any
+        //    concurrent settings change is serialized behind this call.
+        let erroredUUIDs = Set(errorSummaries.map { $0.id })
+        await appState.mergeCycleResult(
+            cycleSuccesses: allSlotData,
+            cycleErroredUUIDs: erroredUUIDs
+        )
 
         lastRefreshAt = Date()
         logger.info("Refresh cycle completed: \(allSlotData.count) slots, \(errorSummaries.count) errors")

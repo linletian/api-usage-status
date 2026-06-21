@@ -456,20 +456,21 @@ final class MenuBarIconRendererTests: XCTestCase {
         assertSnapshot(image, named: "critical_breathing_inhale")
     }
 
-    // MARK: - Inverted Pill Rendering (cut-out text)
+    // MARK: - Inverted Pill Rendering (cut-out text, stale slots only)
 
-    /// The pill should fill the slot's interior with the slot color and
-    /// leave the text glyph region transparent (so the menu-bar background
-    /// shows through). We sample the rendered bitmap at a location that's
-    /// inside the pill but definitely not on a glyph: the left edge of
-    /// the pill, where the rounded corner has cleared 3pt of padding but
-    /// the geometric center would land on text.
+    /// Stale slots render as a rounded pill with destinationOut text cutout.
+    /// Verifies the pill fill is opaque at the left edge (inside the pill,
+    /// between the rounded corner and the text glyphs) and uses the dim gray
+    /// `#D6D0A0`. The top-left corner (outside the pill boundary) must be
+    /// transparent. Uses a stale slot (`isStale=true`) because pill rendering
+    /// only applies to refresh-failed (`.error` colorState) slots.
     func testPillRendersWithCutOutText() {
-        let slot = makeSlot(
+        var slot = makeSlot(
             uuid: "pill-cutout",
             colorState: .normal,
             shortName: "MIN"
         )
+        slot.isStale = true
 
         let image = renderer.render(
             slotViewDataList: [slot],
@@ -484,12 +485,12 @@ final class MenuBarIconRendererTests: XCTestCase {
         let corner = alphaAt(image: image, x: 0, y: 0)
 
         // Pill should be opaque at the left-edge sample point. The color
-        // must match menuBarSafe (#4CAF50 = R=76, G=175, B=80).
+        // must match dim gray (#D6D0A0 = R=214, G=208, B=160).
         XCTAssertGreaterThan(guard_.alpha, 200,
-                             "Pill left-edge sample should be opaque; got alpha=\(guard_.alpha)")
-        XCTAssertEqual(guard_.r, 76, "Pill red channel should match safe green; got \(guard_.r)")
-        XCTAssertEqual(guard_.g, 175, "Pill green channel should match safe green; got \(guard_.g)")
-        XCTAssertEqual(guard_.b, 80, "Pill blue channel should match safe green; got \(guard_.b)")
+                             "Stale pill left-edge sample should be opaque; got alpha=\(guard_.alpha)")
+        XCTAssertEqual(guard_.r, 214, "Stale pill R should match dim gray; got \(guard_.r)")
+        XCTAssertEqual(guard_.g, 208, "Stale pill G should match dim gray; got \(guard_.g)")
+        XCTAssertEqual(guard_.b, 160, "Stale pill B should match dim gray; got \(guard_.b)")
 
         // Top-left corner is outside the pill (pillVerticalMargin = 2pt
         // from top, plus rounded corner), so it should be transparent.
@@ -578,10 +579,11 @@ final class MenuBarIconRendererTests: XCTestCase {
                              "Stale pill must be fully opaque (no alpha dimming); got alpha=\(criticalSample.alpha)")
     }
 
-    /// A fresh (non-stale) warning slot MUST still render with its
-    /// threshold color (#FFC107 = warning yellow). Confirms the
-    /// `colorForSlot` switch only flips to gray for `.error` —
-    /// fresh data keeps its semantic color encoding.
+    /// A fresh (non-stale) warning slot MUST render as plain colored text
+    /// on transparent background — no pill. The text should use the
+    /// warning threshold color (#FFC107 = R=255, G=193, B=7).
+    /// Scans the rendered bitmap for the first non-transparent pixel
+    /// (the text glyph) and asserts its RGB matches warning yellow.
     func testFreshWarningSlotKeepsYellowColor() {
         let slot = makeSlot(
             uuid: "fresh-warning",
@@ -598,11 +600,22 @@ final class MenuBarIconRendererTests: XCTestCase {
             isDarkBackground: false
         )
 
-        let sample = alphaAt(image: image, x: 3, y: 11)
-        // #FFC107 = (R=255, G=193, B=7)
-        XCTAssertEqual(sample.r, 255, "Fresh warning pill R must be 255, got \(sample.r)")
-        XCTAssertEqual(sample.g, 193, "Fresh warning pill G must be 193, got \(sample.g)")
-        XCTAssertEqual(sample.b, 7, "Fresh warning pill B must be 7, got \(sample.b)")
+        // Fresh slot: text directly on transparent background. Scan for
+        // any non-transparent pixel and verify it's warning yellow.
+        guard let textPixel = firstNonTransparentPixel(in: image) else {
+            XCTFail("Fresh warning slot must have visible text pixels")
+            return
+        }
+        // #FFC107 = (R=255, G=193, B=7). Allow ±5 tolerance for font
+        // anti-aliasing which blends edge pixels.
+        XCTAssertEqual(textPixel.r, 255, accuracy: 10,
+                       "Fresh warning text R must be ~255 (yellow), got \(textPixel.r)")
+        XCTAssertEqual(textPixel.g, 193, accuracy: 10,
+                       "Fresh warning text G must be ~193 (yellow), got \(textPixel.g)")
+        XCTAssertEqual(textPixel.b, 7, accuracy: 10,
+                       "Fresh warning text B must be ~7 (yellow), got \(textPixel.b)")
+        XCTAssertGreaterThan(textPixel.alpha, 50,
+                             "Text pixel must be visible; got alpha=\(textPixel.alpha)")
     }
 
     /// Find the maximum alpha value across a horizontal scan of the
@@ -772,7 +785,7 @@ final class MenuBarIconRendererTests: XCTestCase {
     /// A stale slot still has cut-out text glyphs — the text is rendered
     /// in destination-out blend mode so the menu-bar background shows
     /// through, not "filled with gray text on gray pill". Verifies the
-    /// stale path produces the same inverted-pill visual as fresh slots.
+    /// stale pill path produces correct inverted-pill visuals.
     func testStaleSlotPreservesCutoutText() {
         var slot = makeSlot(
             uuid: "stale-cutout",
@@ -804,6 +817,62 @@ final class MenuBarIconRendererTests: XCTestCase {
         // the expected slot height (no crash from the destination-out
         // path operating on the gray pill).
         XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
+    }
+
+    /// Scan the image for a fully-opaque (alpha ≥ 200) pixel — skips
+    /// anti-aliased font edges whose premultiplied RGB values don't
+    /// match the original color. Returns nil when no solid pixel found.
+    /// Used by fresh-slot text color tests.
+    private func firstNonTransparentPixel(in image: NSImage) -> PixelSample? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0 else { return nil }
+        let bytesPerRow = width * 4
+        var pixelData = [UInt8](repeating: 0, count: width * height * 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: &pixelData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        // Find a solid (non-edge) glyph pixel — anti-aliased edges have
+        // premultiplied RGB that doesn't match the intended foreground.
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 4
+                let a = Int(pixelData[offset + 3])
+                if a >= 200 {
+                    return PixelSample(
+                        r: Int(pixelData[offset]),
+                        g: Int(pixelData[offset + 1]),
+                        b: Int(pixelData[offset + 2]),
+                        alpha: a
+                    )
+                }
+            }
+        }
+        // Fall back to any visible pixel if no solid one exists
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 4
+                let a = Int(pixelData[offset + 3])
+                if a > 0 {
+                    return PixelSample(
+                        r: Int(pixelData[offset]),
+                        g: Int(pixelData[offset + 1]),
+                        b: Int(pixelData[offset + 2]),
+                        alpha: a
+                    )
+                }
+            }
+        }
+        return nil
     }
 
     /// Sample the alpha channel and RGB at the geometric center of the

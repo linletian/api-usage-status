@@ -213,8 +213,7 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
 
         if latestSlotData.isEmpty && !latestInstances.isEmpty {
             let promptHeight: CGFloat = 100
-            let errorBarHeight: CGFloat = latestErrorSummaries.isEmpty ? 0 : 36
-            return errorBarHeight + promptHeight + buttonsHeight + padding
+            return promptHeight + buttonsHeight + padding
         }
 
         var cardsHeight: CGFloat = 0
@@ -225,8 +224,7 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
             cardsHeight += CGFloat(latestSlotData.count - 1) * 8
         }
 
-        let errorBarHeight: CGFloat = latestErrorSummaries.isEmpty ? 0 : 36
-        let total = cardsHeight + errorBarHeight + buttonsHeight + padding
+        let total = cardsHeight + buttonsHeight + padding
         return min(500, max(160, total))
     }
 

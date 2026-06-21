@@ -9,14 +9,6 @@ struct UsagePanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Error summary bar (at the top per PRD)
-            if !appStateProxy.errorSummaries.isEmpty {
-                ErrorBarView(
-                    errors: appStateProxy.errorSummaries,
-                    refreshIntervalMinutes: appStateProxy.globalSettings.refreshIntervalMinutes
-                )
-            }
-
             if appStateProxy.slotViewDataList.isEmpty && appStateProxy.instances.isEmpty {
                 // Empty state — no instances configured at all
                 EmptyStateView(openSettings: openSettings)
@@ -163,46 +155,6 @@ struct PlaceholderContentView: View {
         }
         .padding(20)
         .frame(width: 280, height: 200)
-    }
-}
-
-// MARK: - ErrorBarView
-
-struct ErrorBarView: View {
-    let errors: [ErrorSummary]
-    let refreshIntervalMinutes: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(errors) { error in
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(Color.warningYellow)
-                        .font(.system(size: 10))
-                        .padding(.top, 1)
-
-                    Text("\(error.displayName): \(formattedMessage(for: error.errorType))")
-                        .font(.system(size: 10))
-                        .foregroundColor(Color.textSecondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.warningBg)
-    }
-
-    private func formattedMessage(for errorType: ErrorType) -> String {
-        switch errorType {
-        case .networkTimeout, .networkUnreachable:
-            return "Network error, retrying in \(refreshIntervalMinutes) min"
-        case .authFailed:
-            return "API Key invalid, check settings"
-        case .apiError(let code):
-            return "API error (code: \(code))"
-        }
     }
 }
 

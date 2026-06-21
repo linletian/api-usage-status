@@ -957,12 +957,13 @@ SwiftUI 面板使用独立的语义色彩令牌（与菜单栏 NSColor 互不影
 | 余额不可用（`is_available = false`） | `N/A` | 以 `#D6D0A0` 系统字体渲染 |
 | 刷新失败 | 上次成功数据照常显示，但全部元素以 `#D6D0A0` 渲染 | 以 `#D6D0A0` 系统字体渲染，菜单栏不展示错误文字 |
 
-**挖空 pill 渲染**（2026-06-21）：所有槽位（活跃和非活跃）均以"挖空圆角矩形"渲染：
+**挖空 pill 渲染**（2026-06-21）：刷新失败时陈旧（`.error` colorState）槽位以"挖空圆角矩形"渲染，作为异常信号：
 
-- 每个槽位绘制一个圆角矩形 pill（`pillCornerRadius = 3pt`，`pillVerticalMargin = 2pt`），填充槽位对应颜色。
+- 陈旧槽位绘制一个圆角矩形 pill（`pillCornerRadius = 3pt`，`pillVerticalMargin = 2pt`），填充 `#D6D0A0`。
+- 正常活跃槽位（`.normal` / `.warning` / `.critical`）保持纯色文字渲染，无 pill 背景。
 - 文字通过 `CGContext.setBlendMode(.destinationOut)` 绘制为透明镂空，让菜单栏背景穿透文字形状显示。
 - 文字绘制使用 CTLineDraw（而非 NSString.draw），确保 `destinationOut` blend mode 可靠生效。
-- 呼吸动画（shadow）作用于 pill 的 `CGContext.fillPath()`，而非文字，所以发光描摹 pill 外轮廓。
+- 陈旧槽位不触发呼吸动画（`updateBreathingState` 仅加入 warning/critical 的 UUID，`.error` 不在此列）。
 - Pill 内部水平方向留 3pt padding（`pillHorizontalPadding`），文字不贴圆角边缘。
 - 详见 `docs/menu-bar-inverted-pill.md`。
 

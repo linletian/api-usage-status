@@ -39,15 +39,21 @@ actor RefreshService {
 
         stop() // Cancel any existing task
 
-        refreshTask = Task {
-            // Perform initial refresh immediately
-            await performRefresh()
+        // Capture the interval locally so the Task doesn't read the actor
+        // property across isolation domains. The captured value stays
+        // stable for the lifetime of this timer cycle — restartTimer
+        // always calls stop()+start() to begin a fresh cycle.
+        let intervalSeconds = refreshInterval
 
-            // Then loop with timer
+        refreshTask = Task { [weak self] in
+            guard let self = self else { return }
+            // Initial refresh immediately
+            await self.performRefresh()
+            // Periodic loop
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(refreshInterval))
+                try? await Task.sleep(for: .seconds(intervalSeconds))
                 if !Task.isCancelled {
-                    await performRefresh()
+                    await self.performRefresh()
                 }
             }
         }

@@ -33,10 +33,9 @@ struct UsagePanelView: View {
                 }
                 .padding(.vertical, 12)
             } else {
-                // Scrollable card list. Staleness is encoded on each slot via
-                // `slot.colorState == .error` (per docs/ARCHITECTURE.md §7.5),
-                // so each card reads its own stale state directly — no
-                // parallel `isStale` flag at this layer.
+                // Scrollable card list. Staleness is encoded on each slot
+                // via `slot.isStale` (per docs/ARCHITECTURE.md §7.5), so
+                // each card reads its own stale state directly.
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(appStateProxy.slotViewDataList) { slot in

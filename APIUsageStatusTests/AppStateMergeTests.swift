@@ -3,9 +3,10 @@ import XCTest
 
 /// Behavior-lock tests for `AppState.mergeCycleResult`. The merge drives
 /// the "show last successful data on refresh failure" UX: failed cycles
-/// must preserve the cached slots (and mark them `isStale=true` so
-/// `colorState == .error`); successful cycles must overwrite with fresh
-/// data (`isStale=false`); deleted instances must be evicted.
+/// must preserve the cached slots and mark them `isStale=true`; successful
+/// cycles must overwrite with fresh data (`isStale=false`); deleted
+/// instances must be evicted. Staleness is reported via `slot.isStale`
+/// only — `slot.colorState` always reflects the underlying threshold.
 ///
 /// Concurrency contract under test: `mergeCycleResult` reads
 /// `_instances` INSIDE the actor — callers don't pass a UUID snapshot,
@@ -104,11 +105,12 @@ final class AppStateMergeTests: XCTestCase {
 
         let slots = await appState.getSlotViewDataList()
         XCTAssertEqual(slots.count, 2, "Failed cycle must not drop cached slots")
-        XCTAssertTrue(isStale(uuid: "inst-1", in: slots))
+        XCTAssertTrue(isStale(uuid: "inst-1", in: slots),
+                      "Failed cycle must mark cached slot stale (single source of truth)")
         XCTAssertTrue(isStale(uuid: "inst-2", in: slots))
-        XCTAssertEqual(colorState(uuid: "inst-1", in: slots), .error,
-                       "Stale slot's colorState must collapse to .error")
-        XCTAssertEqual(colorState(uuid: "inst-2", in: slots), .error)
+        XCTAssertEqual(colorState(uuid: "inst-1", in: slots), .normal,
+                       "Stale slot must preserve its original colorState (orthogonal fields)")
+        XCTAssertEqual(colorState(uuid: "inst-2", in: slots), .normal)
     }
 
     /// A partial-success cycle overwrites the cached entry for the
@@ -146,7 +148,8 @@ final class AppStateMergeTests: XCTestCase {
                        "Failed slot must keep its previous cached data")
         XCTAssertTrue(isStale(uuid: "inst-2", in: slots),
                       "Failed slot must be marked stale")
-        XCTAssertEqual(colorState(uuid: "inst-2", in: slots), .error)
+        XCTAssertEqual(colorState(uuid: "inst-2", in: slots), .normal,
+                       "Stale slot must preserve its original colorState (orthogonal fields)")
     }
 
     /// When an instance is removed from `_instances` BEFORE the merge,
@@ -215,8 +218,8 @@ final class AppStateMergeTests: XCTestCase {
 
     /// A slot that was previously marked stale should revert to fresh
     /// (`isStale=false`) once its instance succeeds again. The
-    /// `colorState` should likewise return to the underlying threshold
-    /// color (normal/warning/critical) instead of `.error`.
+    /// `colorState` is independent of `isStale` and stays at the
+    /// underlying threshold throughout.
     func testStaleSlotRevertsToFreshOnRecovery() async {
         let appState = AppState()
 
@@ -234,8 +237,10 @@ final class AppStateMergeTests: XCTestCase {
             cycleErroredUUIDs: ["x"]
         )
         let afterFailure = await appState.getSlotViewDataList()
-        XCTAssertTrue(isStale(uuid: "x", in: afterFailure))
-        XCTAssertEqual(colorState(uuid: "x", in: afterFailure), .error)
+        XCTAssertTrue(isStale(uuid: "x", in: afterFailure),
+                      "Failed cycle must mark slot stale")
+        XCTAssertEqual(colorState(uuid: "x", in: afterFailure), .normal,
+                       "Stale slot must preserve its original colorState (orthogonal fields)")
 
         // Cycle 3: success again — slot reverts to fresh.
         await appState.mergeCycleResult(
@@ -245,8 +250,8 @@ final class AppStateMergeTests: XCTestCase {
         let afterRecovery = await appState.getSlotViewDataList()
         XCTAssertFalse(isStale(uuid: "x", in: afterRecovery),
                        "Successfully re-fetched slot must clear isStale")
-        XCTAssertNotEqual(colorState(uuid: "x", in: afterRecovery), .error,
-                          "Stale->fresh transition must restore non-error colorState")
+        XCTAssertEqual(colorState(uuid: "x", in: afterRecovery), .normal,
+                       "Stale->fresh transition keeps the same colorState (no .error involvement)")
     }
 
     // MARK: - Concurrency / robustness regression
@@ -323,8 +328,8 @@ final class AppStateMergeTests: XCTestCase {
                        "Success slot data must win on UUID overlap")
         XCTAssertTrue(isStale(uuid: "x", in: slots),
                       "Stale flag still applies from the error path")
-        XCTAssertEqual(colorState(uuid: "x", in: slots), .error,
-                       "Stale .error colorState must be the final state on overlap")
+        XCTAssertEqual(colorState(uuid: "x", in: slots), .normal,
+                       "Success slot's colorState wins on overlap; staleness is reported via isStale, not colorState")
     }
 
     /// Calling `mergeCycleResult` twice with identical inputs is a
@@ -444,8 +449,10 @@ final class AppStateMergeTests: XCTestCase {
         await appState.mergeCycleResult(cycleSuccesses: [], cycleErroredUUIDs: ["x"])
 
         let afterTwoFailures = await appState.getSlotViewDataList()
-        XCTAssertTrue(isStale(uuid: "x", in: afterTwoFailures))
-        XCTAssertEqual(colorState(uuid: "x", in: afterTwoFailures), .error)
+        XCTAssertTrue(isStale(uuid: "x", in: afterTwoFailures),
+                      "Two consecutive failures must keep isStale=true")
+        XCTAssertEqual(colorState(uuid: "x", in: afterTwoFailures), .normal,
+                       "Stale slot must preserve its original colorState (orthogonal fields)")
 
         // Now a successful cycle.
         await appState.mergeCycleResult(
@@ -457,6 +464,7 @@ final class AppStateMergeTests: XCTestCase {
         XCTAssertEqual(afterRecovery.first?.displayName, "Fresh")
         XCTAssertFalse(isStale(uuid: "x", in: afterRecovery),
                        "Success after multiple failures must clear isStale")
-        XCTAssertNotEqual(colorState(uuid: "x", in: afterRecovery), .error)
+        XCTAssertEqual(colorState(uuid: "x", in: afterRecovery), .normal,
+                       "Stale->fresh transition keeps the same colorState")
     }
 }

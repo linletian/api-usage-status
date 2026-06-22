@@ -456,128 +456,7 @@ final class MenuBarIconRendererTests: XCTestCase {
         assertSnapshot(image, named: "critical_breathing_inhale")
     }
 
-    // MARK: - Inverted Pill Rendering (cut-out text, stale slots only)
-
-    /// Stale slots render as a rounded pill with destinationOut text cutout.
-    /// Verifies the pill fill is opaque at the left edge (inside the pill,
-    /// between the rounded corner and the text glyphs) and uses the dim gray
-    /// `#D6D0A0`. The top-left corner (outside the pill boundary) must be
-    /// transparent. Uses a stale slot (`isStale=true`) because pill rendering
-    /// only applies to refresh-failed (`.error` colorState) slots.
-    func testPillRendersWithCutOutText() {
-        var slot = makeSlot(
-            uuid: "pill-cutout",
-            colorState: .normal,
-            shortName: "MIN"
-        )
-        slot.isStale = true
-
-        let image = renderer.render(
-            slotViewDataList: [slot],
-            colorMode: .color,
-            refreshState: .idle,
-            instancesCount: 1,
-            enabledCount: 1,
-            isDarkBackground: false
-        )
-
-        let guard_ = alphaAt(image: image, x: 3, y: 11)
-        let corner = alphaAt(image: image, x: 0, y: 0)
-
-        // Pill should be opaque at the left-edge sample point. The color
-        // must match dim gray (#D6D0A0 = R=214, G=208, B=160).
-        XCTAssertGreaterThan(guard_.alpha, 200,
-                             "Stale pill left-edge sample should be opaque; got alpha=\(guard_.alpha)")
-        XCTAssertEqual(guard_.r, 214, "Stale pill R should match dim gray; got \(guard_.r)")
-        XCTAssertEqual(guard_.g, 208, "Stale pill G should match dim gray; got \(guard_.g)")
-        XCTAssertEqual(guard_.b, 160, "Stale pill B should match dim gray; got \(guard_.b)")
-
-        // Top-left corner is outside the pill (pillVerticalMargin = 2pt
-        // from top, plus rounded corner), so it should be transparent.
-        XCTAssertLessThan(corner.alpha, 10,
-                          "Outside-pill corner pixel should be transparent; got alpha=\(corner.alpha)")
-    }
-
-    // MARK: - Stale Slot Rendering
-
-    /// Stale slots MUST use the fixed `#D6D0A0` dim color for the pill fill,
-    /// regardless of the underlying `colorState` — per docs/ARCHITECTURE.md
-    /// §7.3 / §7.5 the architectural decision is to use a constant gray
-    /// rather than alpha-blend the threshold color. This matters because:
-    ///   1. Alpha-blending onto the menu-bar's system appearance produces
-    ///      unstable visual results across light/dark themes.
-    ///   2. A stale warning/critical slot rendering as faded red/yellow
-    ///      could mislead the user into thinking the data is still
-    ///      alarming when it's actually cached from a previous fetch.
-///
-/// Staleness is encoded as `isStale=true` on the slot, which collapses
-/// `slot.colorState` to `.error` (the single source of truth). The
-/// renderer's `colorForSlot` then returns `dimColor` (the fixed
-/// `#D6D0A0`) for `.error` slots.
-    func testStaleSlotUsesGrayColor() {
-        // Build slots with .warning/.critical `colorState` AS PASSED IN,
-        // then flip `isStale=true`. The computed `colorState` should
-        // collapse to `.error`, and the rendered pill should use the
-        // fixed dim color — NOT the warning/critical hue.
-        var warningSlot = makeSlot(
-            uuid: "stale-warning",
-            colorState: .warning,
-            shortName: "WRN"
-        )
-        warningSlot.isStale = true
-
-        var criticalSlot = makeSlot(
-            uuid: "stale-critical",
-            colorState: .critical,
-            shortName: "CRI"
-        )
-        criticalSlot.isStale = true
-
-        // `colorState` is a computed property — it must short-circuit to
-        // `.error` when `isStale=true` regardless of the passed-in state.
-        XCTAssertEqual(warningSlot.colorState, .error,
-                       "isStale=true must collapse colorState to .error")
-        XCTAssertEqual(criticalSlot.colorState, .error,
-                       "isStale=true must collapse colorState to .error")
-
-        let staleWarning = renderer.render(
-            slotViewDataList: [warningSlot],
-            colorMode: .color,
-            refreshState: .idle,
-            instancesCount: 1,
-            enabledCount: 1,
-            isDarkBackground: false
-        )
-
-        let staleCritical = renderer.render(
-            slotViewDataList: [criticalSlot],
-            colorMode: .color,
-            refreshState: .idle,
-            instancesCount: 1,
-            enabledCount: 1,
-            isDarkBackground: false
-        )
-
-        // Pill interior sample at the left edge (between corner radius and
-        // text glyphs) — guaranteed to be on the pill fill, not a cutout.
-        let warningSample = alphaAt(image: staleWarning, x: 3, y: 11)
-        let criticalSample = alphaAt(image: staleCritical, x: 3, y: 11)
-
-        // The dim color is #D6D0A0 = (R=214, G=208, B=160). Both warning
-        // and critical stale slots must render with EXACTLY this color,
-        // not faded warning yellow or critical red.
-        XCTAssertEqual(warningSample.r, 214, "Stale warning pill must use dim R=214, got \(warningSample.r)")
-        XCTAssertEqual(warningSample.g, 208, "Stale warning pill must use dim G=208, got \(warningSample.g)")
-        XCTAssertEqual(warningSample.b, 160, "Stale warning pill must use dim B=160, got \(warningSample.b)")
-        XCTAssertGreaterThan(warningSample.alpha, 240,
-                             "Stale pill must be fully opaque (no alpha dimming); got alpha=\(warningSample.alpha)")
-
-        XCTAssertEqual(criticalSample.r, 214, "Stale critical pill must use dim R=214, got \(criticalSample.r)")
-        XCTAssertEqual(criticalSample.g, 208, "Stale critical pill must use dim G=208, got \(criticalSample.g)")
-        XCTAssertEqual(criticalSample.b, 160, "Stale critical pill must use dim B=160, got \(criticalSample.b)")
-        XCTAssertGreaterThan(criticalSample.alpha, 240,
-                             "Stale pill must be fully opaque (no alpha dimming); got alpha=\(criticalSample.alpha)")
-    }
+    // MARK: - Stale Slot Rendering (80% alpha, no pill)
 
     /// A fresh (non-stale) warning slot MUST render as plain colored text
     /// on transparent background — no pill. The text should use the
@@ -614,8 +493,256 @@ final class MenuBarIconRendererTests: XCTestCase {
                        "Fresh warning text G must be ~193 (yellow), got \(textPixel.g)")
         XCTAssertEqual(textPixel.b, 7, accuracy: 10,
                        "Fresh warning text B must be ~7 (yellow), got \(textPixel.b)")
-        XCTAssertGreaterThan(textPixel.alpha, 50,
-                             "Text pixel must be visible; got alpha=\(textPixel.alpha)")
+        XCTAssertGreaterThan(textPixel.alpha, 200,
+                             "Fresh text pixel must be fully opaque; got alpha=\(textPixel.alpha)")
+    }
+
+    /// Stale slots render the same text as fresh slots but at 80% alpha
+    /// using the underlying threshold color. Verifies a stale warning
+    /// slot still shows warning yellow at ~80% opacity (no pill, no gray).
+    /// The 0.8 multiplier gives premultiplied RGB = (204, 154, 6) ±
+    /// anti-aliasing tolerance.
+    func testStaleWarningSlotKeepsYellowColorAt80PercentAlpha() {
+        var slot = makeSlot(
+            uuid: "stale-warning",
+            colorState: .warning,
+            shortName: "WRN"
+        )
+        slot.isStale = true
+
+        let image = renderer.render(
+            slotViewDataList: [slot],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+
+        guard let textPixel = firstNonTransparentPixel(in: image) else {
+            XCTFail("Stale warning slot must have visible text pixels")
+            return
+        }
+        // Premultiplied RGB at 0.8 alpha: 255*0.8=204, 193*0.8=154, 7*0.8=6.
+        // Allow ±5 tolerance for font anti-aliasing.
+        XCTAssertEqual(textPixel.r, 204, accuracy: 10,
+                       "Stale warning text R must be ~204 (yellow * 0.8), got \(textPixel.r)")
+        XCTAssertEqual(textPixel.g, 154, accuracy: 10,
+                       "Stale warning text G must be ~154 (yellow * 0.8), got \(textPixel.g)")
+        XCTAssertEqual(textPixel.b, 6, accuracy: 10,
+                       "Stale warning text B must be ~6 (yellow * 0.8), got \(textPixel.b)")
+        // Alpha is the source of truth for opacity; premultiplied RGB
+        // gets dimmer with alpha. Allow a window because the strongest
+        // pixel might be a near-fully-opaque edge of an anti-aliased
+        // glyph rather than the bulk of the stroke.
+        XCTAssertGreaterThan(textPixel.alpha, 150,
+                             "Stale text pixel must be visible (alpha > 150); got alpha=\(textPixel.alpha)")
+        XCTAssertLessThanOrEqual(textPixel.alpha, 220,
+                             "Stale text pixel must NOT be fully opaque (should be ~80%); got alpha=\(textPixel.alpha)")
+    }
+
+    /// Stale critical slot keeps the critical red at 80% alpha.
+    /// Premultiplied: 244*0.8=195, 67*0.8=54, 54*0.8=43.
+    func testStaleCriticalSlotKeepsRedColorAt80PercentAlpha() {
+        var slot = makeSlot(
+            uuid: "stale-critical",
+            colorState: .critical,
+            shortName: "CRI"
+        )
+        slot.isStale = true
+
+        let image = renderer.render(
+            slotViewDataList: [slot],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+
+        guard let textPixel = firstNonTransparentPixel(in: image) else {
+            XCTFail("Stale critical slot must have visible text pixels")
+            return
+        }
+        // #F44336 = (R=244, G=67, B=54). Premultiplied at 0.8 alpha.
+        XCTAssertEqual(textPixel.r, 195, accuracy: 15,
+                       "Stale critical text R must be ~195 (red * 0.8), got \(textPixel.r)")
+        XCTAssertEqual(textPixel.g, 54, accuracy: 15,
+                       "Stale critical text G must be ~54 (red * 0.8), got \(textPixel.g)")
+        XCTAssertEqual(textPixel.b, 43, accuracy: 15,
+                       "Stale critical text B must be ~43 (red * 0.8), got \(textPixel.b)")
+    }
+
+    /// Stale slot must use the underlying threshold color (warning yellow,
+    /// critical red, safe green) — NOT the dim `#D6D0A0` gray used by the
+    /// pill. Pins down normal/unavailable too to make sure no future
+    /// refactor accidentally collapses all stale slots to a single color.
+    func testStaleSlotUsesUnderlyingThresholdColor() {
+        let cases: [(ColorState, String)] = [
+            (.normal, "safe green"),
+            (.warning, "warning yellow"),
+            (.critical, "critical red"),
+        ]
+        for (underlyingState, label) in cases {
+            var slot = makeSlot(
+                uuid: "stale-\(underlyingState)",
+                colorState: underlyingState,
+                shortName: "T"
+            )
+            slot.isStale = true
+
+            // Sanity: `colorState` is independent of `isStale` — a stale
+            // warning slot still reports `.warning` here. `isStale` is
+            // the single channel for staleness detection.
+            XCTAssertEqual(slot.colorState, underlyingState,
+                           "isStale=true must not alter colorState from \(underlyingState)")
+            XCTAssertTrue(slot.isStale,
+                          "isStale must be the single source for staleness detection")
+
+            let image = renderer.render(
+                slotViewDataList: [slot],
+                colorMode: .color,
+                refreshState: .idle,
+                instancesCount: 1,
+                enabledCount: 1,
+                isDarkBackground: false
+            )
+            guard let pixel = firstNonTransparentPixel(in: image) else {
+                XCTFail("Stale \(underlyingState) slot must have visible text pixels")
+                continue
+            }
+            // The pixel must NOT match the dim gray (#D6D0A0 = 214, 208, 160).
+            // At least one channel must differ by more than 30 to prove
+            // it's not the dim color.
+            let isNotDim = abs(pixel.r - 214) > 30
+                || abs(pixel.g - 208) > 30
+                || abs(pixel.b - 160) > 30
+            XCTAssertTrue(isNotDim,
+                          "Stale \(underlyingState) slot must render in \(label), not dim gray; got R=\(pixel.r) G=\(pixel.g) B=\(pixel.b)")
+        }
+    }
+
+    /// Stale warning/critical slots MUST keep their breathing animation.
+    /// `colorState` is independent of `isStale`, so a stale warning slot
+    /// is added to the breathing set by `updateBreathingState` reading
+    /// `slot.colorState == .warning`.
+    func testStaleWarningSlotKeepsBreathingAnimation() {
+        var slot = makeSlot(
+            uuid: "stale-breathing",
+            colorState: .warning,
+            shortName: "WRN"
+        )
+        slot.isStale = true
+
+        // `updateBreathingState` should add this slot to the breathing
+        // set because `slot.colorState == .warning` (the field is
+        // independent of `isStale`).
+        renderer.updateBreathingState(slotViewDataList: [slot])
+        XCTAssertTrue(renderer.needsBreathingAnimation(),
+                      "Stale warning slot must trigger breathing animation via colorState")
+    }
+
+    /// In monochrome mode, stale slots must keep the underlying black/white
+    /// text (per their menu-bar background) at 80% alpha — NOT collapse to
+    /// the dim `#D6D0A0` gray. This is the multi-theme coverage for the
+    /// "alpha compositing is stable across system appearance" design
+    /// claim in `docs/menu-bar-stale-alpha.md`. Replaces the old
+    /// `testStaleSlotIsGrayInMonochromeMode` (which pinned the old pill
+    /// design that no longer exists).
+    func testStaleSlotKeepsUnderlyingColorInMonochromeMode() {
+        // Light menu-bar background → text is black, dimmed to 80% alpha.
+        // Premultiplied: 0*0.8=0, 0*0.8=0, 0*0.8=0; alpha=~204 (0.8*255).
+        var warningSlot = makeSlot(
+            uuid: "stale-mono-light",
+            colorState: .warning,
+            shortName: "M"
+        )
+        warningSlot.isStale = true
+        let lightImage = renderer.render(
+            slotViewDataList: [warningSlot],
+            colorMode: .monochrome,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+        guard let lightPixel = firstNonTransparentPixel(in: lightImage) else {
+            XCTFail("Stale warning slot in monochrome (light) must have visible text pixels")
+            return
+        }
+        XCTAssertLessThan(lightPixel.r, 30,
+                          "Stale monochrome-light text R must be near black; got \(lightPixel.r)")
+        XCTAssertLessThan(lightPixel.g, 30,
+                          "Stale monochrome-light text G must be near black; got \(lightPixel.g)")
+        XCTAssertLessThan(lightPixel.b, 30,
+                          "Stale monochrome-light text B must be near black; got \(lightPixel.b)")
+        XCTAssertGreaterThan(lightPixel.alpha, 150,
+                             "Stale monochrome-light text must be visible (alpha > 150); got \(lightPixel.alpha)")
+        XCTAssertLessThanOrEqual(lightPixel.alpha, 220,
+                             "Stale monochrome-light text must be ~80% alpha; got \(lightPixel.alpha)")
+
+        // Dark menu-bar background → text is white, dimmed to 80% alpha.
+        // Premultiplied: 255*0.8=204 on each channel; alpha=~204.
+        let darkImage = renderer.render(
+            slotViewDataList: [warningSlot],
+            colorMode: .monochrome,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: true
+        )
+        guard let darkPixel = firstNonTransparentPixel(in: darkImage) else {
+            XCTFail("Stale warning slot in monochrome (dark) must have visible text pixels")
+            return
+        }
+        XCTAssertGreaterThan(darkPixel.r, 200,
+                             "Stale monochrome-dark text R must be near white; got \(darkPixel.r)")
+        XCTAssertGreaterThan(darkPixel.g, 200,
+                             "Stale monochrome-dark text G must be near white; got \(darkPixel.g)")
+        XCTAssertGreaterThan(darkPixel.b, 200,
+                             "Stale monochrome-dark text B must be near white; got \(darkPixel.b)")
+        XCTAssertGreaterThan(darkPixel.alpha, 150,
+                             "Stale monochrome-dark text must be visible (alpha > 150); got \(darkPixel.alpha)")
+        XCTAssertLessThanOrEqual(darkPixel.alpha, 220,
+                             "Stale monochrome-dark text must be ~80% alpha; got \(darkPixel.alpha)")
+    }
+
+    /// A fresh normal slot rendered alone must NOT have any pill-shaped
+    /// opaque region at the slot edges. With the pill design removed,
+    /// the slot is just plain text on transparent background — only the
+    /// text glyphs are opaque.
+    func testNoPillBackgroundForAnySlot() {
+        // Render slots with various states including stale. With the pill
+        // gone, no slot should have a continuous opaque region — only the
+        // anti-aliased text glyphs themselves.
+        for (uuid, state, isStale) in [
+            ("normal", ColorState.normal, false),
+            ("warning", ColorState.warning, false),
+            ("critical", ColorState.critical, false),
+            ("stale-normal", ColorState.normal, true),
+            ("stale-warning", ColorState.warning, true),
+            ("stale-critical", ColorState.critical, true),
+        ] {
+            var slot = makeSlot(uuid: uuid, colorState: state, shortName: uuid.prefix(3).uppercased())
+            slot.isStale = isStale
+
+            let image = renderer.render(
+                slotViewDataList: [slot],
+                colorMode: .color,
+                refreshState: .idle,
+                instancesCount: 1,
+                enabledCount: 1,
+                isDarkBackground: false
+            )
+
+            // The slot edge (sample at y=2, well outside the text glyph
+            // area) must be transparent. With the pill, this would be
+            // opaque gray for stale slots. With the pill gone, it
+            // should be transparent for all slots.
+            let edge = alphaAt(image: image, x: 1, y: 2)
+            XCTAssertLessThan(edge.alpha, 20,
+                              "\(uuid): slot edge must be transparent (no pill); got alpha=\(edge.alpha)")
+        }
     }
 
     /// Find the maximum alpha value across a horizontal scan of the
@@ -650,173 +777,6 @@ final class MenuBarIconRendererTests: XCTestCase {
             }
         }
         return maxAlpha
-    }
-
-    /// Stale slots suppress the breathing animation even when the underlying
-    /// `colorState` is `.warning` or `.critical`. This is checked by the
-    /// renderer's internal state — we just verify the stale slot UUID
-    /// Stale slots (`.error` colorState) must suppress the breathing
-    /// animation. `updateBreathingState` only includes warning/critical
-    /// UUIDs in the breathing set, so stale slots are excluded at
-    /// the source — no separate stale tracking needed.
-    func testStaleSlotSuppressesBreathing() {
-        var slot = makeSlot(
-            uuid: "stale-suppress",
-            colorState: .warning,
-            shortName: "WRN"
-        )
-        slot.isStale = true
-        XCTAssertEqual(slot.colorState, .error,
-                       "Sanity check: isStale=true collapses colorState to .error")
-
-        // `updateBreathingState` only adds warning/critical UUIDs. Since
-        // `slot.colorState` is now `.error`, the slot won't be added to
-        // the breathing set.
-        renderer.updateBreathingState(slotViewDataList: [slot])
-        renderer.currentTimeProvider = { 1.0 }
-        renderer.startBreathingAnimation()
-
-        let image = renderer.render(
-            slotViewDataList: [slot],
-            colorMode: .color,
-            refreshState: .idle,
-            instancesCount: 1,
-            enabledCount: 1,
-            isDarkBackground: false
-        )
-
-        // Without the stale suppression, the renderer's breathing
-        // animation would have drawn a glow around the pill. With
-        // suppression, no shadow is applied. We can't directly read
-        // the CGContext's shadow state from the bitmap, but we can
-        // assert that the image still renders successfully (no crash
-        // from disabled shadow) and that the pill center is still
-        // visible (alpha > 0).
-        XCTAssertNotNil(image)
-        XCTAssertGreaterThan(pillCenterAlpha(image), 50,
-                             "Stale slot pill should still be visible (suppressed breathing shouldn't blank the pill)")
-    }
-
-    /// Stale slot must collapse to the fixed `#D6D0A0` regardless of the
-    /// underlying `colorState`. We already cover warning/critical; this
-    /// pins down normal/unavailable to make sure no future refactor
-    /// accidentally lets a non-error colorState leak through when
-    /// `isStale=true`.
-    func testStaleSlotCollapsesAllUnderlyingColorStates() {
-        for underlyingState: ColorState in [.normal, .warning, .critical, .unavailable] {
-            var slot = makeSlot(
-                uuid: "stale-\(underlyingState)",
-                colorState: underlyingState,
-                shortName: "T"
-            )
-            slot.isStale = true
-            XCTAssertEqual(slot.colorState, .error,
-                           "isStale=true must collapse \(underlyingState) to .error")
-
-            let image = renderer.render(
-                slotViewDataList: [slot],
-                colorMode: .color,
-                refreshState: .idle,
-                instancesCount: 1,
-                enabledCount: 1,
-                isDarkBackground: false
-            )
-            let sample = alphaAt(image: image, x: 3, y: 11)
-            XCTAssertEqual(sample.r, 214,
-                           "Stale slot (\(underlyingState) underlying) must use dim R=214, got \(sample.r)")
-            XCTAssertEqual(sample.g, 208,
-                           "Stale slot (\(underlyingState) underlying) must use dim G=208, got \(sample.g)")
-            XCTAssertEqual(sample.b, 160,
-                           "Stale slot (\(underlyingState) underlying) must use dim B=160, got \(sample.b)")
-            XCTAssertGreaterThan(sample.alpha, 240,
-                                  "Stale slot (\(underlyingState)) must be fully opaque (no alpha dimming)")
-        }
-    }
-
-    /// Stale slot in **monochrome** mode must STILL render as the fixed
-    /// dim gray (`#D6D0A0`). Per docs/ARCHITECTURE.md §7.3, the
-    /// architectural decision was to use a constant color value rather
-    /// than alpha-blend the threshold color — exactly to avoid the
-    /// unstable visual result alpha compositing produces across the
-    /// system appearance. If a future change reintroduces alpha
-    /// blending for stale slots, this test will catch it.
-    func testStaleSlotIsGrayInMonochromeMode() {
-        var slot = makeSlot(
-            uuid: "stale-mono-light",
-            colorState: .warning,  // would be black on light bg if monochrome alpha were used
-            shortName: "M"
-        )
-        slot.isStale = true
-
-        // Light menu-bar background.
-        let lightImage = renderer.render(
-            slotViewDataList: [slot],
-            colorMode: .monochrome,
-            refreshState: .idle,
-            instancesCount: 1,
-            enabledCount: 1,
-            isDarkBackground: false
-        )
-        let lightSample = alphaAt(image: lightImage, x: 3, y: 11)
-        XCTAssertEqual(lightSample.r, 214, "Monochrome-light stale must use dim R=214, got \(lightSample.r)")
-        XCTAssertEqual(lightSample.g, 208, "Monochrome-light stale must use dim G=208, got \(lightSample.g)")
-        XCTAssertEqual(lightSample.b, 160, "Monochrome-light stale must use dim B=160, got \(lightSample.b)")
-        XCTAssertGreaterThan(lightSample.alpha, 240,
-                              "Monochrome-light stale must be fully opaque")
-
-        // Dark menu-bar background — same expected color (no alpha
-        // compositing with system white).
-        let darkImage = renderer.render(
-            slotViewDataList: [slot],
-            colorMode: .monochrome,
-            refreshState: .idle,
-            instancesCount: 1,
-            enabledCount: 1,
-            isDarkBackground: true
-        )
-        let darkSample = alphaAt(image: darkImage, x: 3, y: 11)
-        XCTAssertEqual(darkSample.r, 214, "Monochrome-dark stale must use dim R=214, got \(darkSample.r)")
-        XCTAssertEqual(darkSample.g, 208, "Monochrome-dark stale must use dim G=208, got \(darkSample.g)")
-        XCTAssertEqual(darkSample.b, 160, "Monochrome-dark stale must use dim B=160, got \(darkSample.b)")
-        XCTAssertGreaterThan(darkSample.alpha, 240,
-                              "Monochrome-dark stale must be fully opaque")
-    }
-
-    /// A stale slot still has cut-out text glyphs — the text is rendered
-    /// in destination-out blend mode so the menu-bar background shows
-    /// through, not "filled with gray text on gray pill". Verifies the
-    /// stale pill path produces correct inverted-pill visuals.
-    func testStaleSlotPreservesCutoutText() {
-        var slot = makeSlot(
-            uuid: "stale-cutout",
-            colorState: .normal,
-            shortName: "MIN"
-        )
-        slot.isStale = true
-
-        let image = renderer.render(
-            slotViewDataList: [slot],
-            colorMode: .color,
-            refreshState: .idle,
-            instancesCount: 1,
-            enabledCount: 1,
-            isDarkBackground: false
-        )
-
-        let pillSample = alphaAt(image: image, x: 3, y: 11)
-        XCTAssertGreaterThan(pillSample.alpha, 200,
-                              "Stale pill interior should be opaque gray")
-
-        // The corner (outside the pill) should remain transparent — the
-        // pill rendering doesn't bleed into the slot's margin.
-        let corner = alphaAt(image: image, x: 0, y: 0)
-        XCTAssertLessThan(corner.alpha, 10,
-                          "Outside-pill corner must be transparent; got alpha=\(corner.alpha)")
-
-        // Sanity: rendering a stale slot produces a non-empty image of
-        // the expected slot height (no crash from the destination-out
-        // path operating on the gray pill).
-        XCTAssertEqual(image.size.height, 22, accuracy: 0.1)
     }
 
     /// Scan the image for a fully-opaque (alpha ≥ 200) pixel — skips
@@ -1273,3 +1233,4 @@ final class MenuBarIconRendererTests: XCTestCase {
                                     "Slot width must cover longest possible text to prevent jitter")
     }
 }
+

@@ -111,8 +111,8 @@
 - 手动下拉/点击刷新
 - 应用启动时立即拉取一次
 - 网络异常时自动重试（指数退避，最多 3 次）
-- **刷新失败时菜单栏处理**：该实例对应的槽位显示上次成功数据（`isStale=true`），切换为灰色挖空 pill（`#D6D0A0` 圆角矩形 + 镂空文字，不降透明度——见 `ARCHITECTURE.md §7.3`），不显示错误文字或异常徽标。正常刷新成功的槽位保持纯色文字渲染（无 pill 背景）。呼吸动画在陈旧槽位上自动抑制（`updateBreathingState` 仅加入 warning/critical 的 UUID，`.error` 不在此列）。
-- **刷新失败时面板处理**：每张失败实例的卡片显示**陈旧数据**：背景使用 `cardBgDim`、footer 显示 `⚠ {错误信息}` + `Cached {elapsed} ago`（基于 `slot.lastFetchedAt`）。若配额窗口过期（`cycleRemainingSeconds=0`），额外显示 `Window expired`。当天没有任何成功数据时，显示原来的「Unable to load usage data」视图。
+- **刷新失败时菜单栏处理**：该实例对应的槽位显示上次成功数据（`isStale=true`），文字保留原阈值颜色（warning yellow / critical red / safe green；单色模式下黑/白），整体应用 80% 透明度——不切换为灰色、不绘制挖空 pill、不显示错误文字或异常徽标。视觉信号克制：略微变淡已足够提醒用户"数据不是最新的"。呼吸动画在陈旧 warning/critical 槽位上**保留**（`colorState` 不被 `isStale` 短路，仍反映 `.warning` / `.critical`，自然加入 `breathingSlots`）。陈旧检测与阈值颜色判断**正交**——`colorState` 反映阈值，`isStale` 反映数据时效。详见 `ARCHITECTURE.md §7.5`。
+- **刷新失败时面板处理**：每张失败实例的卡片显示**陈旧数据**：背景使用 `cardBgDim`、footer 三行：① `⚠ {错误信息}` ② `Cached {elapsed} ago`（基于 `slot.lastFetchedAt`，通过 `Date.timeSinceNow` 格式化）③ 窗口状态行（`Window: X left` / `Window expired` / `Window: —`，**总存在**以保持可预测的 footer 高度）。当天没有任何成功数据时，显示原来的「Unable to load usage data」视图。
   - "See details" 按钮始终保留——即使在失败状态用户也能跳转到 Provider 页面
 
 ### 3.5 偏好设置

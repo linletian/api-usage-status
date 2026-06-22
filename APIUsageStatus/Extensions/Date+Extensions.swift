@@ -53,4 +53,32 @@ extension Date {
         let components = calendar.dateComponents([.day], from: self.startOfDay, to: other.startOfDay)
         return max(0, components.day ?? 0)
     }
+
+    /// Format the elapsed time from `self` to now as "Xm" / "Xh Ym" / "Xd".
+    /// Returns "1m" for future or sub-minute elapsed times so the UI never
+    /// shows "0m" or a negative value.
+    var timeSinceNow: String {
+        let totalSeconds = max(0, Int(Date().timeIntervalSince(self)))
+        return totalSeconds.formattedDuration
+    }
+}
+
+extension Int {
+    /// Format non-negative seconds as "Xm" / "Xh Ym" / "Xd". Sub-minute
+    /// values are rounded up to "1m" so the UI never shows "0m". Used by
+    /// `Date.timeSinceNow` and `UsageCardView` for the window status row.
+    var formattedDuration: String {
+        if self >= 86_400 {
+            return "\(self / 86_400)d"
+        } else if self >= 3_600 {
+            let hours = self / 3_600
+            let minutes = (self % 3_600) / 60
+            if minutes == 0 {
+                return "\(hours)h"
+            }
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(Swift.max(1, self / 60))m"
+        }
+    }
 }

@@ -5,7 +5,7 @@ import AppKit
 
 /// Tests for `UsageCardView` — focused on the footer variants added
 /// for the stale / window-expired UX (per docs/ARCHITECTURE.md §7.5
-/// "刷新失败: 上次成功数据照常显示, 但全部元素以 #D6D0A0 渲染").
+/// "刷新失败: 上次成功数据照常显示, 整体应用 80% 透明度").
 ///
 /// **Why this file is mostly logic tests, not snapshot tests:**
 /// SwiftUI's `NSHostingController` requires a fully-initialized
@@ -17,11 +17,12 @@ import AppKit
 /// tests have been failing for this reason throughout this work.
 ///
 /// Instead of duplicating that broken pattern, we directly assert the
-/// pure functions `UsageCardView` depends on (colorState computation,
-/// `effectiveCachedAt` precedence, time formatting). These are what
-/// the SwiftUI @ViewBuilder branches on, so they give us the same
-/// coverage guarantee. If/when the project's SwiftUI runtime in
-/// tests is fixed, add snapshot tests following the
+/// pure functions `UsageCardView` depends on (`isStale` / `colorState`
+/// orthogonality, `Date.timeSinceNow` + `Int.formattedDuration`
+/// formatting, ErrorSummary lookup keys, `firstCycleRemaining` data
+/// derivation). These are what the SwiftUI @ViewBuilder branches on,
+/// so they give us the same coverage guarantee. If/when the project's
+/// SwiftUI runtime in tests is fixed, add snapshot tests following the
 /// `InstanceCardViewTests` walking-the-view-hierarchy pattern.
 @MainActor
 final class UsageCardViewTests: XCTestCase {
@@ -87,29 +88,30 @@ final class UsageCardViewTests: XCTestCase {
 
     // MARK: - Card-level branching logic
 
-    /// The card decides "is this stale?" from `slot.colorState == .error`,
-    /// NOT from any separate parameter. This is the single source of
-    /// truth for the footer branching — verified at the model layer
-    /// because SwiftUI view rendering requires an NSApplication
-    /// context that's missing in the test bundle (see file header).
-    func testStaleSlotCollapsesColorStateToError() {
+    /// The card decides "is this stale?" from `slot.isStale` directly
+    /// (private computed property). `colorState` and `isStale` are
+    /// orthogonal: a stale warning slot still reports `.warning` for
+    /// `colorState`. Verified at the model layer because SwiftUI view
+    /// rendering requires an `NSApplication` context that's missing in
+    /// the test bundle (see file header).
+    func testStaleSlotDoesNotAlterColorState() {
         let freshSlot = makeSlot(isStale: false)
         XCTAssertEqual(freshSlot.colorState, .normal,
                        "Sanity: fresh normal slot must have .normal colorState")
 
         let staleSlot = makeSlot(isStale: true)
-        XCTAssertEqual(staleSlot.colorState, .error,
-                       "isStale=true must collapse colorState to .error regardless of underlying threshold")
+        XCTAssertEqual(staleSlot.colorState, .normal,
+                       "isStale=true must NOT alter colorState — staleness is reported via slot.isStale")
+        XCTAssertTrue(staleSlot.isStale,
+                      "isStale is the single channel for staleness detection")
     }
 
-    /// `isStale` is read from `slot.colorState` inside the view (private
-    /// computed property). Verify that `slot.colorState` reflects the
-    /// staleness for each underlying `colorState` — preventing future
-    /// refactors from letting warning/critical leak through when stale.
-    func testStaleSlotsCollapseAllUnderlyingColorStates() {
+    /// `isStale` is independent of `colorState`. Verify that for each
+    /// underlying `colorState`, setting `isStale=true` leaves `colorState`
+    /// unchanged — and that `isStale` is the single field the view reads
+    /// for staleness.
+    func testStaleSlotsPreserveAllUnderlyingColorStates() {
         for underlyingState: ColorState in [.normal, .warning, .critical, .unavailable] {
-            // Construct a fresh slot whose underlying metric snapshot has
-            // the given threshold color. Stale should override.
             let freshSlot = makeSlot(
                 uuid: "stale-\(underlyingState)",
                 isStale: false,
@@ -117,14 +119,18 @@ final class UsageCardViewTests: XCTestCase {
             )
             XCTAssertEqual(freshSlot.colorState, underlyingState,
                            "Sanity: fresh slot with snapshot colorState=\(underlyingState) must reflect it")
+            XCTAssertFalse(freshSlot.isStale,
+                           "Fresh slot must NOT be marked stale")
 
             let staleSlot = makeSlot(
                 uuid: "stale-\(underlyingState)",
                 isStale: true,
                 snapshotColorState: underlyingState
             )
-            XCTAssertEqual(staleSlot.colorState, .error,
-                           "isStale=true must collapse \(underlyingState) to .error")
+            XCTAssertEqual(staleSlot.colorState, underlyingState,
+                           "isStale=true must preserve \(underlyingState) colorState (orthogonal fields)")
+            XCTAssertTrue(staleSlot.isStale,
+                          "isStale must report true regardless of underlying colorState")
         }
     }
 
@@ -157,33 +163,13 @@ final class UsageCardViewTests: XCTestCase {
                        "Snapshot with cycleRemainingSeconds=nil (no window) must NOT register as expired")
     }
 
-    // MARK: - Footer text formatting (mirrors `formatTimeSince` in UsageCardView)
+    // MARK: - Footer text formatting (Date.timeSinceNow)
 
     /// The card footer shows "Cached Xm ago" / "Cached Xh Ym ago" /
     /// "Cached Xd ago" depending on elapsed seconds. This test pins
-    /// the formatting so a regression here is caught at the unit level
-    /// rather than via a render-only test.
+    /// `Date.timeSinceNow` (see `Date+Extensions.swift`) so a regression
+    /// here is caught at the unit level rather than via a render-only test.
     func testCachedTimeFormatting() {
-        // We replicate `formatTimeSince`'s logic here verbatim. If the
-        // production implementation changes, update this test in the
-        // same commit so the contract stays explicit.
-        func formatTimeSince(_ date: Date) -> String {
-            let elapsed = max(0, Date().timeIntervalSince(date))
-            let totalSeconds = Int(elapsed)
-            if totalSeconds >= 86_400 {
-                let days = totalSeconds / 86_400
-                return "\(days)d"
-            } else if totalSeconds >= 3_600 {
-                let hours = totalSeconds / 3_600
-                let minutes = (totalSeconds % 3_600) / 60
-                if minutes == 0 { return "\(hours)h" }
-                return "\(hours)h \(minutes)m"
-            } else {
-                let minutes = max(1, totalSeconds / 60)
-                return "\(minutes)m"
-            }
-        }
-
         let cases: [(TimeInterval, String)] = [
             (60, "1m"),
             (60 * 5, "5m"),
@@ -196,8 +182,61 @@ final class UsageCardViewTests: XCTestCase {
         ]
         for (elapsed, expected) in cases {
             let past = Date().addingTimeInterval(-elapsed)
-            XCTAssertEqual(formatTimeSince(past), expected,
-                           "formatTimeSince(\(Int(elapsed))s) must equal '\(expected)'")
+            XCTAssertEqual(past.timeSinceNow, expected,
+                           "timeSinceNow for \(Int(elapsed))s elapsed must equal '\(expected)'")
+        }
+    }
+
+    /// The card footer's third row ("Window: X left" / "Window expired" /
+    /// "Window: —") branches on the first non-nil `cycleRemainingSeconds`
+    /// across the slot's metric snapshots. The SwiftUI `windowStatusRow`
+    /// itself can't be unit-tested without a real `NSApplication` context
+    /// (see file header), so we pin the underlying data shape.
+    func testWindowStatusRowDataDerivation() {
+        // Mirrors `UsageCardView.firstCycleRemaining`: pick the first
+        // snapshot with a non-nil `cycleRemainingSeconds`.
+        func firstCycleRemaining(of slot: SlotViewData) -> Int? {
+            slot.metricSnapshots.first(where: { $0.cycleRemainingSeconds != nil })?.cycleRemainingSeconds
+        }
+
+        let noWindow = makeSlot(cycleRemainingSeconds: nil)
+        XCTAssertNil(firstCycleRemaining(of: noWindow),
+                     "No snapshot with cycleRemainingSeconds set → firstCycleRemaining must be nil")
+
+        let activeWindow = makeSlot(cycleRemainingSeconds: 3600)
+        XCTAssertEqual(firstCycleRemaining(of: activeWindow), 3600,
+                       "Snapshot with cycleRemainingSeconds=3600 → firstCycleRemaining = 3600")
+
+        let expiredWindow = makeSlot(cycleRemainingSeconds: 0)
+        XCTAssertEqual(firstCycleRemaining(of: expiredWindow), 0,
+                       "Snapshot with cycleRemainingSeconds=0 → firstCycleRemaining = 0 (treated as expired by the view)")
+
+        let negativeWindow = makeSlot(cycleRemainingSeconds: -30)
+        XCTAssertEqual(firstCycleRemaining(of: negativeWindow), -30,
+                       "Snapshot with negative cycleRemainingSeconds → firstCycleRemaining = -30 (treated as expired)")
+    }
+
+    // MARK: - Window time formatting (Int.formattedDuration)
+
+    /// The third row of the stale footer formats remaining seconds as
+    /// "Xm" / "Xh Ym" / "Xd". Pins `Int.formattedDuration`
+    /// (see `Date+Extensions.swift`) — the shared formatter used by
+    /// both `Date.timeSinceNow` and `UsageCardView`'s window status row.
+    /// Single source of truth for the duration string format.
+    func testWindowTimeFormatting() {
+        let cases: [(Int, String)] = [
+            (60, "1m"),
+            (60 * 30, "30m"),
+            (60 * 59, "59m"),
+            (60 * 60, "1h"),
+            (60 * 60 + 60 * 30, "1h 30m"),
+            (60 * 60 * 2, "2h"),
+            (60 * 60 * 24, "1d"),
+            (60 * 60 * 24 * 3, "3d"),
+        ]
+        for (seconds, expected) in cases {
+            XCTAssertEqual(seconds.formattedDuration, expected,
+                           "formattedDuration(\(seconds)s) must equal '\(expected)'")
         }
     }
 

@@ -897,7 +897,7 @@ enum RefreshError: Error {
 
 | 用途 | 色值 | 说明 |
 |------|------|------|
-| 置灰色 | `#D6D0A0` | 所有非活跃状态（加载中/禁用/失败/余额不可用）统一置灰色。文字等所有槽位元素均以此色渲染 |
+| 置灰色 | `#D6D0A0` | 所有非活跃状态（加载中/禁用/余额不可用）统一置灰色。文字等所有槽位元素均以此色渲染。**注意**：刷新失败（陈旧）不再使用此色，详见 §7.5 |
 | 安全 | `#4CAF50` | 彩色模式下的正常状态 |
 | 警告 | `#FFC107` | 彩色模式下的警告阈值 |
 | 严重 | `#F44336` | 彩色模式下的严重阈值 |
@@ -955,28 +955,27 @@ SwiftUI 面板使用独立的语义色彩令牌（与菜单栏 NSColor 互不影
 | 加载中（首次刷新） | `•••` | 以 `#D6D0A0` 系统字体渲染 |
 | 全部实例已禁用 | `NO API` | 以 `#D6D0A0` 系统字体渲染 |
 | 余额不可用（`is_available = false`） | `N/A` | 以 `#D6D0A0` 系统字体渲染 |
-| 刷新失败 | 上次成功数据照常显示，但全部元素以 `#D6D0A0` 渲染 | 以 `#D6D0A0` 系统字体渲染，菜单栏不展示错误文字 |
+| 刷新失败 | 上次成功数据照常显示，但渲染时整体应用 80% 透明度 | 文字保留原阈值颜色（warning yellow / critical red / safe green），仅降低透明度；菜单栏不展示错误文字 |
 
-**挖空 pill 渲染**（2026-06-21）：刷新失败时陈旧（`.error` colorState）槽位以"挖空圆角矩形"渲染，作为异常信号：
+**陈旧槽位 80% 透明度渲染**（2026-06-22）：刷新失败时陈旧（`isStale=true`）槽位的视觉信号简化为"在原阈值颜色上整体应用 80% 透明度"：
 
-- 陈旧槽位绘制一个圆角矩形 pill（`pillCornerRadius = 3pt`，`pillVerticalMargin = 2pt`），填充 `#D6D0A0`。
-- 正常活跃槽位（`.normal` / `.warning` / `.critical`）保持纯色文字渲染，无 pill 背景。
-- 文字通过 `CGContext.setBlendMode(.destinationOut)` 绘制为透明镂空，让菜单栏背景穿透文字形状显示。
-- 文字绘制使用 CTLineDraw（而非 NSString.draw），确保 `destinationOut` blend mode 可靠生效。
-- 陈旧槽位不触发呼吸动画（`updateBreathingState` 仅加入 warning/critical 的 UUID，`.error` 不在此列）。
-- Pill 内部水平方向留 3pt padding（`pillHorizontalPadding`），文字不贴圆角边缘。
-- 详见 `docs/menu-bar-inverted-pill.md`。
+- 文字保留原始阈值颜色（warning yellow / critical red / safe green），不变色；单色模式下保留黑/白文字。
+- 通过 `slotColor.withAlphaComponent(0.8)` 对文字 + 阴影呼吸一并降透明度。
+- 不绘制 pill 背景、不切换为 `#D6D0A0` 灰色——避免视觉冲击过重。
+- 陈旧 warning/critical 槽位**保留**呼吸动画（`colorState` 仍为 `.warning` / `.critical`），陈旧态只影响透明度、不影响动画。
+- 陈旧检测与阈值判断**正交**：`colorState` 反映阈值，`isStale` 反映数据时效性，两个字段独立读取。
+- 详见 `docs/menu-bar-stale-alpha.md`。
 
-**ColorState.error 语义更新**（2026-06-21）：`ColorState.error` 现在由 `SlotViewData.isStale` 字段驱动：
+**ColorState.error 语义**（2026-06-22）：
 
-- `isStale` 是存储字段（`Bool`，默认 `false`），由 `AppState.mergeCycleResult` 在刷新失败时置 `true`，刷新成功后重置为 `false`。
-- `colorState` 计算属性在 `isStale == true` 时直接返回 `.error`（短路），不检查 `metricSnapshots` 的阈值状态。
-- 所有 UI 层（`colorForSlot`、footer 分支）仅读取 `colorState`，不再需要跟踪平行的 "staleness" 维度。
-- 这一设计消除了之前 `isStale` 与 `ColorState` 正交耦合的问题—— `.error` 是单一状态机来源。
+- `colorState` 计算属性**始终**反映 `metricSnapshots` 聚合的阈值状态——**不再**有 `isStale ? .error` 短路。
+- `isStale` 是存储字段（`Bool`，默认 `false`），由 `AppState.mergeCycleResult` 在刷新失败时置 `true`，刷新成功后重置为 `false`。**这是陈旧检测的唯一通道**——面板和菜单栏都从这里读取。
+- 之前的 `SlotViewData.underlyingColorState` 已删除（无调用方后无存在必要）。`colorState` 始终反映真实阈值，不再需要"绕路"通道。
+- 这一设计消除了之前"两个并行属性 + 短路逻辑"造成的阅读心智负担：阈值颜色始终来自 `colorState`，陈旧状态始终来自 `isStale`。
 
 > **默认动画行为**：默认动画仅在无实例配置时运行，一旦添加实例即自动停止。
 
-> **设计理由**：选择固定色值 `#D6D0A0`（低饱和暖灰）而非降低 `alphaValue` 的方式，是因为：(1) 单色模式下 alpha 叠加系统黑/白色后视觉效果不稳定；(2) 固定色值在两种色彩模式和明暗主题下均能清晰传递「非活跃」语义，且与系统菜单栏常见的灰色图标风格协调。
+> **设计理由**（2026-06-22）：陈旧渲染从"挖空 pill + 灰色"改为"原阈值颜色 + 80% alpha"——视觉信号更克制（pill 强提示不再必要），并消除了挖空 pill 的复杂渲染逻辑（`CTLineDraw` + `destinationOut` 混合模式）。macOS 菜单栏的 NSImage 渲染管道会做正确的预乘 alpha 合成，0.8 alpha 在两种色彩模式 + 明暗主题下视觉效果稳定且一致。
 
 ---
 
@@ -1197,34 +1196,44 @@ struct UsagePanelView: View {
 
 ### 10.2 降级策略
 
-- **保留最后已知数据**：刷新失败时，槽位显示上次成功数据，但所有元素以置灰色 `#D6D0A0` 渲染（详见 §7.3 色彩定义、§7.5 特殊状态）。面板显示上次成功刷新时间戳。
-- **部分成功处理**：若组 A（MiniMax）成功但组 B（DeepSeek）失败，MiniMax 实例正常更新，DeepSeek 实例单独置灰。
+- **保留最后已知数据**：刷新失败时，槽位显示上次成功数据。菜单栏：文字保留原阈值颜色、整体应用 80% 透明度（详见 §7.5 特殊状态）。面板：卡片背景使用 `cardBgDim`，footer 显示 `⚠ {错误信息}` + `Cached {elapsed} ago` + 窗口状态行（详见 §10.x 面板 footer）。面板显示上次成功刷新时间戳。
+- **部分成功处理**：若组 A（MiniMax）成功但组 B（DeepSeek）失败，MiniMax 实例正常更新，DeepSeek 实例单独进入陈旧态（菜单栏 80% 透明度 / 面板 footer 陈旧提示）。
 
 #### mergeCycleResult 合并策略（2026-06-21）
 
 每个刷新周期结束后，`RefreshService` 调用 `AppState.mergeCycleResult(cycleSuccesses:cycleErroredUUIDs:)` 一次性合并结果：
 
 1. **成功覆盖**：`cycleSuccesses` 中的槽位写入 `_slotViewDataList`（ `isStale=false`，`lastFetchedAt` 更新）。
-2. **失败保留**：`cycleErroredUUIDs` 中的 UUID 在 `_slotViewDataList` 里保留原槽位数据，但 `isStale=true`——使 `colorState` 计算属性短路返回 `.error`。
+2. **失败保留**：`cycleErroredUUIDs` 中的 UUID 在 `_slotViewDataList` 里保留原槽位数据，但 `isStale=true`（陈旧检测的唯一字段）。
 3. **删除清理**：`mergeCycleResult` 内部读取 `_instances`（而非外面传入 UUID 快照），消除 `getInstances()` → `merge` 间的 TOCTOU 窗口。实例被删除后，下次 merge 自动清理其缓存槽位。
 
 > **并发安全**：`mergeCycleResult` 内部构造字典时使用 last-wins 模式（`byUUID[uuid] = slot`）而非 `Dictionary(uniqueKeysWithValues:)`。后者在重复 UUID 时 crash——正常路径不会发生，但对调用方 bug 是防御性安全。
 
-#### 面板 footer 陈旧 / 窗口过期提示（2026-06-21）
+#### 面板 footer 陈旧 / 窗口状态提示（2026-06-22）
 
-当槽位 `colorState == .error`（即 `isStale == true`）：
+陈旧检测统一通过 `slot.isStale` 字段读取（详见 §7.5）。陈旧态与阈值颜色判断正交：阈值颜色来自 `slot.colorState`，陈旧状态来自 `slot.isStale`，两者独立。
+
+**当 `slot.isStale == true`**（陈旧数据）：
 
 - 卡片背景使用 `cardBgDim`（而非 `cardBg`），整体视觉变暗。
-- Footer 右对齐显示：
-  - `⚠ {errorType.errorMessage}`（来自 `errorSummaryByUUID`）
-  - `Cached {elapsed} ago`（基于 `slot.lastFetchedAt`，按分钟/小时/天格式化）
-  - 若配额窗口过期（`cycleRemainingSeconds != nil && cycleRemainingSeconds <= 0`），额外显示 `Window expired`
+- Footer 右对齐显示三行（按此顺序）：
+  1. `⚠ {errorType.errorMessage}`（来自 `errorSummaryByUUID`）
+  2. `Cached {elapsed} ago`（基于 `slot.lastFetchedAt`，通过 `Date.timeSinceNow` 格式化）
+  3. 窗口状态行（详见下文）
 - "See details" 按钮始终保留——用户即使在失败状态下也能跳转 Provider 页面。
 
-当槽位 `colorState != .error`（新鲜数据）：
+**当 `slot.isStale == false`**（新鲜数据）：
 
 - Footer 显示 `Updated HH:MM`（基于 `lastRefreshAt`）。
-- 如果配额窗口过期，在 countdown 行位置显示 `Window expired`（不显示 `Cached X ago`）。
+- 窗口状态行同上。
+
+**窗口状态行**（footer 第三行，**总存在**以保持可预测的 footer 高度）：
+
+- 活跃窗口（`firstCycleRemaining > 0`）：`Window: {Xm / Xh Ym / Xd} left`
+- 过期窗口（`firstCycleRemaining <= 0`）：`Window expired`
+- API 未报告窗口（`firstCycleRemaining == nil`）：`Window: —`
+
+`firstCycleRemaining` 选取 `slot.metricSnapshots` 中第一个 `cycleRemainingSeconds != nil` 的快照值。
 - **无连锁故障**：每个 `api_key_ref` 组独立失败。一组的失败不会阻止或延迟其他组。
 
 ### 10.3 日志记录

@@ -34,22 +34,10 @@ final class MenuBarIconRenderer {
     /// Horizontal gap between adjacent slots.
     private static let betweenSlotGap: CGFloat = 10.0
 
-    /// Corner radius of the rounded background pill behind each slot.
-    private static let pillCornerRadius: CGFloat = 3.0
-
-    /// Vertical margin between the slot top/bottom and the pill. Total pill
-    /// height = slotHeight - 2*pillVerticalMargin.
-    private static let pillVerticalMargin: CGFloat = 2.0
-
-    /// Downward offset for the pill background so its bottom edge clears
-    /// the text descenders. Applied to `pillRect`'s y coordinate only
-    /// (negative = moves pill toward slot bottom). Text baselines are
-    /// unchanged — only the pill fill shifts.
-    private static let pillVerticalOffsetY: CGFloat = -1.0
-
-    /// Horizontal padding inside the pill so text doesn't sit flush against
-    /// the rounded edge. Slot content width is padded by 2× this value.
-    private static let pillHorizontalPadding: CGFloat = 3.0
+    /// Alpha applied to the threshold color for stale (refresh-failed) slots.
+    /// The text keeps its original threshold color (warning yellow / critical
+    /// red / safe) but is dimmed to 80% opacity to signal cached data.
+    private static let staleAlpha: CGFloat = 0.8
 
     /// Animation texts for default state (no instances): cycles through "%" → "%%" → "%%%" → "%" ...
     private static let defaultAnimationTexts = ["%", "%%", "%%%"]
@@ -108,13 +96,11 @@ final class MenuBarIconRenderer {
         }
 
         // Per-slot content width: each slot is sized by its own content, no equal-width forcing.
-        // Stale slots get extra horizontal padding for the pill interior; fresh slots
-        // use plain text so `pillHorizontalPadding` is not added.
         let slotWidths: [CGFloat] = expandedSlots.map { slot in
             if slot.colorState == .unavailable && slot.instanceType.isBalance {
                 return textWidth("N/A", font: Self.font)
             }
-            return measureSlotContent(slot, isStale: slot.colorState == .error)
+            return measureSlotContent(slot)
         }
 
         let totalWidth = slotWidths.reduce(0, +)
@@ -135,13 +121,16 @@ final class MenuBarIconRenderer {
 
             defer { slotOriginX += slotWidth + Self.betweenSlotGap }
 
+            // Pick the threshold color from `colorForSlot` (which reads
+            // `slot.colorState` — the same value whether the slot is stale
+            // or fresh). Staleness is then layered on top via alpha only.
             let slotColor = colorForSlot(slot, colorMode: colorMode, isDarkBackground: isDarkBackground)
+            let renderColor = slot.isStale ? slotColor.withAlphaComponent(Self.staleAlpha) : slotColor
 
-            // Breathing animation shadow — computed regardless of staleness,
-            // but only applied below when the path (text or pill) supports it.
-            // `breathingSlots` only contains warning/critical UUIDs (see
-            // `updateBreathingState`), so stale `.error` slots are
-            // automatically excluded.
+            // Breathing animation shadow — applied when the threshold is
+            // warning or critical. `colorState` is independent of `isStale`,
+            // so stale warning/critical slots naturally keep glowing — the
+            // alpha reduction above applies to the shadow color too.
             var shadowBlur: CGFloat = 0
             var shadowOp: CGFloat = 0
             if breathingSlots.contains(slot.uuid) {
@@ -160,66 +149,22 @@ final class MenuBarIconRenderer {
                 shadowOp = shadowOpacity(forPhase: phase, config: config)
             }
 
-            // Stale (refresh-failed) slots → inverted pill with #D6D0A0 fill.
-            // No breathing animation on stale slots (shadowBlur/shadowOp stay 0
-            // because `breathingSlots` excludes `.error` UUIDs).
-            // Fresh slots → plain colored text, no pill background.
-            if slot.colorState == .error {
-                renderStaleTwoLineSlot(
-                    atX: slotOriginX,
-                    width: slotWidth,
-                    data: slot,
-                    color: slotColor,
-                    in: context
-                )
-            } else {
-                // Fresh (non-stale) slot: plain text, no pill background.
-                // Breathing shadow is applied around the text renders when active.
-                if slot.colorState == .unavailable && slot.instanceType.isBalance {
-                    let naWidth = textWidth("N/A", font: Self.font)
-                    let naX = slotOriginX + (slotWidth - naWidth) / 2
-                    renderText("N/A", at: CGPoint(x: naX, y: centerBaseline), color: slotColor, font: Self.font, in: context)
-                    continue
-                }
-
-                if shadowBlur > 0 && shadowOp > 0 {
-                    context.saveGState()
-                    context.setShadow(
-                        offset: CGSize.zero,
-                        blur: shadowBlur,
-                        color: slotColor.withAlphaComponent(shadowOp).cgColor
-                    )
-                }
-
-                let shortName = String(slot.shortName.uppercased().prefix(3))
-                let (topBaseline, bottomBaseline) = twoLineBaselines
-
-                let valueText: String
-                let valueFont: NSFont
-                switch slot.instanceType {
-                case .quota(let percent, _, _, _):
-                    valueFont = Self.monoFont
-                    valueText = slot.metricSnapshots.first?.isUnlimited == true
-                        ? "∞"
-                        : "\(Int(percent))%"
-                case .balance(let amount, _, _, _, let currency):
-                    let symbol = currency?.currencySymbol ?? "¥"
-                    valueText = symbol + balanceInt(amount)
-                    valueFont = Self.font
-                }
-
-                let nameWidth = textWidth(shortName, font: Self.font)
-                let valueWidth = textWidth(valueText, font: valueFont)
-                let nameX = slotOriginX + (slotWidth - nameWidth) / 2
-                let valueX = slotOriginX + (slotWidth - valueWidth) / 2
-
-                renderText(shortName, at: CGPoint(x: nameX, y: topBaseline), color: slotColor, font: Self.font, in: context)
-                renderText(valueText, at: CGPoint(x: valueX, y: bottomBaseline), color: slotColor, font: valueFont, in: context)
-
-                if shadowBlur > 0 && shadowOp > 0 {
-                    context.restoreGState()
-                }
+            if slot.colorState == .unavailable && slot.instanceType.isBalance {
+                let naWidth = textWidth("N/A", font: Self.font)
+                let naX = slotOriginX + (slotWidth - naWidth) / 2
+                renderText("N/A", at: CGPoint(x: naX, y: centerBaseline), color: renderColor, font: Self.font, in: context)
+                continue
             }
+
+            renderTwoLineSlot(
+                atX: slotOriginX,
+                width: slotWidth,
+                data: slot,
+                color: renderColor,
+                in: context,
+                shadowBlurRadius: shadowBlur,
+                shadowOpacity: shadowOp
+            )
         }
 
         image.unlockFocus()
@@ -229,6 +174,10 @@ final class MenuBarIconRenderer {
     func updateBreathingState(slotViewDataList: [SlotViewData]) {
         let expandedSlots = expandToMetricSlots(slotViewDataList)
 
+        // `colorState` is independent of `isStale` — a stale warning/critical
+        // slot still reports `.warning` / `.critical` here, so it keeps
+        // pulsing. Staleness is signaled separately by the 80% alpha overlay
+        // applied in the main render loop.
         let breathingUUIDs = Set(expandedSlots
             .filter { $0.colorState == .warning || $0.colorState == .critical }
             .map { $0.uuid })
@@ -287,10 +236,10 @@ final class MenuBarIconRenderer {
         var expanded: [SlotViewData] = []
         for slot in slotViewDataList {
             // Capture staleness from the source slot BEFORE constructing
-            // the expanded metric slot. The new `SlotViewData` only takes
-            // a frozen `colorState` param (legacy fallback), so the
-            // computed-property `.colorState == .error` short-circuit
-            // needs `isStale=true` to survive expansion.
+            // the expanded metric slot. The expanded slot's computed
+            // `colorState` reflects the snapshot's threshold (independent
+            // of `isStale`), so we forward `isStale` explicitly via the
+            // `isStaleSource` parameter below.
             let isStaleSource = slot.isStale
             let snapshots = slot.metricSnapshots
             if snapshots.isEmpty {
@@ -319,7 +268,7 @@ final class MenuBarIconRenderer {
         return expanded
     }
 
-    private func measureSlotContent(_ slot: SlotViewData, isStale: Bool = false) -> CGFloat {
+    private func measureSlotContent(_ slot: SlotViewData) -> CGFloat {
         let shortName = String(slot.shortName.uppercased().prefix(3))
         let nameWidth = textWidth(shortName, font: Self.font)
 
@@ -334,16 +283,16 @@ final class MenuBarIconRenderer {
             valueWidth = textWidth(symbol + balanceInt(amount), font: Self.font)
         }
 
-        // Stale slots get extra horizontal padding for the pill interior;
-        // fresh slots use plain text so no padding is needed.
-        return isStale
-            ? max(nameWidth, valueWidth) + 2 * Self.pillHorizontalPadding
-            : max(nameWidth, valueWidth)
+        return max(nameWidth, valueWidth)
     }
 
     // MARK: - Private: colors
 
     private func colorForSlot(_ slot: SlotViewData, colorMode: ColorMode, isDarkBackground: Bool) -> NSColor {
+        // `colorState` is independent of `isStale` — stale slots report their
+        // true threshold (e.g. `.warning`). Staleness is layered on top via
+        // the 80% alpha overlay in the main render loop, so this function
+        // only needs to handle the threshold color logic.
         switch slot.colorState {
         case .disabled, .unavailable, .loading, .error:
             return Self.dimColor
@@ -464,94 +413,6 @@ final class MenuBarIconRenderer {
         return position.x + size.width
     }
 
-    /// Render `text` in destination-out blend mode so the destination pixels
-    /// (the filled pill) become transparent in the text glyph shapes. Caller
-    /// must have already saved state and set up clipping + blend mode. The
-    /// fill color is irrelevant — only the alpha channel of the source
-    /// matters for `destinationOut`.
-    private func renderCutoutText(
-        _ text: String,
-        at position: CGPoint,
-        font: NSFont,
-        in context: CGContext
-    ) {
-        let attrString = NSAttributedString(string: text, attributes: [
-            .font: font,
-            // Fully opaque so destinationOut punches a clean hole; only
-            // the alpha channel of the source matters for the blend.
-            .foregroundColor: NSColor.black
-        ])
-        let line = CTLineCreateWithAttributedString(attrString)
-        // CTLineDraw uses the CGContext's current text matrix; the text
-        // origin is the baseline, matching the `position` argument used
-        // by `NSString.draw(at:)` in `renderText`.
-        context.textPosition = position
-        CTLineDraw(line, context)
-    }
-
-    /// Rounded-rect path sized to a slot, with `pillVerticalMargin` of
-    /// breathing room top and bottom. A negative `pillVerticalOffsetY`
-    /// shifts the pill toward the slot bottom so text descenders have
-    /// more clearance — text baselines are NOT affected.
-    private func pillRect(atX originX: CGFloat, width: CGFloat) -> CGRect {
-        return CGRect(
-            x: originX,
-            y: Self.pillVerticalMargin + Self.pillVerticalOffsetY,
-            width: width,
-            height: Self.slotHeight - 2 * Self.pillVerticalMargin
-        )
-    }
-
-    private func pillPath(rect: CGRect) -> CGPath {
-        return CGPath(
-            roundedRect: rect,
-            cornerWidth: Self.pillCornerRadius,
-            cornerHeight: Self.pillCornerRadius,
-            transform: nil
-        )
-    }
-
-    /// Pill + cutout variant for single-line slots (currently only used by
-    /// the unavailable-balance "N/A" rendering). Mirrors `renderTwoLineSlot`
-    /// but draws a single text line at the slot's vertical centre.
-    private func renderSingleLinePillSlot(
-        atX originX: CGFloat,
-        width: CGFloat,
-        text: String,
-        textX: CGFloat,
-        color: NSColor,
-        in context: CGContext,
-        shadowBlurRadius: CGFloat = 0,
-        shadowOpacity: CGFloat = 0
-    ) {
-        let rect = pillRect(atX: originX, width: width)
-        let path = pillPath(rect: rect)
-
-        if shadowBlurRadius > 0 && shadowOpacity > 0 {
-            context.saveGState()
-            context.setShadow(
-                offset: CGSize.zero,
-                blur: shadowBlurRadius,
-                color: color.withAlphaComponent(shadowOpacity).cgColor
-            )
-            context.addPath(path)
-            context.setFillColor(color.cgColor)
-            context.fillPath()
-            context.restoreGState()
-        } else {
-            context.addPath(path)
-            context.setFillColor(color.cgColor)
-            context.fillPath()
-        }
-
-        context.saveGState()
-        context.addPath(path)
-        context.clip()
-        context.setBlendMode(.destinationOut)
-        renderCutoutText(text, at: CGPoint(x: textX, y: centerBaseline), font: Self.font, in: context)
-        context.restoreGState()
-    }
-
     // MARK: - Baseline calculations
 
     /// Baseline for a single centred line in 22pt height.
@@ -579,22 +440,35 @@ final class MenuBarIconRenderer {
         return (top: top, bottom: bottom)
     }
 
-    // MARK: - Private: stale slot pill rendering
+    // MARK: - Private: two-line slot rendering (fresh)
 
-    /// Pill + cutout variant for stale (refresh-failed) two-line slots.
-    /// Per `docs/ARCHITECTURE.md §7.5`, `.error` colorState slots render
-    /// as a rounded pill filled with `#D6D0A0` and text cut out via
-    /// `destinationOut` blend mode. No breathing animation — stale slots
-    /// are excluded from `breathingSlots` at the source.
-    private func renderStaleTwoLineSlot(
+    /// Plain-text two-line slot for fresh (non-stale) data. Optional
+    /// breathing shadow is applied around the text renders when active
+    /// (caller passes 0/0 to disable).
+    private func renderTwoLineSlot(
         atX originX: CGFloat,
         width: CGFloat,
         data: SlotViewData,
         color: NSColor,
-        in context: CGContext
+        in context: CGContext,
+        shadowBlurRadius: CGFloat = 0,
+        shadowOpacity: CGFloat = 0
     ) {
         let shortName = String(data.shortName.uppercased().prefix(3))
         let (topBaseline, bottomBaseline) = twoLineBaselines
+
+        if shadowBlurRadius > 0 && shadowOpacity > 0 {
+            context.saveGState()
+            context.setShadow(
+                offset: CGSize.zero,
+                blur: shadowBlurRadius,
+                color: color.withAlphaComponent(shadowOpacity).cgColor
+            )
+        }
+
+        let nameWidth = textWidth(shortName, font: Self.font)
+        let nameX = originX + (width - nameWidth) / 2
+        renderText(shortName, at: CGPoint(x: nameX, y: topBaseline), color: color, font: Self.font, in: context)
 
         let valueText: String
         let valueFont: NSFont
@@ -610,29 +484,13 @@ final class MenuBarIconRenderer {
             valueFont = Self.font
         }
 
-        let nameWidth = textWidth(shortName, font: Self.font)
         let valueWidth = textWidth(valueText, font: valueFont)
-        let nameX = originX + (width - nameWidth) / 2
         let valueX = originX + (width - valueWidth) / 2
+        renderText(valueText, at: CGPoint(x: valueX, y: bottomBaseline), color: color, font: valueFont, in: context)
 
-        // 1. Fill the rounded pill with dim color (#D6D0A0).
-        //    No breathing shadow — stale slots are excluded from
-        //    `breathingSlots` at the source.
-        let rect = pillRect(atX: originX, width: width)
-        let path = pillPath(rect: rect)
-        context.addPath(path)
-        context.setFillColor(color.cgColor)
-        context.fillPath()
-
-        // 2. Cut out the text glyphs from the pill so the menu-bar
-        //    background shows through (the "inverted / 挖空" look).
-        context.saveGState()
-        context.addPath(path)
-        context.clip()
-        context.setBlendMode(.destinationOut)
-        renderCutoutText(shortName, at: CGPoint(x: nameX, y: topBaseline), font: Self.font, in: context)
-        renderCutoutText(valueText, at: CGPoint(x: valueX, y: bottomBaseline), font: valueFont, in: context)
-        context.restoreGState()
+        if shadowBlurRadius > 0 && shadowOpacity > 0 {
+            context.restoreGState()
+        }
     }
 
     deinit {

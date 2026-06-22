@@ -16,13 +16,12 @@ struct UsageCardView: View {
     /// that ended). Rendered as a "Window expired" hint.
     var windowExpired: Bool = false
 
-    /// Stale/cached data flag — read from `slot.colorState == .error`
-    /// (per docs/ARCHITECTURE.md §7.5, `.error` colorState means the
-    /// slot is showing cached data from a previous successful fetch).
-    /// Single source of truth for staleness; the menu bar, panel, and
-    /// this card all read from the same `colorState` value.
+    /// Stale/cached data flag — read from `slot.isStale` (the single
+    /// source of truth for staleness per `docs/ARCHITECTURE.md §7.5`).
+    /// The menu bar reads the same field to decide whether to layer 80%
+    /// alpha on top of the threshold color.
     private var isStale: Bool {
-        slot.colorState == .error
+        slot.isStale
     }
 
     private var displayTitle: String {
@@ -88,8 +87,11 @@ struct UsageCardView: View {
                 }
             }
 
-            // Footer: See details button + Last refresh time / stale info
-            HStack(alignment: .firstTextBaseline) {
+            // Footer: See details button + Last refresh time / stale info.
+            // `lastTextBaseline` anchors the See details button to the bottom
+            // row of `footerStatusView` (1–3 rows depending on stale / window-expired
+            // state), keeping it visually pinned to the bottom-left of the card.
+            HStack(alignment: .lastTextBaseline) {
                 if let url = providerURL {
                     Button {
                         NSWorkspace.shared.open(url)
@@ -118,7 +120,7 @@ struct UsageCardView: View {
     }
 
     /// Right-aligned status text in the footer. Three layouts:
-    ///   1. Stale (cached) → "⚠ {error}" + "Cached X ago" + optional "Window expired"
+    ///   1. Stale (cached) → "⚠ {error}" + "Cached X ago" + window status row
     ///   2. Fresh + window expired → "Window expired"
     ///   3. Fresh + window active → "Updated HH:MM"
     @ViewBuilder
@@ -134,16 +136,15 @@ struct UsageCardView: View {
                     .font(.system(size: 9))
                     .foregroundColor(Color.warningYellow)
                 }
-                if let cachedAt = effectiveCachedAt {
-                    Text("Cached \(formatTimeSince(cachedAt)) ago")
+                if let cachedAt = slot.lastFetchedAt {
+                    Text("Cached \(cachedAt.timeSinceNow) ago")
                         .font(.system(size: 9))
                         .foregroundColor(Color.textSecondary)
                 }
-                if windowExpired {
-                    Text("Window expired")
-                        .font(.system(size: 9))
-                        .foregroundColor(Color.textSecondary)
-                }
+                // Window status row — always present so the footer height
+                // is predictable. Shows remaining time, "expired", or "—"
+                // when the API didn't report a cycle window.
+                windowStatusRow
             }
         } else if windowExpired {
             Text("Window expired")
@@ -153,36 +154,6 @@ struct UsageCardView: View {
             Text(formattedTime(lastRefresh))
                 .font(.system(size: 9))
                 .foregroundColor(.textSecondary)
-        }
-    }
-
-    /// Timestamp to use for the "Cached X ago" copy. Precedence:
-    ///   1. `slot.lastFetchedAt` — stamped by the refresh service on each
-    ///      successful fetch and preserved across failed cycles.
-    ///   2. `lastRefreshAt` — fallback for the empty-state rendering path
-    ///      where `slot.lastFetchedAt` may be nil.
-    private var effectiveCachedAt: Date? {
-        slot.lastFetchedAt ?? lastRefreshAt
-    }
-
-    /// Format seconds elapsed as "Xm" / "Xh Ym" / "Xd". Mirrors the style
-    /// of `formatRemainingTime` so the UI reads consistently.
-    private func formatTimeSince(_ date: Date) -> String {
-        let elapsed = max(0, Date().timeIntervalSince(date))
-        let totalSeconds = Int(elapsed)
-        if totalSeconds >= 86_400 {
-            let days = totalSeconds / 86_400
-            return "\(days)d"
-        } else if totalSeconds >= 3_600 {
-            let hours = totalSeconds / 3_600
-            let minutes = (totalSeconds % 3_600) / 60
-            if minutes == 0 {
-                return "\(hours)h"
-            }
-            return "\(hours)h \(minutes)m"
-        } else {
-            let minutes = max(1, totalSeconds / 60)
-            return "\(minutes)m"
         }
     }
 
@@ -323,6 +294,21 @@ struct UsageCardView: View {
             // doesn't flicker between "0m" and "1m" near window close.
             let minutes = max(1, seconds / 60)
             return "\(minutes)m remaining"
+        }
+    }
+
+    /// Window status row shown as the third row in the stale footer.
+    /// Always renders (with "—" when the API didn't report a cycle window)
+    /// so the footer has a predictable height. Mirrors the label style of
+    /// the "Cached X ago" row.
+    @ViewBuilder
+    private var windowStatusRow: some View {
+        if let remaining = firstCycleRemaining, remaining > 0 {
+            Text("Window: \(remaining.formattedDuration) left")
+        } else if firstCycleRemaining != nil {
+            Text("Window expired")
+        } else {
+            Text("Window: —")
         }
     }
 

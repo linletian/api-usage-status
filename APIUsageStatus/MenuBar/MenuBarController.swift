@@ -18,7 +18,6 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
     private var latestRefreshState: RefreshState = .idle
     private var latestInstances: [Instance] = []
     private var latestSettings: GlobalSettings = .default
-    private var latestErrorSummaries: [ErrorSummary] = []
 
     init(appStateProxy: AppStateProxy, openSettings: @escaping () -> Void) {
         self.appStateProxy = appStateProxy
@@ -124,16 +123,13 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
             .combineLatest(proxy.$refreshState, proxy.$instances, proxy.$globalSettings)
 
         dataPublisher
-            .combineLatest(proxy.$errorSummaries)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] tuple in
-                let ((slots, state, instances, settings), errors) = tuple
+            .sink { [weak self] (slots, state, instances, settings) in
                 self?.updateCachedData(
                     slotDataList: slots,
                     refreshState: state,
                     instances: instances,
-                    settings: settings,
-                    errorSummaries: errors
+                    settings: settings
                 )
             }
             .store(in: &cancellables)
@@ -143,14 +139,12 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
         slotDataList: [SlotViewData],
         refreshState: RefreshState,
         instances: [Instance],
-        settings: GlobalSettings,
-        errorSummaries: [ErrorSummary]
+        settings: GlobalSettings
     ) {
         latestSlotData = slotDataList
         latestRefreshState = refreshState
         latestInstances = instances
         latestSettings = settings
-        latestErrorSummaries = errorSummaries
 
         iconRenderer?.updateBreathingState(slotViewDataList: slotDataList)
         if let renderer = iconRenderer {

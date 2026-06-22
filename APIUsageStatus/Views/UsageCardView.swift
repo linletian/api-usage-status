@@ -120,7 +120,7 @@ struct UsageCardView: View {
     }
 
     /// Right-aligned status text in the footer. Three layouts:
-    ///   1. Stale (cached) → "⚠ {error}" + "Cached X ago" + window status row
+    ///   1. Stale (cached) → "⚠ {error}" + "Cached X ago"
     ///   2. Fresh + window expired → "Window expired"
     ///   3. Fresh + window active → "Updated HH:MM"
     @ViewBuilder
@@ -141,10 +141,6 @@ struct UsageCardView: View {
                         .font(.system(size: 9))
                         .foregroundColor(Color.textSecondary)
                 }
-                // Window status row — always present so the footer height
-                // is predictable. Shows remaining time, "expired", or "—"
-                // when the API didn't report a cycle window.
-                windowStatusRow
             }
         } else if windowExpired {
             Text("Window expired")
@@ -294,21 +290,6 @@ struct UsageCardView: View {
             // doesn't flicker between "0m" and "1m" near window close.
             let minutes = max(1, seconds / 60)
             return "\(minutes)m remaining"
-        }
-    }
-
-    /// Window status row shown as the third row in the stale footer.
-    /// Always renders (with "—" when the API didn't report a cycle window)
-    /// so the footer has a predictable height. Mirrors the label style of
-    /// the "Cached X ago" row.
-    @ViewBuilder
-    private var windowStatusRow: some View {
-        if let remaining = firstCycleRemaining, remaining > 0 {
-            Text("Window: \(remaining.formattedDuration) left")
-        } else if firstCycleRemaining != nil {
-            Text("Window expired")
-        } else {
-            Text("Window: —")
         }
     }
 

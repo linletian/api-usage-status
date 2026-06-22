@@ -1196,7 +1196,7 @@ struct UsagePanelView: View {
 
 ### 10.2 降级策略
 
-- **保留最后已知数据**：刷新失败时，槽位显示上次成功数据。菜单栏：文字保留原阈值颜色、整体应用 80% 透明度（详见 §7.5 特殊状态）。面板：卡片背景使用 `cardBgDim`，footer 显示 `⚠ {错误信息}` + `Cached {elapsed} ago` + 窗口状态行（详见 §10.x 面板 footer）。面板显示上次成功刷新时间戳。
+- **保留最后已知数据**：刷新失败时，槽位显示上次成功数据。菜单栏：文字保留原阈值颜色、整体应用 80% 透明度（详见 §7.5 特殊状态）。面板：卡片背景使用 `cardBgDim`，footer 显示 `⚠ {错误信息}` + `Cached {elapsed} ago`（详见 §10.x 面板 footer）。面板显示上次成功刷新时间戳。
 - **部分成功处理**：若组 A（MiniMax）成功但组 B（DeepSeek）失败，MiniMax 实例正常更新，DeepSeek 实例单独进入陈旧态（菜单栏 80% 透明度 / 面板 footer 陈旧提示）。
 
 #### mergeCycleResult 合并策略（2026-06-21）
@@ -1209,31 +1209,21 @@ struct UsagePanelView: View {
 
 > **并发安全**：`mergeCycleResult` 内部构造字典时使用 last-wins 模式（`byUUID[uuid] = slot`）而非 `Dictionary(uniqueKeysWithValues:)`。后者在重复 UUID 时 crash——正常路径不会发生，但对调用方 bug 是防御性安全。
 
-#### 面板 footer 陈旧 / 窗口状态提示（2026-06-22）
+#### 面板 footer 陈旧提示（2026-06-22）
 
 陈旧检测统一通过 `slot.isStale` 字段读取（详见 §7.5）。陈旧态与阈值颜色判断正交：阈值颜色来自 `slot.colorState`，陈旧状态来自 `slot.isStale`，两者独立。
 
 **当 `slot.isStale == true`**（陈旧数据）：
 
 - 卡片背景使用 `cardBgDim`（而非 `cardBg`），整体视觉变暗。
-- Footer 右对齐显示三行（按此顺序）：
+- Footer 右对齐显示两行（按此顺序）：
   1. `⚠ {errorType.errorMessage}`（来自 `errorSummaryByUUID`）
   2. `Cached {elapsed} ago`（基于 `slot.lastFetchedAt`，通过 `Date.timeSinceNow` 格式化）
-  3. 窗口状态行（详见下文）
 - "See details" 按钮始终保留——用户即使在失败状态下也能跳转 Provider 页面。
 
 **当 `slot.isStale == false`**（新鲜数据）：
 
-- Footer 显示 `Updated HH:MM`（基于 `lastRefreshAt`）。
-- 窗口状态行同上。
-
-**窗口状态行**（footer 第三行，**总存在**以保持可预测的 footer 高度）：
-
-- 活跃窗口（`firstCycleRemaining > 0`）：`Window: {Xm / Xh Ym / Xd} left`
-- 过期窗口（`firstCycleRemaining <= 0`）：`Window expired`
-- API 未报告窗口（`firstCycleRemaining == nil`）：`Window: —`
-
-`firstCycleRemaining` 选取 `slot.metricSnapshots` 中第一个 `cycleRemainingSeconds != nil` 的快照值。
+- Footer 显示 `Updated HH:MM`（基于 `lastRefreshAt`），或 `Window expired`（当 `windowExpired == true` 时）。
 - **无连锁故障**：每个 `api_key_ref` 组独立失败。一组的失败不会阻止或延迟其他组。
 
 ### 10.3 日志记录

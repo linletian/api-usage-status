@@ -187,12 +187,13 @@ final class UsageCardViewTests: XCTestCase {
         }
     }
 
-    /// The card footer's third row ("Window: X left" / "Window expired" /
-    /// "Window: —") branches on the first non-nil `cycleRemainingSeconds`
-    /// across the slot's metric snapshots. The SwiftUI `windowStatusRow`
-    /// itself can't be unit-tested without a real `NSApplication` context
-    /// (see file header), so we pin the underlying data shape.
-    func testWindowStatusRowDataDerivation() {
+    /// The per-card "Xh Ym remaining" countdown (rendered by
+    /// `multiMetricContent`) reads `firstCycleRemaining`, which picks
+    /// the first snapshot with a non-nil `cycleRemainingSeconds` across
+    /// the slot's metric snapshots. The SwiftUI view itself can't be
+    /// unit-tested without a real `NSApplication` context (see file
+    /// header), so we pin the underlying data shape.
+    func testFirstCycleRemainingDerivation() {
         // Mirrors `UsageCardView.firstCycleRemaining`: pick the first
         // snapshot with a non-nil `cycleRemainingSeconds`.
         func firstCycleRemaining(of slot: SlotViewData) -> Int? {
@@ -218,10 +219,9 @@ final class UsageCardViewTests: XCTestCase {
 
     // MARK: - Window time formatting (Int.formattedDuration)
 
-    /// The third row of the stale footer formats remaining seconds as
-    /// "Xm" / "Xh Ym" / "Xd". Pins `Int.formattedDuration`
-    /// (see `Date+Extensions.swift`) — the shared formatter used by
-    /// both `Date.timeSinceNow` and `UsageCardView`'s window status row.
+    /// `Int.formattedDuration` formats seconds as "Xm" / "Xh Ym" / "Xd".
+    /// Pins the shared formatter (see `Date+Extensions.swift`) used by
+    /// `Date.timeSinceNow` and the per-card "Xh Ym remaining" countdown.
     /// Single source of truth for the duration string format.
     func testWindowTimeFormatting() {
         let cases: [(Int, String)] = [

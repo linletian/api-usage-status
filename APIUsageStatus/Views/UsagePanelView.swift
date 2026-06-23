@@ -119,7 +119,7 @@ struct UsagePanelView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
-        .frame(width: 300)
+        .frame(width: 360)
         .ignoresSafeArea(edges: .top)
     }
 

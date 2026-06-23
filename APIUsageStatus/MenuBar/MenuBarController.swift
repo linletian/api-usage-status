@@ -60,7 +60,7 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
 
     private func setupWindow() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 400),
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 400),
             styleMask: [.titled, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -73,7 +73,7 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.level = .normal
         window.collectionBehavior = [.stationary]
-        window.minSize = NSSize(width: 300, height: 160)
+        window.minSize = NSSize(width: 360, height: 160)
         window.delegate = self
 
         let contentView: NSView
@@ -191,7 +191,8 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
             let topInset = view.safeAreaInsets.top
             let adjusted = measured - topInset
             if adjusted > 0 {
-                return min(500, max(160, adjusted))
+                let maxHeight = NSScreen.main?.visibleFrame.height ?? 500
+                return min(maxHeight, max(160, adjusted))
             }
         }
         return estimatedContentHeight()
@@ -219,7 +220,8 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
         }
 
         let total = cardsHeight + buttonsHeight + padding
-        return min(500, max(160, total))
+        let maxHeight = NSScreen.main?.visibleFrame.height ?? 500
+        return min(maxHeight, max(160, total))
     }
 
     private func estimatedCardHeight(for slot: SlotViewData) -> CGFloat {
@@ -307,12 +309,16 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
         if window.isVisible {
             window.close()
         } else {
-            let height = calculateContentHeight()
+            let rawHeight = calculateContentHeight()
+            let buttonFrame = button.window?.convertToScreen(button.convert(button.bounds, to: nil)) ?? .zero
+            // Clamp height so the popup bottom doesn't extend past the Dock.
+            let screenMinY = NSScreen.main?.visibleFrame.minY ?? 0
+            let availableBelow = buttonFrame.minY - screenMinY - 4
+            let height = min(rawHeight, max(160, availableBelow))
             var frame = window.frame
-            frame.size.width = 300
+            frame.size.width = 360
             frame.size.height = height
 
-            let buttonFrame = button.window?.convertToScreen(button.convert(button.bounds, to: nil)) ?? .zero
             let originX = buttonFrame.midX - frame.width / 2
             let originY = buttonFrame.minY - frame.height - 4
             frame.origin = CGPoint(x: originX, y: originY)

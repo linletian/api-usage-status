@@ -628,26 +628,33 @@ actor RefreshService {
                 // providers).
                 let displayUsage: String
                 let displayLimit: String
+                let overageUSD: Double
                 if instance.provider == Provider.githubCopilot.rawValue {
                     let entitlement = Int(response.value(forDimension: "\(key):entitlement") ?? "0") ?? 0
                     let remaining = Int(response.value(forDimension: "\(key):remaining") ?? "0") ?? 0
+                    let overageCount = Int(response.value(forDimension: "\(key):overage_count") ?? "0") ?? 0
                     let isUnlimited = response.value(forDimension: "\(key):unlimited") == "true"
                     if isUnlimited {
                         displayUsage = "∞"
                         displayLimit = String(entitlement)
                     } else {
-                        let used = max(0, entitlement - remaining)
+                        let used = max(0, entitlement - remaining) + overageCount
                         displayUsage = String(used)
                         displayLimit = String(entitlement)
                     }
+                    overageUSD = 0
                 } else if instance.provider == Provider.opencode.rawValue {
-                    let used = response.value(forDimension: "\(key):used") ?? "0"
-                    let limit = response.value(forDimension: "\(key):limit") ?? "0"
-                    displayUsage = "$\(used)"
-                    displayLimit = "$\(limit)"
+                    let usedStr = response.value(forDimension: "\(key):used") ?? "0"
+                    let limitStr = response.value(forDimension: "\(key):limit") ?? "0"
+                    displayUsage = "$\(usedStr)"
+                    displayLimit = "$\(limitStr)"
+                    let usedVal = Double(usedStr) ?? 0
+                    let limitVal = Double(limitStr) ?? 0
+                    overageUSD = usedVal > limitVal ? usedVal - limitVal : 0
                 } else {
                     displayUsage = valueString
                     displayLimit = ""
+                    overageUSD = 0
                 }
 
                 let colorState = determineColorState(percent: percent, thresholds: instance.thresholds)
@@ -681,7 +688,8 @@ actor RefreshService {
                     displayInMenuBar: metricConfig.displayInMenuBar,
                     isUnlimited: isUnlimited,
                     shortName: metricConfig.shortName,
-                    cycleEndTime: cycleEndTime
+                    cycleEndTime: cycleEndTime,
+                    overageUSD: overageUSD
                 ))
             }
 

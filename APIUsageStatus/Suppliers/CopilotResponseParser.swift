@@ -56,9 +56,14 @@ struct CopilotResponseParser {
         let overageCount = (try? numericValue(pi, key: "overage_count")) ?? 0
         let overagePermitted = pi["overage_permitted"] as? Bool ?? false
 
-        let usagePercent: Double = unlimited
-            ? 0
-            : max(0, min(100, 100.0 - percentRemaining))
+        let usagePercent: Double = {
+            if unlimited { return 0 }
+            if overagePermitted && overageCount > 0 {
+                let totalUsage = entitlement - remaining + overageCount
+                return entitlement > 0 ? max(0, totalUsage / entitlement * 100) : 0
+            }
+            return max(0, min(100, 100.0 - percentRemaining))
+        }()
 
         var rawData: [String: String] = [:]
         rawData[Self.dimensionKey] = formatPercent(usagePercent)
@@ -99,7 +104,7 @@ struct CopilotResponseParser {
     }
 
     private func formatPercent(_ value: Double) -> String {
-        let clamped = min(100.0, max(0.0, value))
+        let clamped = max(0.0, value)
         return String(format: "%.1f", clamped)
     }
 

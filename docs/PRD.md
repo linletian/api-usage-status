@@ -39,7 +39,7 @@
 - **图标为代码动态绘制**，不依赖静态 SVG/PNG 资源文件，随数据刷新实时重绘
 - 每个槽位采用**双行层叠布局**，上下分两行、各自水平居中：
   - **第一行**（上）：**显示名简称**（2 个英文字母）
-  - **第二行**（下）：根据实例类型区分 —— **周期配额型**显示百分比数字（如 `82%`），**余额型**显示余额数值（如 `¥45`）
+  - **第二行**（下）：根据实例类型区分 —— **周期配额型**显示实际计算百分比数字（如 `82%`；开启套餐外余额消费时可超过 100%，如 `123%`），**余额型**显示余额数值（如 `¥45`）
 - **槽位内所有文字均使用系统字体（SF Pro Regular，8 pt）渲染**，与用量面板中最小字号（9pt system）保持同一字族，双行层叠在 22pt 高度内紧凑但可辨识。百分比数字使用等宽变体（`.monospacedSystemFont` 8pt）以保证槽位宽度稳定
 - 图标色彩方案（用户可配置）：
   - **单色模式**：图标跟随 macOS 菜单栏明暗主题（黑/白），所有文字使用系统标签色（`NSColor.labelColor`）。百分比数字本身即为用量信息载体；warning 和 critical 状态触发呼吸动画：以阴影脉冲强度来表示紧急性——warning 以 4 秒周期缓慢呼吸（阴影模糊半径 0~6px，不透明度 0~0.7），critical 以 2.0 秒周期急促呼吸（阴影模糊半径 0~8px，不透明度 0~0.85）；余额型实例不触发呼吸动画
@@ -55,7 +55,7 @@
     - **同时充当单实例刷新按钮**——点击后立即对该实例触发一次独立的刷新 cycle；运行中替换为旋转 ProgressView（详见 §3.4）
   - **显示名**（用户自定义，如「MiniMax-文字」「DS-主号」）
   - **周期配额型实例**：
-    - 当前周期用量（用量 / 上限）
+    - 当前周期用量（用量 / 上限）。当 Copilot 或 OpenCode Go 用量超过 100%（开启套餐外余额消费）时，右侧百分比显示为 `100% + (超出百分比)%`（Copilot）或 `100% + $超出金额`（OpenCode Go）；进度条切换为按比例的两段式：前段红色实心代表 100% 配额，后段红色斑马纹代表超出部分
     - 用量进度条（百分比 + 数值）
     - 下次刷新剩余时间：距下次定时刷新的分钟数。自然天/周配额型额外显示：周期剩余天数
   - **余额型实例**：
@@ -585,7 +585,7 @@ Authorization: Bearer <Token Plan Key>
 - 用量以美元金额计量（非 Token 数），不同模型消耗速率不同
 - OpenCode 会将会话历史和 cost 数据写入本地 SQLite（`~/.local/share/opencode/opencode.db`）
 - 本项目通过 `opencode db "<SQL>" --format json` 子命令读取该数据库，无需远程 HTTP API
-- 超出限制后，若用户开通了 Zen 余额自动补充功能，可继续使用
+- 超出限制后，若用户开通了 Zen 余额自动补充功能，可继续使用。此时用量百分比可超过 100%，面板中显示为 `100% + $超出金额`，进度条显示两段式斑马纹
 
 **实现方式**：
 
@@ -648,8 +648,8 @@ Accept: application/json
 | `quota_snapshots.premium_interactions.remaining` | number | 剩余次数 |
 | `quota_snapshots.premium_interactions.percent_remaining` | number | 剩余百分比（0-100，首选渲染字段） |
 | `quota_snapshots.premium_interactions.unlimited` | boolean | true 时为无限套餐，菜单栏槽位已用百分比统一显示 0% |
-| `quota_snapshots.premium_interactions.overage_count` | number | 超额次数（保留字段，目前不参与菜单栏渲染） |
-| `quota_snapshots.premium_interactions.overage_permitted` | boolean | 是否允许超额（保留字段） |
+| `quota_snapshots.premium_interactions.overage_count` | number | 超额次数。当 `overage_permitted` 为 true 且此值 > 0 时，用量百分比会超过 100%，面板中显示为 `100% + (超出百分比)%` |
+| `quota_snapshots.premium_interactions.overage_permitted` | boolean | 是否允许超额消费。为 true 且 overage_count > 0 时解锁超额显示 |
 
 **与本产品的关联**：
 
@@ -657,7 +657,7 @@ Accept: application/json
 - **周期类型**：月度配额型，重置时间优先取 API 返回的 `quota_reset_date_utc`（支持毫秒精度）；缺失时 fallback 到下月首日 UTC 零点，下次刷新成功后自动覆盖
 - **百分比计算规则**：
   - `unlimited == true` 时：菜单栏槽位已用百分比 = `0`（与 MiniMax 周配额未激活的语义一致，避免无限套餐误触发阈值）
-  - `unlimited == false` 时：已用百分比 = `100 - percent_remaining`
+  - `unlimited == false` 时：已用百分比 = `100 - percent_remaining`。当 `overage_permitted == true` 且 `overage_count > 0` 时，已用百分比 = `(entitlement - remaining + overage_count) / entitlement * 100`，可超过 100%
 - **覆盖套餐**：Free / Pro / Pro+ / Business / Enterprise 全部适用，端点对所有套餐通用
 - **不在本次实现范围**：GitHub Billing API（`/users/{username}/settings/billing/premium_request/usage`）的双探针模式，本项目自用 Personal 套餐，单 Internal API 已足够
 

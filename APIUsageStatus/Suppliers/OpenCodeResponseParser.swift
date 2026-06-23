@@ -167,6 +167,6 @@ struct OpenCodeResponseParser {
 
     private func percent(_ used: Double, limit: Double) -> Double {
         guard limit > 0 else { return 0 }
-        return min(100, max(0, used / limit * 100))
+        return max(0, used / limit * 100)
     }
 }

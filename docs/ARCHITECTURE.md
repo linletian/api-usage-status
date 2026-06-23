@@ -584,9 +584,10 @@ struct MetricSnapshot: Equatable {
     let key: String
     let group: String?
     let window: String?
-    let percent: Double              // 用量百分比 (0–100)
-    let displayUsage: String         // 预格式化的用量字符串（如 "28.0%"、"¥42.50"）
+    let percent: Double              // 用量百分比（可超过 100% 当开启套餐外余额消费时）
+    let displayUsage: String         // 预格式化的用量字符串（如 "369"、"$15.00"、"¥42.50"）
     let displayLimit: String         // 预格式化的上限字符串（可为空）
+    let overageUSD: Double           // OpenCode Go 超额消费的美元金额（无超额时为 0）
     let cycleEndTime: Date?          // 当前重置周期的绝对结束时间（UI 用 TimelineView 实时倒计时的权威源）
     let cycleRemainingSeconds: Int?  // 同次刷新时刻的剩余秒数快照（cycleEndTime - now，向下取整到 0），供 InstanceType.quota 等无 Date() 的调用方使用
     let colorState: ColorState

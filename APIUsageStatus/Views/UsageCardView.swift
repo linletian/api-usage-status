@@ -207,7 +207,7 @@ struct UsageCardView: View {
             // All quota-type providers use text-above-bar to match the
             // Weekly section layout. Balance-type instances have their
             // own layout and don't go through this path.
-            quotaSummaryRow(usageValue: usageValue, limitValue: limitValue, percent: percent)
+            quotaSummaryRow(usageValue: usageValue, limitValue: limitValue, percent: percent, overageUSD: slot.metricSnapshots.first?.overageUSD ?? 0)
             quotaProgressBar(percent: percent, height: 4)
 
             // Countdown row: "Xh Ym remaining" (until the quota window
@@ -344,20 +344,41 @@ struct UsageCardView: View {
     }
 
     @ViewBuilder
-    private func quotaSummaryRow(usageValue: String, limitValue: String, percent: Double) -> some View {
+    private func quotaSummaryRow(usageValue: String, limitValue: String, percent: Double, overageUSD: Double = 0) -> some View {
         HStack(spacing: 4) {
             Text(quotaSummaryText(usageValue: usageValue, limitValue: limitValue))
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundColor(.textSecondary)
             Spacer()
-            Text("\(Int(percent))%")
+            Text(overagePercentText(percent: percent, overageUSD: overageUSD))
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundColor(percent >= 95 ? .dangerRed : (percent >= 80 ? .warningYellow : .textPrimary))
         }
     }
 
+    private func overagePercentText(percent: Double, overageUSD: Double) -> String {
+        guard percent > 100 else { return "\(Int(percent))%" }
+        switch slot.provider {
+        case Provider.githubCopilot.rawValue:
+            return "100% + \(String(format: "%.1f", percent - 100))%"
+        case Provider.opencode.rawValue:
+            return "100% + $\(String(format: "%.2f", overageUSD))"
+        default:
+            return "\(Int(percent))%"
+        }
+    }
+
     @ViewBuilder
     private func quotaProgressBar(percent: Double, height: CGFloat) -> some View {
+        if percent > 100 {
+            overageProgressBar(percent: percent, height: height)
+        } else {
+            normalProgressBar(percent: percent, height: height)
+        }
+    }
+
+    @ViewBuilder
+    private func normalProgressBar(percent: Double, height: CGFloat) -> some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 2)
@@ -369,6 +390,43 @@ struct UsageCardView: View {
                         width: max(0, min(geo.size.width, geo.size.width * CGFloat(percent) / 100.0)),
                         height: height
                     )
+            }
+        }
+        .frame(height: height)
+    }
+
+    @ViewBuilder
+    private func overageProgressBar(percent: Double, height: CGFloat) -> some View {
+        let quotaFraction = 100.0 / percent
+        let overageFraction = (percent - 100.0) / percent
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.progressTrackBg)
+                    .frame(height: height)
+                // Segment 1: solid red for the 100% quota portion
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.dangerRed)
+                    .frame(width: geo.size.width * CGFloat(quotaFraction), height: height)
+                // Segment 2: zebra-striped for the overage portion
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.dangerRed.opacity(0.25))
+                    .frame(width: geo.size.width * CGFloat(overageFraction), height: height)
+                    .overlay(
+                        Canvas { context, size in
+                            let stripeSpacing: CGFloat = 4
+                            var x: CGFloat = -size.height
+                            while x < size.width {
+                                var path = Path()
+                                path.move(to: CGPoint(x: x, y: size.height))
+                                path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                                context.stroke(path, with: .color(.dangerRed), lineWidth: 1.5)
+                                x += stripeSpacing
+                            }
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 2))
+                    )
+                    .offset(x: geo.size.width * CGFloat(quotaFraction))
             }
         }
         .frame(height: height)
@@ -583,7 +641,7 @@ struct UsageCardView: View {
                             .foregroundColor(.textSecondary)
                     }
                     Spacer()
-                    Text("\(Int(snapshot.percent))%")
+                    Text(overagePercentText(percent: snapshot.percent, overageUSD: snapshot.overageUSD))
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .foregroundColor(percentTextColor(for: snapshot.percent))
                 }

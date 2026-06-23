@@ -96,7 +96,7 @@ final class CopilotResponseParserTests: XCTestCase {
 
         let response = try parser.parse(json)
 
-        XCTAssertEqual(response.rawData["premium_interactions"], "100.0")
+        XCTAssertEqual(response.rawData["premium_interactions"], "114.0")
         XCTAssertEqual(response.rawData["premium_interactions:overage_count"], "42")
         XCTAssertEqual(response.rawData["premium_interactions:overage_permitted"], "true")
     }

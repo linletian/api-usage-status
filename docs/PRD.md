@@ -123,12 +123,13 @@
 
 - **全局 Refresh 按钮**（面板底部）：
   - 任何时候都可点——包括正在跑定时或单实例 cycle 时。点击会**抢占**当前正在运行的 cycle（取消 + 立即开新一轮），保证任意时刻最多一个 cycle 在跑，连点 5 下也只会跑 2 轮（首轮被抢占，最新一轮完成）
-  - 按钮文案在 cycle 进行中切换为 `Refreshing…` + 旋转 ProgressView，但**按钮始终可点**（不置 disabled），视觉信号和抢占能力并存
+  - 按钮文案始终为 **`Refresh`**，cycle 进行中时图标从静态箭头切换为旋转 ProgressView。右侧 "Next refresh" 已实时切换为 `Refreshing…`，按钮自身不变文案避免语义重复。按钮**始终可点**（不置 disabled），确保抢占能力随时可用
 - **单实例刷新**（卡片状态圆点）：
   - 仅刷新该实例，**兄弟实例（同 `api_key_ref`）不被动**。supplier 调用按整组拉取，但只有目标实例生成 `SlotViewData`，兄弟实例的 slot 数据保留上一次缓存
   - cycle 在跑时（无论全局还是单实例），点击状态圆点 **no-op**——单实例刷新是"补刷新"手势，不打断用户已发起的连续工作。**双重保护**：UI 层 `ColorStateBadge.disabled(isRefreshing)` + service 层 `RefreshService.triggerInstanceRefresh` 的 `guard currentToken == nil`，任一即可阻止二次触发
   - **单实例刷新路径下**，失败时的 `errorSummaries` **仅覆盖该实例**的上一条错误，其他实例的错误状态保留不变（全局刷新仍按整组替换，详见 `ARCHITECTURE.md §2.7`）
 - **菜单栏不做"刷新中"动效**：刷新期间菜单栏槽位内容不变（保留上次成功数据），仅面板内部给出进度反馈。理由是菜单栏刷新频率高（默认 5 分钟一次），闪烁会让用户产生"在动"的错觉，违背稳定性优先的设计原则
+- **流式逐组更新**（2026-06-23）：全局刷新按 `api_key_ref` 逐组拉取，**每组数据就绪后立刻推送到 UI**（`mergeCycleResult` + `syncFromState`），不等待所有组完成。用户感知效果：先拉到的供应商实例先出数据，后拉到的仍然在转菊花。每组完成后该组实例的圆点菊花停止，remainingRefreshing UUID 集逐步缩窄。定时/单实例刷新同理适用
 
 **面板"Next refresh"文案**
 

@@ -303,6 +303,30 @@ actor RefreshService {
         let groupedByKeyRef = Dictionary(grouping: targetInstances) { $0.apiKeyRef }
         var allSlotData: [SlotViewData] = []
         var errorSummaries: [ErrorSummary] = []
+        var remainingRefreshing = targetUUIDs
+
+        /// Push accumulated results to AppState + UI mid-cycle. Called after
+        /// each supplier group completes (success or permanent error) so
+        /// instances update as data arrives instead of waiting for all
+        /// groups. Token-preempted check prevents a pre-empted old cycle
+        /// from clobbering the new owner's state.
+        func pushProgress() async {
+            guard !token.isPreempted else { return }
+            await appState.setRefreshingInstanceUUIDs(remainingRefreshing)
+            if targetUUID == nil {
+                await appState.setErrorSummaries(errorSummaries)
+            } else {
+                let currentErrors = await appState.getErrorSummaries()
+                let otherErrors = currentErrors.filter { $0.id != targetUUID }
+                await appState.setErrorSummaries(otherErrors + errorSummaries)
+            }
+            let erroredUUIDs = Set(errorSummaries.map(\.id))
+            await appState.mergeCycleResult(
+                cycleSuccesses: allSlotData,
+                cycleErroredUUIDs: erroredUUIDs
+            )
+            await onRefreshComplete?()
+        }
 
         // 4. Process each api_key_ref group serially
         for (apiKeyRef, instancesInGroup) in groupedByKeyRef {
@@ -321,6 +345,9 @@ actor RefreshService {
                     errorSummaries.append(error)
                 }
                 logger.warning("No API key found for ref: \(apiKeyRef)")
+                let groupUUIDs = Set(instancesInGroup.map(\.uuid))
+                remainingRefreshing.subtract(groupUUIDs)
+                await pushProgress()
                 continue
             }
 
@@ -334,6 +361,9 @@ actor RefreshService {
                     )
                     errorSummaries.append(error)
                 }
+                let groupUUIDs = Set(instancesInGroup.map(\.uuid))
+                remainingRefreshing.subtract(groupUUIDs)
+                await pushProgress()
                 continue
             }
 
@@ -398,6 +428,77 @@ actor RefreshService {
                         try? await persistenceService.saveInstances(updatedInstances, settings: settings)
                     }
                 }
+
+                // 4f. Process balance for this group's instances so the
+                //     progressive push below includes daily averages.
+                for instance in instancesInGroup where instance.isBalanceType {
+                    if let index = allSlotData.firstIndex(where: { $0.uuid == instance.uuid }) {
+                        let slot = allSlotData[index]
+                        if case .balance(let amount, let totalBalance, let grantedBalance, let isAvailable, _) = slot.instanceType {
+                            let existingSnapshot = await persistenceService.loadBalanceSnapshot(for: instance.uuid)
+                            let retentionDays: Int
+                            if case .balance(_, _, _, let days) = instance.thresholds {
+                                retentionDays = days
+                            } else {
+                                retentionDays = 0
+                            }
+                            let update = BalanceCalculator.update(
+                                snapshot: existingSnapshot,
+                                currentToppedUp: amount,
+                                retentionDays: retentionDays
+                            )
+                            do {
+                                try await persistenceService.saveBalanceSnapshot(update.snapshot, for: instance.uuid)
+                            } catch {
+                                logger.error("Failed to save balance snapshot for \(instance.uuid): \(error.localizedDescription)")
+                            }
+                            var displayPeriods: [AvgDailyPeriod] = []
+                            if case .balance(_, _, let periods, _) = instance.thresholds {
+                                displayPeriods = periods
+                            }
+                            let displayAverages: [AvgDailyPeriod: Decimal]
+                            if displayPeriods.isEmpty {
+                                displayAverages = [:]
+                            } else {
+                                displayAverages = update.dailyAverages.filter { displayPeriods.contains($0.key) }
+                            }
+                            let updatedSlot = SlotViewData(
+                                uuid: slot.uuid,
+                                displayName: instance.displayName,
+                                shortName: slot.shortName,
+                                instanceType: .balance(
+                                    amount: amount,
+                                    totalBalance: totalBalance,
+                                    grantedBalance: grantedBalance,
+                                    isAvailable: isAvailable,
+                                    currency: instance.currency
+                                ),
+                                sortOrder: slot.sortOrder,
+                                colorState: slot.colorState,
+                                provider: instance.provider,
+                                dimension: slot.dimension,
+                                todayUsage: update.snapshot.todayUsage,
+                                dailyAverages: displayAverages,
+                                lastFetchedAt: slot.lastFetchedAt ?? Date()
+                            )
+                            allSlotData[index] = updatedSlot
+                            if let responseCurrency = getCurrencyFromSlotData(allSlotData, instanceUUID: instance.uuid) {
+                                if instance.currency != responseCurrency {
+                                    var updatedInstance = instance
+                                    updatedInstance.currency = responseCurrency
+                                    await appState.updateInstance(updatedInstance)
+                                    logger.info("Auto-corrected currency from \(instance.currency ?? "nil") to \(responseCurrency)")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 4g. This group is done — remove its UUIDs from the
+                //     refreshing set and push to UI immediately.
+                let groupUUIDs = Set(instancesInGroup.map(\.uuid))
+                remainingRefreshing.subtract(groupUUIDs)
+                await pushProgress()
             } catch let error as RefreshError {
                 let errorType = error.errorType
                 for instance in instancesInGroup {
@@ -409,6 +510,9 @@ actor RefreshService {
                     errorSummaries.append(summary)
                 }
                 logger.error("Refresh failed for \(apiKeyRef): \(error)")
+                let groupUUIDs = Set(instancesInGroup.map(\.uuid))
+                remainingRefreshing.subtract(groupUUIDs)
+                await pushProgress()
             } catch is CancellationError {
                 // Propagate cancellation so the cycleTask wrapper can
                 // observe it. Clean up refreshing UUIDs and refreshState
@@ -436,82 +540,13 @@ actor RefreshService {
                     errorSummaries.append(summary)
                 }
                 logger.error("Unexpected error during refresh: \(error.localizedDescription)")
+                let groupUUIDs = Set(instancesInGroup.map(\.uuid))
+                remainingRefreshing.subtract(groupUUIDs)
+                await pushProgress()
             }
         }
 
-        // 5. For balance-type instances — only targets.
-        let instancesWithBalance = targetInstances.filter { $0.isBalanceType }
-        for instance in instancesWithBalance {
-            if let index = allSlotData.firstIndex(where: { $0.uuid == instance.uuid }) {
-                let slot = allSlotData[index]
-                if case .balance(let amount, let totalBalance, let grantedBalance, let isAvailable, _) = slot.instanceType {
-                    let existingSnapshot = await persistenceService.loadBalanceSnapshot(for: instance.uuid)
-
-                    let retentionDays: Int
-                    if case .balance(_, _, _, let days) = instance.thresholds {
-                        retentionDays = days
-                    } else {
-                        retentionDays = 0
-                    }
-
-                    let update = BalanceCalculator.update(
-                        snapshot: existingSnapshot,
-                        currentToppedUp: amount,
-                        retentionDays: retentionDays
-                    )
-
-                    do {
-                        try await persistenceService.saveBalanceSnapshot(update.snapshot, for: instance.uuid)
-                    } catch {
-                        logger.error("Failed to save balance snapshot for \(instance.uuid): \(error.localizedDescription)")
-                    }
-
-                    var displayPeriods: [AvgDailyPeriod] = []
-                    if case .balance(_, _, let periods, _) = instance.thresholds {
-                        displayPeriods = periods
-                    }
-
-                    let displayAverages: [AvgDailyPeriod: Decimal]
-                    if displayPeriods.isEmpty {
-                        displayAverages = [:]
-                    } else {
-                        displayAverages = update.dailyAverages.filter { displayPeriods.contains($0.key) }
-                    }
-
-                    let updatedSlot = SlotViewData(
-                        uuid: slot.uuid,
-                        displayName: instance.displayName,
-                        shortName: slot.shortName,
-                        instanceType: .balance(
-                            amount: amount,
-                            totalBalance: totalBalance,
-                            grantedBalance: grantedBalance,
-                            isAvailable: isAvailable,
-                            currency: instance.currency
-                        ),
-                        sortOrder: slot.sortOrder,
-                        colorState: slot.colorState,
-                        provider: instance.provider,
-                        dimension: slot.dimension,
-                        todayUsage: update.snapshot.todayUsage,
-                        dailyAverages: displayAverages,
-                        lastFetchedAt: slot.lastFetchedAt ?? Date()
-                    )
-                    allSlotData[index] = updatedSlot
-
-                    if let responseCurrency = getCurrencyFromSlotData(allSlotData, instanceUUID: instance.uuid) {
-                        if instance.currency != responseCurrency {
-                            var updatedInstance = instance
-                            updatedInstance.currency = responseCurrency
-                            await appState.updateInstance(updatedInstance)
-                            logger.info("Auto-corrected currency from \(instance.currency ?? "nil") to \(responseCurrency)")
-                        }
-                    }
-                }
-            }
-        }
-
-        // Sort by sortOrder
+        // 5. Sort accumulated slot data for notification evaluation.
         allSlotData.sort { $0.sortOrder < $1.sortOrder }
 
         // 6. Evaluate thresholds and send notifications. Use the full
@@ -525,48 +560,19 @@ actor RefreshService {
             settings: globalSettings
         )
 
-        // 7. Update error summaries. For global refresh we replace
-        //    wholesale; for per-instance we must preserve other
-        //    instances' errors so a click on one dot doesn't clear
-        //    another instance's failure state. Token-preempted: a
-        //    pre-empted old cycle must not overwrite a newer cycle's
-        //    error set.
+        // 7. Final cleanup: the per-group pushes above already merged slot
+        //    data and error summaries. Here we only reset the global flags.
         if !token.isPreempted {
-            if targetUUID == nil {
-                await appState.setErrorSummaries(errorSummaries)
-            } else {
-                let currentErrors = await appState.getErrorSummaries()
-                let otherErrors = currentErrors.filter { $0.id != targetUUID }
-                await appState.setErrorSummaries(otherErrors + errorSummaries)
-            }
-
+            // Note: error summaries were already set progressively by
+            // pushProgress(); for global path we keep the last push's
+            // value. For per-instance the merge was also done inline.
             await appState.setRefreshState(.idle)
             await appState.setLastRefreshAt(Date())
-        }
-
-        // 8. Merge this cycle's result into `_slotViewDataList` atomically.
-        //    For per-instance, `allSlotData` only contains the target so
-        //    siblings' cached slots are preserved unchanged.
-        //    Token-preempted so a pre-empted old cycle does not overwrite
-        //    a newer cycle's merged slots.
-        if !token.isPreempted {
-            let erroredUUIDs = Set(errorSummaries.map { $0.id })
-            await appState.mergeCycleResult(
-                cycleSuccesses: allSlotData,
-                cycleErroredUUIDs: erroredUUIDs
-            )
+            await appState.setRefreshingInstanceUUIDs([])
         }
 
         lastRefreshAt = Date()
         logger.info("Refresh cycle completed: \(allSlotData.count) slots, \(errorSummaries.count) errors")
-
-        // Clear the in-flight spinner before notifying the UI so the
-        // sync picks up `refreshingInstanceUUIDs == []` instead of an
-        // inconsistent intermediate state. Token-preempted for the same
-        // reason as above.
-        if !token.isPreempted {
-            await appState.setRefreshingInstanceUUIDs([])
-        }
 
         // Sync UI immediately — no race window because the closure is awaited directly
         await onRefreshComplete?()

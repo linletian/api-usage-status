@@ -62,12 +62,11 @@ struct UsagePanelView: View {
 
             // Action buttons
             HStack(spacing: 12) {
-                // Manual Refresh button. Stays clickable while a refresh
-                // is running — clicking it again preempts the in-flight
-                // cycle and starts a fresh one (the per-cycle slot in
-                // `RefreshService` guarantees only one ever runs at a
-                // time). The label flips to a spinner + "Refreshing…"
-                // for visual continuity.
+                // Manual Refresh button. Always clickable — clicking during
+                // a cycle preempts and starts fresh. The label shows a
+                // spinner icon while refreshing; text stays "Refresh"
+                // since the right-side countdown already flips to
+                // "Refreshing…", avoiding duplicate status text.
                 Button {
                     Task {
                         await appStateProxy.triggerManualRefresh()
@@ -82,7 +81,7 @@ struct UsagePanelView: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 10, weight: .medium))
                         }
-                        Text(appStateProxy.isRefreshing ? "Refreshing…" : "Refresh")
+                        Text("Refresh")
                             .font(.system(size: 12, weight: .medium))
                     }
                 }

@@ -664,13 +664,8 @@ struct ColorStateBadge: View {
     var body: some View {
         let indicator = HStack(spacing: 2) {
             if isRefreshing {
-                // Default ProgressView is ~16pt; scale to ~10pt to match
-                // the static dot footprint and PRD §3.4 spec. The `.frame`
-                // constrains the layout box; `.scaleEffect` actually
-                // renders the spinner at the target size (otherwise the
-                // 16pt spinner gets clipped to 10×10 and looks cropped).
                 ProgressView()
-                    .scaleEffect(0.625)
+                    .scaleEffect(0.5)
                     .frame(width: 10, height: 10)
             } else {
                 Circle()

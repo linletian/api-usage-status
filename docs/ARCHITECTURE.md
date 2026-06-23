@@ -216,15 +216,14 @@
 - **单实例刷新（`triggerInstanceRefresh(uuid:)`）**——非抢占：**仅当 `currentToken == nil` 时启动**；否则 no-op，避免打断用户已发起的定时/手动 cycle
 - **定时刷新（`runPeriodicCycle`）**——非抢占：`currentToken != nil` 时跳过本轮，下个 tick 再检查。两个入口（手动/单实例）走 `runPreemptiveCycle(targetUUID:)`，定时走 `runPeriodicCycle()`
 - **`CycleToken` 身份对象**：每次启动新 cycle 创建一个新的 `CycleToken` 实例；通过引用相等（`===`）判断"是否仍是当前 owner"。`runPreemptiveCycle` 在新建 token 之前**同步**调用旧 token 的 `markPreempted()`，随后才把新 token 写进 `currentToken`；旧 token 此刻已被标记，清理写入时读 `token.isPreempted == true` 即跳过
-- **Token-Preempted Cleanup 不变量**：`performRefresh` 接收 `token: CycleToken` 参数；三个退出点（empty-target early-return / `catch CancellationError` / success-path cleanup）写入 `setRefreshingInstanceUUIDs` / `setRefreshState` 之前必须 `!token.isPreempted`。被抢占的旧 cycle（token 已被标记）跳过清理 → 新 owner 的写入不会被覆盖；末位 cycle（token 未被标记）正常清理 → `refreshState` 不卡在 `.refreshing`。这是 cycle-slot 的核心并发契约，由 `RefreshServiceCycleSlotTests` 锁住
+- **Token-Preempted Cleanup 不变量**：`performRefresh` 接收 `token: CycleToken` 参数；所有写入 AppState 的地方（包括每组的 `pushProgress()`、early-return、`catch CancellationError`、末尾清理）之前必须 `!token.isPreempted`。被抢占的旧 cycle（token 已被标记）跳过清理 → 新 owner 的写入不会被覆盖；末位 cycle（token 未被标记）正常清理 → `refreshState` 不卡在 `.refreshing`。这是 cycle-slot 的核心并发契约，由 `RefreshServiceCycleSlotTests` 锁住
 - **被抢占 cycle 的错误处理**：`runPreemptiveCycle` 在 `await oldTask.value` 处用 `do/catch is CancellationError / catch` 区分——取消是预期路径（静默），非取消异常（如 Keychain 故障、解析崩溃）通过 `logger.error("Pre-empted cycle threw non-cancellation error: ...")` 记入日志，避免旧版 `try?` 静默吞咽导致的诊断盲区
 
 **`performRefresh(targetUUID: String? = nil)`** 是单入口：
 
-- `targetUUID == nil`：全量刷新，行为同旧版
+- `targetUUID == nil`：全量刷新。按 `api_key_ref` 逐组拉取，**每组完成后立刻通过 `pushProgress()` 推送到 UI**（流式逐组更新，不等所有组完成）。余额处理也在组内完成再推送
 - `targetUUID != nil`：仅刷新该实例。`targetInstances` 数组只包含目标实例，`Dictionary(grouping:)` 按 `api_key_ref` 分组后**只对目标所在的组发请求**（supplier 调用仍按整组拉，但 `mapInstanceToSlotData` 只为组内目标生成 `SlotViewData`，兄弟实例的 slot 保留上次缓存）。MiniMax auto-discover 在 `targetUUID != nil` 时跳过——避免副作用污染兄弟实例的 metrics
-- 入口处 `setRefreshingInstanceUUIDs(targetUUIDs)`，三个退出点（normal end / early return 2 / `catch CancellationError`）各自显式 `setRefreshingInstanceUUIDs([])`——Swift 5.9 不允许 `await` 出现在 `defer` 体内，而 `Task { }` 包装会与下一轮 `set…` 竞态（参见 §6.3）
-- `targetUUID != nil` 时 `setErrorSummaries` 改为"读旧值 → 过滤掉目标 UUID → 拼接本轮 errors"，保留兄弟实例的错误状态
+- 入口处 `setRefreshingInstanceUUIDs(targetUUIDs)` 显示全部目标的菊花 → 每组完成后 `remainingRefreshing` 减去该组 UUID，逐步缩窄 → 末尾 `setRefreshingInstanceUUIDs([])` 确保所有菊花停止。每个 error catch 分支也调用 `pushProgress()` 将该组的错误状态立刻推送到 UI
 
 **取消协作（详见 §6.3）**
 
@@ -421,46 +420,61 @@ RefreshService.performRefresh(targetUUID: String?)
     │              （mapInstanceToSlotData 做 1:N 映射：
     │               遍历 instance.metrics，每个 MetricConfig 产生一个 MetricSnapshot）
     │
-    ├──▶ 对每个配额型实例，解析响应时算出 `cycleEndTime`（基于 `<model>:end_time` 毫秒时间戳转 `Date`）并存入 `MetricSnapshot`，同时派生 `cycleRemainingSeconds`（`cycleEndTime - now`，向下取整到 0）以兼容 `InstanceType.quota` 与测试 fixture。UI 层用 `TimelineView(.periodic(by: 60))` 包装渲染：popover 打开时 `cycleEndTime - context.date` 每分钟重算一次，格式化为 `Xh Ym` / `Xm` / `Xd remaining`；popover 关闭时 timeline 自动停止（视图卸载）。字段缺失则该行隐藏。`CopilotResponseParser` 在 parse 阶段把 `quota_reset_date_utc` 解析为 epoch ms 写入标准 `<model>:end_time` key，其余供应商直接透传毫秒时间戳
+    └──▶ 组内后处理（每组完成后立即执行，不等其他组）：
+          │
+          ├──▶ 对每个配额型实例，解析响应时算出 `cycleEndTime`（基于 `<model>:end_time`
+          │     毫秒时间戳转 `Date`）并存入 `MetricSnapshot`，同时派生
+          │     `cycleRemainingSeconds`（`cycleEndTime - now`，向下取整到 0）以兼容
+          │     `InstanceType.quota` 与测试 fixture。UI 层用 `TimelineView(.periodic(by: 60))`
+          │     包装渲染：popover 打开时 `cycleEndTime - context.date` 每分钟重算一次，
+          │     格式化为 `Xh Ym` / `Xm` / `Xd remaining`；popover 关闭时 timeline 自动停止
+          │     （视图卸载）。字段缺失则该行隐藏
+          │
+          ├──▶ [targetUUID == nil 时] MiniMax auto-discover：把响应中
+          │     新发现的 model_name 加为 5h + weekly 两个 MetricConfig，
+          │     更新 instance + 写回 instances.json
+          │     （targetUUID != nil 时跳过，避免污染兄弟实例）
+          │
+          ├──▶ 对组内每个余额型实例：
+          │     ├──▶ BalanceCalculator.calculate(latestData, history) ──▶ 更新 BalanceSnapshot
+          │     │     PersistenceService.saveBalanceSnapshot(uuid, snapshot)
+          │     └──▶ [自动修正货币] 若 API 响应含 currency 字段，且与实例当前 currency 不同：
+          │              ├──▶ AppState 更新该实例的 currency
+          │              └──▶ 若 currency 发生变更，PersistenceService.saveInstances(...)
+          │                    写回 instances.json
+          │
+          ├──▶ 从 remainingRefreshing 集合中移除该组 UUID
+          │
+          ├──▶ AppState.mergeCycleResult(cycleSuccesses, cycleErroredUUIDs)
+          │     （立刻合并到 _slotViewDataList，不等其他组；单实例刷新时该数组只含目标，
+          │      兄弟实例 slot 保留上次缓存）
+          │
+          ├──▶ setErrorSummaries（累计至今的所有 error）：
+          │     targetUUID == nil → 整组替换
+          │     targetUUID != nil → 读旧值 → 过滤掉目标 UUID → 拼接本轮 errors
+          │
+          ├──▶ AppState.setRefreshingInstanceUUIDs(remainingRefreshing)
+          │     （已完成组的实例立刻停止菊花，待处理组的实例继续转动）
+          │
+          └──▶ AppStateProxy.syncFromState()
+                 （将 Actor 数据副本拉到 MainActor，触发 @Published → SwiftUI 重绘。
+                  流式逐组推送：先拉到的供应商先出数据，后拉到的继续转菊花）
+
+遍历完所有组后：
     │
-    ├──▶ [targetUUID == nil 时] MiniMax auto-discover：把响应中
-    │     新发现的 model_name 加为 5h + weekly 两个 MetricConfig，
-    │     更新 instance + 写回 instances.json
-    │     （targetUUID != nil 时跳过，避免污染兄弟实例）
-    │
-    ├──▶ AppState.mergeCycleResult(cycleSuccesses, cycleErroredUUIDs)
-    │     （合并到 _slotViewDataList；单实例刷新时该数组只含目标，
-    │      兄弟实例 slot 保留上次缓存）
-    │
-    ├──▶ 对每个余额型实例（targetInstances 范围内）：
-    │     │
-    │     ├──▶ BalanceCalculator.calculate(latestData, history) ──▶ 更新 BalanceSnapshot
-    │     │     PersistenceService.saveBalanceSnapshot(uuid, snapshot)
-    │     │
-    │     └──▶ [自动修正货币] 若 API 响应含 currency 字段，且与实例当前 currency 不同：
-    │              ├──▶ AppState 更新该实例的 currency
-    │              └──▶ 若 currency 发生变更，PersistenceService.saveInstances(...) 写回 instances.json
+    ├──▶ 按 sortOrder 排序 allSlotData
     │
     ├──▶ NotificationManager.evaluateThresholds(instances, data)
     │         │
     │         └──▶ 若超过严重阈值则触发通知
     │
-    ├──▶ setErrorSummaries：
-    │     targetUUID == nil → 整组替换
-    │     targetUUID != nil → 读旧值 → 过滤掉目标 UUID → 拼接本轮 errors
-    │
     ├──▶ AppState.setRefreshState(.idle)
     │     AppState.setLastRefreshAt(Date())
     │
-    ├──▶ AppState.setRefreshingInstanceUUIDs([])   // 三个退出点都必须显式清理
+    ├──▶ AppState.setRefreshingInstanceUUIDs([])   // 末位清理：确保所有菊花停止
     │
-    ├──▶ AppStateProxy.syncFromState()
-    │        （将 Actor 数据副本拉到 MainActor，触发 @Published → SwiftUI 重绘；
-    │         refreshingInstanceUUIDs 进入 → 对应圆点变 ProgressView，
-    │         退出后变回 OK/WARN/CRIT 静态圆点）
-    │
-    └──▶ MenuBarIconRenderer 触发重绘（观察 AppStateProxy）
-         面板更新（观察 AppStateProxy，详见 §2.4 / §9.3）
+    └──▶ AppStateProxy.syncFromState()
+          面板末次重绘（所有圆点恢复为 OK/WARN/CRIT 静态度）
 
 取消路径：
   catch CancellationError → setRefreshingInstanceUUIDs([])

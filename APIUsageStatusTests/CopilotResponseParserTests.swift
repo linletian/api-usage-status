@@ -333,10 +333,116 @@ final class CopilotResponseParserTests: XCTestCase {
         XCTAssertNil(CopilotResponseParser.parseISO8601ToMs("🦀"))
     }
 
-    /// When `quota_reset_date_utc` is malformed, the parser must still
-    /// succeed (the core numeric fields validate independently) but
-    /// omit the `end_time` key. This locks the soft-fail behavior.
-    func testMalformedResetDateOmitsEndTimeKey() throws {
+    /// Copilot may return ISO 8601 with fractional seconds
+    /// (e.g. "2026-07-01T00:00:00.000Z"). The parser must handle
+    /// this format so `end_time` is not silently dropped.
+    func testParseISO8601ToMsWithFractionalSeconds() {
+        let result = CopilotResponseParser.parseISO8601ToMs("2026-07-01T00:00:00.000Z")
+        XCTAssertNotNil(result, "Fractional seconds format must parse successfully")
+        // 2026-07-01T00:00:00.000Z == 1_782_864_000_000 ms
+        XCTAssertEqual(result, 1_782_864_000_000)
+    }
+
+    func testParseISO8601ToMsWithFractionalSecondsNonZero() {
+        let result = CopilotResponseParser.parseISO8601ToMs("2026-07-01T12:30:45.500Z")
+        XCTAssertNotNil(result)
+        // 2026-07-01T12:30:45.500Z == 1_782_909_045_500 ms
+        XCTAssertEqual(result, 1_782_909_045_500)
+    }
+
+    /// `nextMonthlyResetMs()` must return a positive epoch-ms value
+    /// that lands on the first day of a future month at UTC midnight.
+    func testNextMonthlyResetMsReturnsFirstOfNextMonthMidnightUTC() {
+        let ms = CopilotResponseParser.nextMonthlyResetMs()
+        XCTAssertGreaterThan(ms, 0, "Monthly reset must be > 0")
+
+        let date = Date(timeIntervalSince1970: TimeInterval(ms) / 1000.0)
+        var utcCalendar = Calendar(identifier: .gregorian)
+        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
+
+        let day = utcCalendar.component(.day, from: date)
+        let hour = utcCalendar.component(.hour, from: date)
+        let minute = utcCalendar.component(.minute, from: date)
+        let second = utcCalendar.component(.second, from: date)
+
+        XCTAssertEqual(day, 1, "Monthly reset must be day 1")
+        XCTAssertEqual(hour, 0)
+        XCTAssertEqual(minute, 0)
+        XCTAssertEqual(second, 0)
+
+        // Must be in the future (or within a few seconds of now if we're
+        // right at the month boundary).
+        let tolerance: TimeInterval = 5
+        XCTAssertGreaterThan(
+            date.timeIntervalSinceNow,
+            -tolerance,
+            "Monthly reset must not be in the past"
+        )
+    }
+
+    /// When `quota_reset_date_utc` is empty, the parser must still
+    /// produce an `end_time` via the monthly-reset fallback so the
+    /// countdown always renders.
+    func testEmptyResetDateGetsMonthlyFallback() throws {
+        let json = """
+        {
+          "copilot_plan": "pro",
+          "quota_reset_date_utc": "",
+          "quota_snapshots": {
+            "premium_interactions": {
+              "entitlement": 300,
+              "percent_remaining": 73.33,
+              "remaining": 220,
+              "unlimited": false,
+              "overage_count": 0,
+              "overage_permitted": false
+            }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+        XCTAssertTrue(response.isAvailable)
+        let endTime = response.rawData["premium_interactions:end_time"]
+        XCTAssertNotNil(endTime, "Empty reset date must still produce end_time via fallback")
+        if let ets = endTime, let ms = Int64(ets) {
+            XCTAssertGreaterThan(ms, 0, "Fallback end_time must be > 0")
+        }
+    }
+
+    /// When `quota_reset_date_utc` is completely absent from the JSON,
+    /// the parser must still produce an `end_time` via the monthly
+    /// fallback so the countdown always renders.
+    func testMissingResetDateFieldGetsMonthlyFallback() throws {
+        let json = """
+        {
+          "copilot_plan": "pro",
+          "quota_snapshots": {
+            "premium_interactions": {
+              "entitlement": 300,
+              "percent_remaining": 73.33,
+              "remaining": 220,
+              "unlimited": false,
+              "overage_count": 0,
+              "overage_permitted": false
+            }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+        XCTAssertTrue(response.isAvailable)
+        let endTime = response.rawData["premium_interactions:end_time"]
+        XCTAssertNotNil(endTime, "Missing reset_date field must still produce end_time via fallback")
+        if let ets = endTime, let ms = Int64(ets) {
+            XCTAssertGreaterThan(ms, 0, "Fallback end_time must be > 0")
+        }
+    }
+
+    /// When `quota_reset_date_utc` is malformed, the parser falls back
+    /// to `nextMonthlyResetMs()` so the live countdown always has a value.
+    /// This locks the soft-fail + fallback behavior.
+    func testMalformedResetDateFallsBackToMonthlyReset() throws {
         let json = """
         {
           "copilot_plan": "pro",
@@ -357,11 +463,12 @@ final class CopilotResponseParserTests: XCTestCase {
         let response = try parser.parse(json)
         XCTAssertTrue(response.isAvailable)
         // `reset_date` is preserved as a raw string for debugging;
-        // `end_time` is the derived ms key — must be absent.
+        // `end_time` must now be present — fallback is `nextMonthlyResetMs()`.
         XCTAssertEqual(response.rawData["premium_interactions:reset_date"], "not a date")
-        XCTAssertNil(
-            response.rawData["premium_interactions:end_time"],
-            "Malformed reset date must not write end_time"
-        )
+        let endTime = response.rawData["premium_interactions:end_time"]
+        XCTAssertNotNil(endTime, "Malformed reset date must still produce end_time via monthly fallback")
+        if let ets = endTime, let ms = Int64(ets) {
+            XCTAssertGreaterThan(ms, 0, "Fallback end_time must be > 0")
+        }
     }
 }

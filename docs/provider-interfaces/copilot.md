@@ -142,7 +142,7 @@ struct CopilotSupplier: Supplier {
 ```
 
 **本项目 `Copilot` 形态要点**(对应实际实现):
-- 只有 monthly 一窗口,**重置时间直接取 API 响应里的 `quota_reset_date_utc` 字段**(ISO 8601 字符串),不本地计算。`CopilotResponseParser` 在 parse 阶段把它解析为 epoch 毫秒并额外写入标准的 `<key>:end_time` rawData key,让 `RefreshService` 与其它供应商走同一套逻辑去算 `cycleEndTime` / `cycleRemainingSeconds`(与 `quota_reset_date_utc` 字符串 key 并存,保留供调试)。ClaudeBar 的 `MonthlyResetDate` 纯函数在本项目不存在也不需要
+- 只有 monthly 一窗口,**重置时间优先取 API 响应里的 `quota_reset_date_utc` 字段**(ISO 8601 字符串,支持 `2026-07-01T00:00:00Z` 和 `2026-07-01T00:00:00.000Z` 两种格式)。`CopilotResponseParser` 在 parse 阶段把它解析为 epoch 毫秒并写入标准的 `<key>:end_time` rawData key,让 `RefreshService` 与其它供应商走同一套逻辑去算 `cycleEndTime` / `cycleRemainingSeconds`(与 `quota_reset_date_utc` 字符串 key 并存,保留供调试)。当 `quota_reset_date_utc` 缺失、为空或格式不可解析时,parser 回退到 `nextMonthlyResetMs()`(下个月第一天 UTC 零点)作为 `end_time`,确保倒计时始终有值——Copilot 配额均为自然月周期,回退值在下次 HTTP 刷新成功后自动被真实时间戳覆盖
 - 无限套餐判定:`unlimited == true` 时,parser 写入 `:unlimited = "true"` 副键并把已用百分比统一记为 0(与 MiniMaxParser 对 `weekly_status != 1` 的处理一致);**本项目 Copilot 不渲染 flowing glow bar 动画**,菜单栏和面板的 0% 状态直接走正常颜色
 - 凭据存储:复用现有 `KeychainService`,`service = "APIUsageStatus"`,以 `apiKeyRef`(UUID)为账号,没有 provider 专属 service 名
 

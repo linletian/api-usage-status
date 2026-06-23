@@ -428,7 +428,7 @@ RefreshService.performRefresh(targetUUID: String?)
           │     `InstanceType.quota` 与测试 fixture。UI 层用 `TimelineView(.periodic(by: 60))`
           │     包装渲染：popover 打开时 `cycleEndTime - context.date` 每分钟重算一次，
           │     格式化为 `Xh Ym` / `Xm` / `Xd remaining`；popover 关闭时 timeline 自动停止
-          │     （视图卸载）。字段缺失则该行隐藏
+          │     （视图卸载）。Copilot 的 `<model>:end_time` 来自 `quota_reset_date_utc` 解析（支持毫秒精度 ISO 8601），缺失时回退到 `nextMonthlyResetMs()`（下月首日 UTC 零点），保证倒计时始终有值。其余供应商字段缺失则该行隐藏
           │
           ├──▶ [targetUUID == nil 时] MiniMax auto-discover：把响应中
           │     新发现的 model_name 加为 5h + weekly 两个 MetricConfig，

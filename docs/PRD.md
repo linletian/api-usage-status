@@ -643,7 +643,7 @@ Accept: application/json
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `copilot_plan` | string | 套餐名称，如 `"pro"`、`"pro_plus"`、`"business"` 等 |
-| `quota_reset_date_utc` | string (ISO 8601) | 下次配额重置时间（UTC），用于计算剩余周期 |
+| `quota_reset_date_utc` | string (ISO 8601), 可选 | 下次配额重置时间（UTC），用于计算剩余周期。支持 `2026-07-01T00:00:00Z` 和 `2026-07-01T00:00:00.000Z` 两种格式。字段缺失、为空或格式不可解析时，parser 回退到月度估算（下月首日 UTC 零点） |
 | `quota_snapshots.premium_interactions.entitlement` | number | 月度配额上限 |
 | `quota_snapshots.premium_interactions.remaining` | number | 剩余次数 |
 | `quota_snapshots.premium_interactions.percent_remaining` | number | 剩余百分比（0-100，首选渲染字段） |
@@ -654,7 +654,7 @@ Accept: application/json
 **与本产品的关联**：
 
 - **统计维度**：仅暴露 `premium_interactions` 一个固定维度，作为 `Instance.dimension` 使用
-- **周期类型**：月度配额型，重置时间直接取 API 返回的 `quota_reset_date_utc`，无需本地计算
+- **周期类型**：月度配额型，重置时间优先取 API 返回的 `quota_reset_date_utc`（支持毫秒精度）；缺失时 fallback 到下月首日 UTC 零点，下次刷新成功后自动覆盖
 - **百分比计算规则**：
   - `unlimited == true` 时：菜单栏槽位已用百分比 = `0`（与 MiniMax 周配额未激活的语义一致，避免无限套餐误触发阈值）
   - `unlimited == false` 时：已用百分比 = `100 - percent_remaining`

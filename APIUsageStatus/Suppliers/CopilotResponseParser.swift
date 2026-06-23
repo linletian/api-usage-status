@@ -68,11 +68,16 @@ struct CopilotResponseParser {
         rawData["\(Self.dimensionKey):percent_remaining"] = String(format: "%.1f", percentRemaining)
         // Publish the reset instant under the standard `end_time` ms key
         // so `RefreshService` can populate `cycleEndTime` for the live
-        // "Xh Ym remaining" countdown. Keep the original ISO 8601 string
-        // under `reset_date` for any future direct consumer / debugging.
-        if let endTimeMs = Self.parseISO8601ToMs(resetDate), endTimeMs > 0 {
-            rawData["\(Self.dimensionKey):end_time"] = String(endTimeMs)
+        // "Xh Ym remaining" countdown. When `quota_reset_date_utc` is
+        // missing or unparseable, fall back to a computed next-monthly-reset
+        // timestamp — Copilot quotas always reset on a monthly cycle.
+        let endTimeMs: Int64
+        if let parsed = Self.parseISO8601ToMs(resetDate), parsed > 0 {
+            endTimeMs = parsed
+        } else {
+            endTimeMs = Self.nextMonthlyResetMs()
         }
+        rawData["\(Self.dimensionKey):end_time"] = String(endTimeMs)
         rawData["\(Self.dimensionKey):reset_date"] = resetDate
         rawData["\(Self.dimensionKey):plan"] = plan
         rawData["\(Self.dimensionKey):overage_count"] = String(Int(overageCount))
@@ -106,7 +111,13 @@ struct CopilotResponseParser {
     static func parseISO8601ToMs(_ string: String) -> Int64? {
         guard !string.isEmpty else { return nil }
         let iso = ISO8601DateFormatter()
+        // Try without fractional seconds first (canonical "Z" format),
+        // then with fractional seconds (e.g. "2026-07-01T00:00:00.000Z").
         iso.formatOptions = [.withInternetDateTime]
+        if let date = iso.date(from: string) {
+            return Int64(date.timeIntervalSince1970 * 1000)
+        }
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let date = iso.date(from: string) {
             return Int64(date.timeIntervalSince1970 * 1000)
         }
@@ -119,5 +130,28 @@ struct CopilotResponseParser {
             return Int64(date.timeIntervalSince1970 * 1000)
         }
         return nil
+    }
+
+    /// Compute the first day of next month at 00:00:00 UTC as epoch
+    /// milliseconds. Used as a fallback when `quota_reset_date_utc` is
+    /// missing or unparseable — Copilot quotas always reset on a monthly
+    /// cycle, so this provides a best-effort countdown until the next
+    /// real `quota_reset_date_utc` arrives from the API.
+    static func nextMonthlyResetMs() -> Int64 {
+        var utcCalendar = Calendar(identifier: .gregorian)
+        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = Date()
+        guard let nextMonth = utcCalendar.date(byAdding: .month, value: 1, to: now) else {
+            return 0
+        }
+        var components = utcCalendar.dateComponents([.year, .month], from: nextMonth)
+        components.day = 1
+        components.hour = 0
+        components.minute = 0
+        components.second = 0
+        guard let firstOfNextMonth = utcCalendar.date(from: components) else {
+            return 0
+        }
+        return Int64(firstOfNextMonth.timeIntervalSince1970 * 1000)
     }
 }

@@ -66,6 +66,13 @@ struct CopilotResponseParser {
         rawData["\(Self.dimensionKey):entitlement"] = String(Int(entitlement))
         rawData["\(Self.dimensionKey):remaining"] = String(Int(remaining))
         rawData["\(Self.dimensionKey):percent_remaining"] = String(format: "%.1f", percentRemaining)
+        // Publish the reset instant under the standard `end_time` ms key
+        // so `RefreshService` can populate `cycleEndTime` for the live
+        // "Xh Ym remaining" countdown. Keep the original ISO 8601 string
+        // under `reset_date` for any future direct consumer / debugging.
+        if let endTimeMs = Self.parseISO8601ToMs(resetDate), endTimeMs > 0 {
+            rawData["\(Self.dimensionKey):end_time"] = String(endTimeMs)
+        }
         rawData["\(Self.dimensionKey):reset_date"] = resetDate
         rawData["\(Self.dimensionKey):plan"] = plan
         rawData["\(Self.dimensionKey):overage_count"] = String(Int(overageCount))
@@ -89,5 +96,28 @@ struct CopilotResponseParser {
     private func formatPercent(_ value: Double) -> String {
         let clamped = min(100.0, max(0.0, value))
         return String(format: "%.1f", clamped)
+    }
+
+    /// Parse Copilot's `quota_reset_date_utc` (ISO 8601 with trailing `Z`)
+    /// into epoch milliseconds. Returns `nil` for unparseable input —
+    /// callers must treat that as "no countdown available" rather than
+    /// throwing, since this is not a numeric field that gates critical UI
+    /// alerts.
+    static func parseISO8601ToMs(_ string: String) -> Int64? {
+        guard !string.isEmpty else { return nil }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        if let date = iso.date(from: string) {
+            return Int64(date.timeIntervalSince1970 * 1000)
+        }
+        // Fallback: date-only (e.g. "2026-07-01") — treat as UTC midnight.
+        let dateOnly = DateFormatter()
+        dateOnly.dateFormat = "yyyy-MM-dd"
+        dateOnly.timeZone = TimeZone(identifier: "UTC")
+        dateOnly.locale = Locale(identifier: "en_US_POSIX")
+        if let date = dateOnly.date(from: string) {
+            return Int64(date.timeIntervalSince1970 * 1000)
+        }
+        return nil
     }
 }

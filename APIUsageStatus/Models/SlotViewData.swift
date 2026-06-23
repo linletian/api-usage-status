@@ -100,6 +100,22 @@ struct SlotViewData: Identifiable, Equatable {
     var todayUsage: String?
     var dailyAverages: [AvgDailyPeriod: Decimal]?
 
+    /// When this slot was last successfully fetched from the supplier.
+    /// `nil` until the first successful refresh. When a refresh fails the
+    /// cached slot keeps its previous `lastFetchedAt`, so the panel can
+    /// show "Cached X ago" without a separate timestamp field.
+    var lastFetchedAt: Date?
+
+    /// True when the slot is showing cached data from a previous successful
+    /// refresh because the most recent cycle failed for this instance.
+    /// Per `docs/ARCHITECTURE.md §7.5`, this is the **single source** of
+    /// staleness — UI layers read `slot.isStale` instead of inferring it
+    /// from `slot.colorState`. Threshold state and staleness are orthogonal:
+    /// `colorState` always reflects the latest known threshold; `isStale`
+    /// reflects whether that data is fresh. The menu bar combines both to
+    /// render stale slots at 80% alpha over the threshold color.
+    var isStale: Bool
+
     // TODO: Remove after confirming weekly feature is stable on all user plans.
     // Temporary diagnostic: keys looked up in rawData for weekly.
     var weeklyDebug: String?
@@ -132,12 +148,17 @@ struct SlotViewData: Identifiable, Equatable {
 
     /// Worst color state across all metric snapshots. Priority:
     /// critical > warning > error > unavailable > disabled > loading > normal.
+    ///
+    /// `colorState` is **independent** of `isStale` — a stale warning slot
+    /// still reports `.warning` here. The menu bar uses this value to pick
+    /// the threshold color, then layers 80% alpha on top if `isStale` is
+    /// true. The panel reads `isStale` separately to decide whether to
+    /// show the stale card background. See `docs/ARCHITECTURE.md §7.5`.
     var colorState: ColorState {
         let states = metricSnapshots.map(\.colorState)
         guard !states.isEmpty else { return .loading }
         if states.contains(.critical) { return .critical }
         if states.contains(.warning) { return .warning }
-        if states.contains(.error) { return .error }
         if states.contains(.unavailable) { return .unavailable }
         if states.contains(.disabled) { return .disabled }
         if states.contains(.loading) { return .loading }
@@ -183,7 +204,9 @@ struct SlotViewData: Identifiable, Equatable {
         todayUsage: String? = nil,
         dailyAverages: [AvgDailyPeriod: Decimal]? = nil,
         weekly: WeeklyQuota? = nil,
-        weeklyDebug: String? = nil
+        weeklyDebug: String? = nil,
+        lastFetchedAt: Date? = nil,
+        isStale: Bool = false
     ) {
         self.uuid = uuid
         self.displayName = displayName
@@ -193,6 +216,8 @@ struct SlotViewData: Identifiable, Equatable {
         self.todayUsage = todayUsage
         self.dailyAverages = dailyAverages
         self.weeklyDebug = weeklyDebug
+        self.lastFetchedAt = lastFetchedAt
+        self.isStale = isStale
 
         // Balance path: preserve the full InstanceType so the menu bar and
         // usage panel render balance content (amount/currency) instead of

@@ -34,6 +34,11 @@ final class MenuBarIconRenderer {
     /// Horizontal gap between adjacent slots.
     private static let betweenSlotGap: CGFloat = 10.0
 
+    /// Alpha applied to the threshold color for stale (refresh-failed) slots.
+    /// The text keeps its original threshold color (warning yellow / critical
+    /// red / safe) but is dimmed to 80% opacity to signal cached data.
+    private static let staleAlpha: CGFloat = 0.8
+
     /// Animation texts for default state (no instances): cycles through "%" → "%%" → "%%%" → "%" ...
     private static let defaultAnimationTexts = ["%", "%%", "%%%"]
 
@@ -116,8 +121,16 @@ final class MenuBarIconRenderer {
 
             defer { slotOriginX += slotWidth + Self.betweenSlotGap }
 
+            // Pick the threshold color from `colorForSlot` (which reads
+            // `slot.colorState` — the same value whether the slot is stale
+            // or fresh). Staleness is then layered on top via alpha only.
             let slotColor = colorForSlot(slot, colorMode: colorMode, isDarkBackground: isDarkBackground)
+            let renderColor = slot.isStale ? slotColor.withAlphaComponent(Self.staleAlpha) : slotColor
 
+            // Breathing animation shadow — applied when the threshold is
+            // warning or critical. `colorState` is independent of `isStale`,
+            // so stale warning/critical slots naturally keep glowing — the
+            // alpha reduction above applies to the shadow color too.
             var shadowBlur: CGFloat = 0
             var shadowOp: CGFloat = 0
             if breathingSlots.contains(slot.uuid) {
@@ -139,10 +152,19 @@ final class MenuBarIconRenderer {
             if slot.colorState == .unavailable && slot.instanceType.isBalance {
                 let naWidth = textWidth("N/A", font: Self.font)
                 let naX = slotOriginX + (slotWidth - naWidth) / 2
-                renderText("N/A", at: CGPoint(x: naX, y: centerBaseline), color: slotColor, font: Self.font, in: context)
-            } else {
-                renderTwoLineSlot(atX: slotOriginX, width: slotWidth, data: slot, color: slotColor, in: context, shadowBlurRadius: shadowBlur, shadowOpacity: shadowOp)
+                renderText("N/A", at: CGPoint(x: naX, y: centerBaseline), color: renderColor, font: Self.font, in: context)
+                continue
             }
+
+            renderTwoLineSlot(
+                atX: slotOriginX,
+                width: slotWidth,
+                data: slot,
+                color: renderColor,
+                in: context,
+                shadowBlurRadius: shadowBlur,
+                shadowOpacity: shadowOp
+            )
         }
 
         image.unlockFocus()
@@ -152,6 +174,10 @@ final class MenuBarIconRenderer {
     func updateBreathingState(slotViewDataList: [SlotViewData]) {
         let expandedSlots = expandToMetricSlots(slotViewDataList)
 
+        // `colorState` is independent of `isStale` — a stale warning/critical
+        // slot still reports `.warning` / `.critical` here, so it keeps
+        // pulsing. Staleness is signaled separately by the 80% alpha overlay
+        // applied in the main render loop.
         let breathingUUIDs = Set(expandedSlots
             .filter { $0.colorState == .warning || $0.colorState == .critical }
             .map { $0.uuid })
@@ -209,6 +235,12 @@ final class MenuBarIconRenderer {
     private func expandToMetricSlots(_ slotViewDataList: [SlotViewData]) -> [SlotViewData] {
         var expanded: [SlotViewData] = []
         for slot in slotViewDataList {
+            // Capture staleness from the source slot BEFORE constructing
+            // the expanded metric slot. The expanded slot's computed
+            // `colorState` reflects the snapshot's threshold (independent
+            // of `isStale`), so we forward `isStale` explicitly via the
+            // `isStaleSource` parameter below.
+            let isStaleSource = slot.isStale
             let snapshots = slot.metricSnapshots
             if snapshots.isEmpty {
                 if slot.colorState != .disabled {
@@ -226,7 +258,8 @@ final class MenuBarIconRenderer {
                         sortOrder: slot.sortOrder * 10000 + snapshot.configIndex,
                         colorState: slot.colorState,
                         provider: slot.provider,
-                        metricSnapshots: [snapshot]
+                        metricSnapshots: [snapshot],
+                        isStale: isStaleSource
                     ))
                 }
             }
@@ -256,6 +289,10 @@ final class MenuBarIconRenderer {
     // MARK: - Private: colors
 
     private func colorForSlot(_ slot: SlotViewData, colorMode: ColorMode, isDarkBackground: Bool) -> NSColor {
+        // `colorState` is independent of `isStale` — stale slots report their
+        // true threshold (e.g. `.warning`). Staleness is layered on top via
+        // the 80% alpha overlay in the main render loop, so this function
+        // only needs to handle the threshold color logic.
         switch slot.colorState {
         case .disabled, .unavailable, .loading, .error:
             return Self.dimColor
@@ -403,8 +440,11 @@ final class MenuBarIconRenderer {
         return (top: top, bottom: bottom)
     }
 
-    // MARK: - Private: two-line slot rendering
+    // MARK: - Private: two-line slot rendering (fresh)
 
+    /// Plain-text two-line slot for fresh (non-stale) data. Optional
+    /// breathing shadow is applied around the text renders when active
+    /// (caller passes 0/0 to disable).
     private func renderTwoLineSlot(
         atX originX: CGFloat,
         width: CGFloat,
@@ -419,16 +459,17 @@ final class MenuBarIconRenderer {
 
         if shadowBlurRadius > 0 && shadowOpacity > 0 {
             context.saveGState()
-            context.setShadow(offset: CGSize.zero, blur: shadowBlurRadius,
-                              color: color.withAlphaComponent(shadowOpacity).cgColor)
+            context.setShadow(
+                offset: CGSize.zero,
+                blur: shadowBlurRadius,
+                color: color.withAlphaComponent(shadowOpacity).cgColor
+            )
         }
 
-        // Line 1: shortName
         let nameWidth = textWidth(shortName, font: Self.font)
         let nameX = originX + (width - nameWidth) / 2
         renderText(shortName, at: CGPoint(x: nameX, y: topBaseline), color: color, font: Self.font, in: context)
 
-        // Line 2: value
         let valueText: String
         let valueFont: NSFont
         switch data.instanceType {

@@ -9,20 +9,13 @@ struct UsagePanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Error summary bar (at the top per PRD)
-            if !appStateProxy.errorSummaries.isEmpty {
-                ErrorBarView(
-                    errors: appStateProxy.errorSummaries,
-                    refreshIntervalMinutes: appStateProxy.globalSettings.refreshIntervalMinutes
-                )
-            }
-
             if appStateProxy.slotViewDataList.isEmpty && appStateProxy.instances.isEmpty {
                 // Empty state — no instances configured at all
                 EmptyStateView(openSettings: openSettings)
                     .padding(.vertical, 12)
             } else if appStateProxy.slotViewDataList.isEmpty && !appStateProxy.instances.isEmpty {
-                // All instances failed or are disabled — show a compact prompt instead of dead white space
+                // All instances failed or are disabled AND we have no
+                // usable "last successful" cache for today → fully error.
                 VStack(spacing: 8) {
                     Spacer()
                     Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
@@ -40,13 +33,23 @@ struct UsagePanelView: View {
                 }
                 .padding(.vertical, 12)
             } else {
-                // Scrollable card list
+                // Scrollable card list. Staleness is encoded on each slot
+                // via `slot.isStale` (per docs/ARCHITECTURE.md §7.5), so
+                // each card reads its own stale state directly.
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(appStateProxy.slotViewDataList) { slot in
                             UsageCardView(
                                 slot: slot,
-                                lastRefreshAt: appStateProxy.lastRefreshAt
+                                lastRefreshAt: appStateProxy.lastRefreshAt,
+                                staleError: errorSummaryByUUID[slot.uuid],
+                                windowExpired: isWindowExpired(slot),
+                                isRefreshing: appStateProxy.refreshingInstanceUUIDs.contains(slot.uuid),
+                                onRefreshTapped: {
+                                    Task {
+                                        await appStateProxy.triggerInstanceRefresh(instanceUUID: slot.uuid)
+                                    }
+                                }
                             )
                         }
                     }
@@ -59,6 +62,11 @@ struct UsagePanelView: View {
 
             // Action buttons
             HStack(spacing: 12) {
+                // Manual Refresh button. Always clickable — clicking during
+                // a cycle preempts and starts fresh. The label shows a
+                // spinner icon while refreshing; text stays "Refresh"
+                // since the right-side countdown already flips to
+                // "Refreshing…", avoiding duplicate status text.
                 Button {
                     Task {
                         await appStateProxy.triggerManualRefresh()
@@ -73,15 +81,23 @@ struct UsagePanelView: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 10, weight: .medium))
                         }
-                        Text(appStateProxy.isRefreshing ? "Refreshing..." : "Refresh")
+                        Text("Refresh")
                             .font(.system(size: 12, weight: .medium))
                     }
                 }
-                .disabled(appStateProxy.isRefreshing)
                 .buttonStyle(.borderless)
 
-                if !appStateProxy.isRefreshing {
-                    Text("Next refresh: ≈ \(nextRefreshMinutes)m")
+                // Live status text on the right of the Refresh button.
+                // While a refresh cycle is in flight we show "Refreshing…"
+                // instead of the countdown so the user gets explicit
+                // feedback that work is happening (the menu-bar icon alone
+                // doesn't change for global refresh). When idle, the
+                // TimelineView ticks every minute and the countdown
+                // decrements without an API call.
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    Text(appStateProxy.isRefreshing
+                         ? "Refreshing…"
+                         : "Next refresh: ≈ \(minutesUntilNextRefresh(now: context.date))m")
                         .font(.system(size: 9))
                         .foregroundColor(Color.textSecondary)
                 }
@@ -107,18 +123,40 @@ struct UsagePanelView: View {
         .ignoresSafeArea(edges: .top)
     }
 
-    /// Minutes until the next automatic refresh cycle. All cards share
-    /// the same global refresh interval, so this is computed once at
-    /// the panel level rather than per-card. Falls back to the full
-    /// interval if no refresh has happened yet.
-    private var nextRefreshMinutes: Int {
+    /// Minutes until the next automatic refresh cycle, evaluated at
+    /// `now` (which `TimelineView` advances by 1 minute per tick). All
+    /// cards share the same global refresh interval, so this is computed
+    /// once at the panel level rather than per-card. Falls back to the
+    /// full interval if no refresh has happened yet.
+    private func minutesUntilNextRefresh(now: Date) -> Int {
         let intervalMinutes = appStateProxy.globalSettings.refreshIntervalMinutes
         guard let lastRefresh = appStateProxy.lastRefreshAt else {
             return intervalMinutes
         }
-        let elapsed = Date().timeIntervalSince(lastRefresh)
+        let elapsed = now.timeIntervalSince(lastRefresh)
         let remaining = TimeInterval(intervalMinutes * 60) - elapsed
         return max(0, Int(remaining / 60))
+    }
+
+    /// Index errors by instance UUID so each card can look up its own
+    /// `staleError` without scanning the array. Built via
+    /// `Dictionary(_:uniquingKeysWith:)` with `last-wins` so a
+    /// duplicate UUID (defensive-only — this should not happen in
+    /// normal operation) is a silent no-op rather than a fatalError.
+    private var errorSummaryByUUID: [String: ErrorSummary] {
+        Dictionary(appStateProxy.errorSummaries.map { ($0.id, $0) },
+                   uniquingKeysWith: { _, last in last })
+    }
+
+    /// True when any snapshot in the slot has an expired quota window
+    /// (`cycleRemainingSeconds != nil && cycleRemainingSeconds <= 0`).
+    /// `nil` means "the API didn't report a window" — that's not the
+    /// same as expired, so we treat it as active.
+    private func isWindowExpired(_ slot: SlotViewData) -> Bool {
+        slot.metricSnapshots.contains { snapshot in
+            guard let remaining = snapshot.cycleRemainingSeconds else { return false }
+            return remaining <= 0
+        }
     }
 }
 
@@ -136,46 +174,6 @@ struct PlaceholderContentView: View {
         }
         .padding(20)
         .frame(width: 280, height: 200)
-    }
-}
-
-// MARK: - ErrorBarView
-
-struct ErrorBarView: View {
-    let errors: [ErrorSummary]
-    let refreshIntervalMinutes: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(errors) { error in
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(Color.warningYellow)
-                        .font(.system(size: 10))
-                        .padding(.top, 1)
-
-                    Text("\(error.displayName): \(formattedMessage(for: error.errorType))")
-                        .font(.system(size: 10))
-                        .foregroundColor(Color.textSecondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.warningBg)
-    }
-
-    private func formattedMessage(for errorType: ErrorType) -> String {
-        switch errorType {
-        case .networkTimeout, .networkUnreachable:
-            return "Network error, retrying in \(refreshIntervalMinutes) min"
-        case .authFailed:
-            return "API Key invalid, check settings"
-        case .apiError(let code):
-            return "API error (code: \(code))"
-        }
     }
 }
 

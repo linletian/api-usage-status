@@ -68,6 +68,18 @@ final class MenuBarIconRendererTests: XCTestCase {
             return
         }
 
+        // One-shot regeneration mode: when this env var is set, overwrite
+        // the reference image with the current render and PASS. Used to
+        // refresh ReferenceImages/ after intentional rendering changes
+        // (e.g., the inverted-pill menu bar redesign). To regenerate all
+        // snapshot refs, run:
+        //   REGENERATE_MENUBAR_REFS=1 xcodebuild ... test
+        // then re-run without the env var to verify the new refs match.
+        if ProcessInfo.processInfo.environment["REGENERATE_MENUBAR_REFS"] == "1" {
+            try? pngData.write(to: referenceURL)
+            return
+        }
+
         if !FileManager.default.fileExists(atPath: referenceURL.path) {
             try? pngData.write(to: referenceURL)
             XCTFail("Reference image created at \(referenceURL.path). Re-run test to verify.", file: file, line: line)
@@ -444,6 +456,437 @@ final class MenuBarIconRendererTests: XCTestCase {
         assertSnapshot(image, named: "critical_breathing_inhale")
     }
 
+    // MARK: - Stale Slot Rendering (80% alpha, no pill)
+
+    /// A fresh (non-stale) warning slot MUST render as plain colored text
+    /// on transparent background — no pill. The text should use the
+    /// warning threshold color (#FFC107 = R=255, G=193, B=7).
+    /// Scans the rendered bitmap for the first non-transparent pixel
+    /// (the text glyph) and asserts its RGB matches warning yellow.
+    func testFreshWarningSlotKeepsYellowColor() {
+        let slot = makeSlot(
+            uuid: "fresh-warning",
+            colorState: .warning,
+            shortName: "WRN"
+        )
+
+        let image = renderer.render(
+            slotViewDataList: [slot],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+
+        // Fresh slot: text directly on transparent background. Scan for
+        // any non-transparent pixel and verify it's warning yellow.
+        guard let textPixel = firstNonTransparentPixel(in: image) else {
+            XCTFail("Fresh warning slot must have visible text pixels")
+            return
+        }
+        // #FFC107 = (R=255, G=193, B=7). Allow ±5 tolerance for font
+        // anti-aliasing which blends edge pixels.
+        XCTAssertEqual(textPixel.r, 255, accuracy: 10,
+                       "Fresh warning text R must be ~255 (yellow), got \(textPixel.r)")
+        XCTAssertEqual(textPixel.g, 193, accuracy: 10,
+                       "Fresh warning text G must be ~193 (yellow), got \(textPixel.g)")
+        XCTAssertEqual(textPixel.b, 7, accuracy: 10,
+                       "Fresh warning text B must be ~7 (yellow), got \(textPixel.b)")
+        XCTAssertGreaterThan(textPixel.alpha, 200,
+                             "Fresh text pixel must be fully opaque; got alpha=\(textPixel.alpha)")
+    }
+
+    /// Stale slots render the same text as fresh slots but at 80% alpha
+    /// using the underlying threshold color. Verifies a stale warning
+    /// slot still shows warning yellow at ~80% opacity (no pill, no gray).
+    /// The 0.8 multiplier gives premultiplied RGB = (204, 154, 6) ±
+    /// anti-aliasing tolerance.
+    func testStaleWarningSlotKeepsYellowColorAt80PercentAlpha() {
+        var slot = makeSlot(
+            uuid: "stale-warning",
+            colorState: .warning,
+            shortName: "WRN"
+        )
+        slot.isStale = true
+
+        let image = renderer.render(
+            slotViewDataList: [slot],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+
+        guard let textPixel = firstNonTransparentPixel(in: image) else {
+            XCTFail("Stale warning slot must have visible text pixels")
+            return
+        }
+        // Premultiplied RGB at 0.8 alpha: 255*0.8=204, 193*0.8=154, 7*0.8=6.
+        // Allow ±5 tolerance for font anti-aliasing.
+        XCTAssertEqual(textPixel.r, 204, accuracy: 10,
+                       "Stale warning text R must be ~204 (yellow * 0.8), got \(textPixel.r)")
+        XCTAssertEqual(textPixel.g, 154, accuracy: 10,
+                       "Stale warning text G must be ~154 (yellow * 0.8), got \(textPixel.g)")
+        XCTAssertEqual(textPixel.b, 6, accuracy: 10,
+                       "Stale warning text B must be ~6 (yellow * 0.8), got \(textPixel.b)")
+        // Alpha is the source of truth for opacity; premultiplied RGB
+        // gets dimmer with alpha. Allow a window because the strongest
+        // pixel might be a near-fully-opaque edge of an anti-aliased
+        // glyph rather than the bulk of the stroke.
+        XCTAssertGreaterThan(textPixel.alpha, 150,
+                             "Stale text pixel must be visible (alpha > 150); got alpha=\(textPixel.alpha)")
+        XCTAssertLessThanOrEqual(textPixel.alpha, 220,
+                             "Stale text pixel must NOT be fully opaque (should be ~80%); got alpha=\(textPixel.alpha)")
+    }
+
+    /// Stale critical slot keeps the critical red at 80% alpha.
+    /// Premultiplied: 244*0.8=195, 67*0.8=54, 54*0.8=43.
+    func testStaleCriticalSlotKeepsRedColorAt80PercentAlpha() {
+        var slot = makeSlot(
+            uuid: "stale-critical",
+            colorState: .critical,
+            shortName: "CRI"
+        )
+        slot.isStale = true
+
+        let image = renderer.render(
+            slotViewDataList: [slot],
+            colorMode: .color,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+
+        guard let textPixel = firstNonTransparentPixel(in: image) else {
+            XCTFail("Stale critical slot must have visible text pixels")
+            return
+        }
+        // #F44336 = (R=244, G=67, B=54). Premultiplied at 0.8 alpha.
+        XCTAssertEqual(textPixel.r, 195, accuracy: 15,
+                       "Stale critical text R must be ~195 (red * 0.8), got \(textPixel.r)")
+        XCTAssertEqual(textPixel.g, 54, accuracy: 15,
+                       "Stale critical text G must be ~54 (red * 0.8), got \(textPixel.g)")
+        XCTAssertEqual(textPixel.b, 43, accuracy: 15,
+                       "Stale critical text B must be ~43 (red * 0.8), got \(textPixel.b)")
+    }
+
+    /// Stale slot must use the underlying threshold color (warning yellow,
+    /// critical red, safe green) — NOT the dim `#D6D0A0` gray used by the
+    /// pill. Pins down normal/unavailable too to make sure no future
+    /// refactor accidentally collapses all stale slots to a single color.
+    func testStaleSlotUsesUnderlyingThresholdColor() {
+        let cases: [(ColorState, String)] = [
+            (.normal, "safe green"),
+            (.warning, "warning yellow"),
+            (.critical, "critical red"),
+        ]
+        for (underlyingState, label) in cases {
+            var slot = makeSlot(
+                uuid: "stale-\(underlyingState)",
+                colorState: underlyingState,
+                shortName: "T"
+            )
+            slot.isStale = true
+
+            // Sanity: `colorState` is independent of `isStale` — a stale
+            // warning slot still reports `.warning` here. `isStale` is
+            // the single channel for staleness detection.
+            XCTAssertEqual(slot.colorState, underlyingState,
+                           "isStale=true must not alter colorState from \(underlyingState)")
+            XCTAssertTrue(slot.isStale,
+                          "isStale must be the single source for staleness detection")
+
+            let image = renderer.render(
+                slotViewDataList: [slot],
+                colorMode: .color,
+                refreshState: .idle,
+                instancesCount: 1,
+                enabledCount: 1,
+                isDarkBackground: false
+            )
+            guard let pixel = firstNonTransparentPixel(in: image) else {
+                XCTFail("Stale \(underlyingState) slot must have visible text pixels")
+                continue
+            }
+            // The pixel must NOT match the dim gray (#D6D0A0 = 214, 208, 160).
+            // At least one channel must differ by more than 30 to prove
+            // it's not the dim color.
+            let isNotDim = abs(pixel.r - 214) > 30
+                || abs(pixel.g - 208) > 30
+                || abs(pixel.b - 160) > 30
+            XCTAssertTrue(isNotDim,
+                          "Stale \(underlyingState) slot must render in \(label), not dim gray; got R=\(pixel.r) G=\(pixel.g) B=\(pixel.b)")
+        }
+    }
+
+    /// Stale warning/critical slots MUST keep their breathing animation.
+    /// `colorState` is independent of `isStale`, so a stale warning slot
+    /// is added to the breathing set by `updateBreathingState` reading
+    /// `slot.colorState == .warning`.
+    func testStaleWarningSlotKeepsBreathingAnimation() {
+        var slot = makeSlot(
+            uuid: "stale-breathing",
+            colorState: .warning,
+            shortName: "WRN"
+        )
+        slot.isStale = true
+
+        // `updateBreathingState` should add this slot to the breathing
+        // set because `slot.colorState == .warning` (the field is
+        // independent of `isStale`).
+        renderer.updateBreathingState(slotViewDataList: [slot])
+        XCTAssertTrue(renderer.needsBreathingAnimation(),
+                      "Stale warning slot must trigger breathing animation via colorState")
+    }
+
+    /// In monochrome mode, stale slots must keep the underlying black/white
+    /// text (per their menu-bar background) at 80% alpha — NOT collapse to
+    /// the dim `#D6D0A0` gray. This is the multi-theme coverage for the
+    /// "alpha compositing is stable across system appearance" design
+    /// claim in `docs/menu-bar-stale-alpha.md`. Replaces the old
+    /// `testStaleSlotIsGrayInMonochromeMode` (which pinned the old pill
+    /// design that no longer exists).
+    func testStaleSlotKeepsUnderlyingColorInMonochromeMode() {
+        // Light menu-bar background → text is black, dimmed to 80% alpha.
+        // Premultiplied: 0*0.8=0, 0*0.8=0, 0*0.8=0; alpha=~204 (0.8*255).
+        var warningSlot = makeSlot(
+            uuid: "stale-mono-light",
+            colorState: .warning,
+            shortName: "M"
+        )
+        warningSlot.isStale = true
+        let lightImage = renderer.render(
+            slotViewDataList: [warningSlot],
+            colorMode: .monochrome,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: false
+        )
+        guard let lightPixel = firstNonTransparentPixel(in: lightImage) else {
+            XCTFail("Stale warning slot in monochrome (light) must have visible text pixels")
+            return
+        }
+        XCTAssertLessThan(lightPixel.r, 30,
+                          "Stale monochrome-light text R must be near black; got \(lightPixel.r)")
+        XCTAssertLessThan(lightPixel.g, 30,
+                          "Stale monochrome-light text G must be near black; got \(lightPixel.g)")
+        XCTAssertLessThan(lightPixel.b, 30,
+                          "Stale monochrome-light text B must be near black; got \(lightPixel.b)")
+        XCTAssertGreaterThan(lightPixel.alpha, 150,
+                             "Stale monochrome-light text must be visible (alpha > 150); got \(lightPixel.alpha)")
+        XCTAssertLessThanOrEqual(lightPixel.alpha, 220,
+                             "Stale monochrome-light text must be ~80% alpha; got \(lightPixel.alpha)")
+
+        // Dark menu-bar background → text is white, dimmed to 80% alpha.
+        // Premultiplied: 255*0.8=204 on each channel; alpha=~204.
+        let darkImage = renderer.render(
+            slotViewDataList: [warningSlot],
+            colorMode: .monochrome,
+            refreshState: .idle,
+            instancesCount: 1,
+            enabledCount: 1,
+            isDarkBackground: true
+        )
+        guard let darkPixel = firstNonTransparentPixel(in: darkImage) else {
+            XCTFail("Stale warning slot in monochrome (dark) must have visible text pixels")
+            return
+        }
+        XCTAssertGreaterThan(darkPixel.r, 200,
+                             "Stale monochrome-dark text R must be near white; got \(darkPixel.r)")
+        XCTAssertGreaterThan(darkPixel.g, 200,
+                             "Stale monochrome-dark text G must be near white; got \(darkPixel.g)")
+        XCTAssertGreaterThan(darkPixel.b, 200,
+                             "Stale monochrome-dark text B must be near white; got \(darkPixel.b)")
+        XCTAssertGreaterThan(darkPixel.alpha, 150,
+                             "Stale monochrome-dark text must be visible (alpha > 150); got \(darkPixel.alpha)")
+        XCTAssertLessThanOrEqual(darkPixel.alpha, 220,
+                             "Stale monochrome-dark text must be ~80% alpha; got \(darkPixel.alpha)")
+    }
+
+    /// A fresh normal slot rendered alone must NOT have any pill-shaped
+    /// opaque region at the slot edges. With the pill design removed,
+    /// the slot is just plain text on transparent background — only the
+    /// text glyphs are opaque.
+    func testNoPillBackgroundForAnySlot() {
+        // Render slots with various states including stale. With the pill
+        // gone, no slot should have a continuous opaque region — only the
+        // anti-aliased text glyphs themselves.
+        for (uuid, state, isStale) in [
+            ("normal", ColorState.normal, false),
+            ("warning", ColorState.warning, false),
+            ("critical", ColorState.critical, false),
+            ("stale-normal", ColorState.normal, true),
+            ("stale-warning", ColorState.warning, true),
+            ("stale-critical", ColorState.critical, true),
+        ] {
+            var slot = makeSlot(uuid: uuid, colorState: state, shortName: uuid.prefix(3).uppercased())
+            slot.isStale = isStale
+
+            let image = renderer.render(
+                slotViewDataList: [slot],
+                colorMode: .color,
+                refreshState: .idle,
+                instancesCount: 1,
+                enabledCount: 1,
+                isDarkBackground: false
+            )
+
+            // The slot edge (sample at y=2, well outside the text glyph
+            // area) must be transparent. With the pill, this would be
+            // opaque gray for stale slots. With the pill gone, it
+            // should be transparent for all slots.
+            let edge = alphaAt(image: image, x: 1, y: 2)
+            XCTAssertLessThan(edge.alpha, 20,
+                              "\(uuid): slot edge must be transparent (no pill); got alpha=\(edge.alpha)")
+        }
+    }
+
+    /// Find the maximum alpha value across a horizontal scan of the
+    /// image in the given y range. Useful for measuring pill fill alpha
+    /// without being misled by cut-out text glyphs (which produce 0 alpha).
+    private func maxAlpha(in image: NSImage, yRange: Range<Int>) -> Int {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return 0 }
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0 else { return 0 }
+        let bytesPerRow = width * 4
+        var pixelData = [UInt8](repeating: 0, count: width * height * 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: &pixelData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return 0 }
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        var maxAlpha = 0
+        for y in yRange {
+            guard y >= 0, y < height else { continue }
+            for x in 0..<width {
+                let offset = (y * width + x) * 4 + 3
+                let a = Int(pixelData[offset])
+                if a > maxAlpha { maxAlpha = a }
+            }
+        }
+        return maxAlpha
+    }
+
+    /// Scan the image for a fully-opaque (alpha ≥ 200) pixel — skips
+    /// anti-aliased font edges whose premultiplied RGB values don't
+    /// match the original color. Returns nil when no solid pixel found.
+    /// Used by fresh-slot text color tests.
+    private func firstNonTransparentPixel(in image: NSImage) -> PixelSample? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0 else { return nil }
+        let bytesPerRow = width * 4
+        var pixelData = [UInt8](repeating: 0, count: width * height * 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: &pixelData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        // Find a solid (non-edge) glyph pixel — anti-aliased edges have
+        // premultiplied RGB that doesn't match the intended foreground.
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 4
+                let a = Int(pixelData[offset + 3])
+                if a >= 200 {
+                    return PixelSample(
+                        r: Int(pixelData[offset]),
+                        g: Int(pixelData[offset + 1]),
+                        b: Int(pixelData[offset + 2]),
+                        alpha: a
+                    )
+                }
+            }
+        }
+        // Fall back to any visible pixel if no solid one exists
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 4
+                let a = Int(pixelData[offset + 3])
+                if a > 0 {
+                    return PixelSample(
+                        r: Int(pixelData[offset]),
+                        g: Int(pixelData[offset + 1]),
+                        b: Int(pixelData[offset + 2]),
+                        alpha: a
+                    )
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Sample the alpha channel and RGB at the geometric center of the
+    /// rendered image. Used by the pill tests to check fill opacity and
+    /// exact RGB match against the expected slot color. Returns zeros
+    /// when the image can't be sampled.
+    private struct PixelSample {
+        let r: Int
+        let g: Int
+        let b: Int
+        let alpha: Int
+    }
+
+    private func alphaAt(image: NSImage, x: Int, y: Int) -> PixelSample {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return PixelSample(r: 0, g: 0, b: 0, alpha: 0)
+        }
+        let width = cgImage.width
+        let height = cgImage.height
+        guard x >= 0, y >= 0, x < width, y < height else {
+            return PixelSample(r: 0, g: 0, b: 0, alpha: 0)
+        }
+        let bytesPerRow = width * 4
+        var pixelData = [UInt8](repeating: 0, count: width * height * 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: &pixelData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return PixelSample(r: 0, g: 0, b: 0, alpha: 0)
+        }
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let offset = (y * width + x) * 4
+        return PixelSample(
+            r: Int(pixelData[offset]),
+            g: Int(pixelData[offset + 1]),
+            b: Int(pixelData[offset + 2]),
+            alpha: Int(pixelData[offset + 3])
+        )
+    }
+
+    /// Convenience: alpha at the pill's left-edge interior sample point
+    /// (3px in from x=0, between the rounded corner and the text glyphs).
+    /// Used by the breathing-suppression test that only cares about
+    /// visibility (alpha > 0) not exact color.
+    private func pillCenterAlpha(_ image: NSImage) -> Int {
+        return alphaAt(image: image, x: 3, y: 11).alpha
+    }
+
     // MARK: - Unlimited metric snapshots
 
     private func makeUnlimitedSlot(
@@ -790,3 +1233,4 @@ final class MenuBarIconRendererTests: XCTestCase {
                                     "Slot width must cover longest possible text to prevent jitter")
     }
 }
+

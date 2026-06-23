@@ -33,6 +33,7 @@
   - 用户可在设置中按指标粒度开启/关闭每个统计维度在菜单栏中的显示
   - 当启用实例过多导致菜单栏总宽度超出系统可显示区域时，macOS 系统会自行截断右侧槽位；用户可通过禁用不关注的实例控制总宽度
 - **启动刷新中状态**：应用启动后尚未完成首次刷新时，所有已启用实例的槽位以灰色系统字体显示 `•••`（3 个圆点），等待首次刷新完成后切换为实际数据
+- **运行中刷新状态**：刷新周期进行中时，菜单栏图标整体**保持不变**（沿用上一次成功数据），刷新进度仅在用量面板中以卡片圆点旋转 + "Refreshing…" 文案反馈（详见 §3.2）。这是有意设计——菜单栏的稳定性优先，避免在每次刷新时让整条菜单栏"闪烁"
 - **全部禁用状态**：所有已配置实例均被禁用时，菜单栏以灰色系统字体显示 `NO API`，左键点击仍可打开面板进入设置
 - **余额不可用状态**：余额型实例 API 返回 `is_available = false` 时，该实例槽位置灰，以灰色系统字体显示 `N/A`；此状态在下次刷新返回 `is_available = true` 后自动恢复
 - **图标为代码动态绘制**，不依赖静态 SVG/PNG 资源文件，随数据刷新实时重绘
@@ -49,6 +50,9 @@
 
 - 点击菜单栏图标弹出浮动用量面板，按**服务实例**分组展示用量卡片。支持多指标的实例（如 MiniMax）在一张卡片内按能力桶分组展示多个指标行（如 `general` / `video` / `speech-hd` 各自显示 5h + weekly 进度条）；单指标实例延续旧版单行卡片样式
 - 每张卡片展示：
+  - **状态圆点**（卡片右上角，OK / WARN / CRIT 颜色）：
+    - 颜色映射与槽位一致（normal → 绿、warning → 黄、critical → 红；陈旧态 `isStale=true` 时该颜色上叠加 80% 透明度，与菜单栏处理对齐）
+    - **同时充当单实例刷新按钮**——点击后立即对该实例触发一次独立的刷新 cycle；运行中替换为旋转 ProgressView（详见 §3.4）
   - **显示名**（用户自定义，如「MiniMax-文字」「DS-主号」）
   - **周期配额型实例**：
     - 当前周期用量（用量 / 上限）
@@ -78,6 +82,9 @@
   - 网络超时/无连接："Network error, retrying in X min"
   - API 返回 401/403："API Key invalid, check settings"
   - 其他 API 错误："API error (code: XXX)"
+- **每张卡片的状态圆点可点击触发单实例刷新**：
+  - 卡片头部右上角的 OK / WARN / CRIT 圆点（详见 §3.2）同时是"刷新此实例"按钮，点击后立即按 `api_key_ref` 拉取一次该实例的最新数据，兄弟实例（同 `api_key_ref`）**不**受影响——supplier 调用仍按整组拉取，但 `SlotViewData` 只为被点击实例生成一份，兄弟实例保留上一次缓存数据
+  - 刷新进行中时该圆点替换为系统 `ProgressView`（10×10pt 旋转指示器），圆点变 disabled 防止重复触发；面板右侧的"Next refresh"文案同步切换为 "Refreshing…"（详见 §3.4）。这与全局 Refresh 按钮的抢占式行为不同——单实例点击在已有任何刷新在跑时**不打断**当前 cycle，直接 no-op（详见 `ARCHITECTURE.md §2.7`）
 - 手动刷新按钮
 
 ### 3.3 支持的供应商与统计维度
@@ -110,9 +117,34 @@
 - 后台定时刷新（默认 5 分钟，可配置 1–60 分钟）
 - 手动下拉/点击刷新
 - 应用启动时立即拉取一次
-- 网络异常时自动重试（指数退避，最多 3 次）
-- **刷新失败时菜单栏处理**：该实例对应的槽位图标和文字统一置灰（降低透明度或转为灰色），不在菜单栏展示错误信息、错误徽标或额外文字
-- **刷新失败时面板处理**：在面板顶部显示错误摘要栏，区分错误类型（网络异常 / API Key 失效 / 服务端错误等），并提供"立即重试"按钮
+- 网络异常时自动重试（指数退避，最多 3 次；实际时序：第 2 次 100ms + 抖动，第 3 次 1s + 抖动 / 2s + 抖动，详见 ARCHITECTURE §6.3）
+
+**刷新入口与行为**
+
+- **全局 Refresh 按钮**（面板底部）：
+  - 任何时候都可点——包括正在跑定时或单实例 cycle 时。点击会**抢占**当前正在运行的 cycle（取消 + 立即开新一轮），保证任意时刻最多一个 cycle 在跑，连点 5 下也只会跑 2 轮（首轮被抢占，最新一轮完成）
+  - 按钮文案始终为 **`Refresh`**，cycle 进行中时图标从静态箭头切换为旋转 ProgressView。右侧 "Next refresh" 已实时切换为 `Refreshing…`，按钮自身不变文案避免语义重复。按钮**始终可点**（不置 disabled），确保抢占能力随时可用
+- **单实例刷新**（卡片状态圆点）：
+  - 仅刷新该实例，**兄弟实例（同 `api_key_ref`）不被动**。supplier 调用按整组拉取，但只有目标实例生成 `SlotViewData`，兄弟实例的 slot 数据保留上一次缓存
+  - cycle 在跑时（无论全局还是单实例），点击状态圆点 **no-op**——单实例刷新是"补刷新"手势，不打断用户已发起的连续工作。**双重保护**：UI 层 `ColorStateBadge.disabled(isRefreshing)` + service 层 `RefreshService.triggerInstanceRefresh` 的 `guard currentToken == nil`，任一即可阻止二次触发
+  - **单实例刷新路径下**，失败时的 `errorSummaries` **仅覆盖该实例**的上一条错误，其他实例的错误状态保留不变（全局刷新仍按整组替换，详见 `ARCHITECTURE.md §2.7`）
+- **菜单栏不做"刷新中"动效**：刷新期间菜单栏槽位内容不变（保留上次成功数据），仅面板内部给出进度反馈。理由是菜单栏刷新频率高（默认 5 分钟一次），闪烁会让用户产生"在动"的错觉，违背稳定性优先的设计原则
+- **流式逐组更新**（2026-06-23）：全局刷新按 `api_key_ref` 逐组拉取，**每组数据就绪后立刻推送到 UI**（`mergeCycleResult` + `syncFromState`），不等待所有组完成。用户感知效果：先拉到的供应商实例先出数据，后拉到的仍然在转菊花。每组完成后该组实例的圆点菊花停止，remainingRefreshing UUID 集逐步缩窄。定时/单实例刷新同理适用
+
+**面板"Next refresh"文案**
+
+- 面板底部、Refresh 按钮右侧显示距下次定时刷新的剩余分钟数，由 `TimelineView(.periodic(by: 60))` 驱动——每 60s 重算一次，无需触发实际刷新
+- cycle 进行中时，该文案切换为 **`Refreshing…`**（英文，1 行 9pt 次级颜色），不再计算剩余分钟数
+- 退出文案切换不依赖菜单栏状态——只看 `AppStateProxy.isRefreshing`（全局 `refreshState == .refreshing`）
+
+**取消与重试的协作**
+
+- `Task.cancel()` 必须能中断到网络请求层（`URLSession.data(for:)` 自动抛 `URLError.cancelled`）和 Shell 层（`ShellProcessRunner` 用 `withTaskCancellationHandler` 立即 `process.terminate()`）；否则抢占会"假性成功"——`cycleTask` 标记取消但实际请求继续跑到 timeout，浪费 30s+
+- 重试策略 `RetryPolicy.withRetry` 每次重试前必须 `Task.checkCancellation()`；否则取消会被静默吞掉继续重试
+- 网络层必须**将 `.cancelled` 与真正的网络错误区分**——`.cancelled` 直接抛 `CancellationError` 上抛，**不**映射成 `.networkUnreachable`、**不**触发重试；详见 `ARCHITECTURE.md §6.3`
+- **刷新失败时菜单栏处理**：该实例对应的槽位显示上次成功数据（`isStale=true`），文字保留原阈值颜色（warning yellow / critical red / safe green；单色模式下黑/白），整体应用 80% 透明度——不切换为灰色、不绘制挖空 pill、不显示错误文字或异常徽标。视觉信号克制：略微变淡已足够提醒用户"数据不是最新的"。呼吸动画在陈旧 warning/critical 槽位上**保留**（`colorState` 不被 `isStale` 短路，仍反映 `.warning` / `.critical`，自然加入 `breathingSlots`）。陈旧检测与阈值颜色判断**正交**——`colorState` 反映阈值，`isStale` 反映数据时效。详见 `ARCHITECTURE.md §7.5`。
+- **刷新失败时面板处理**：每张失败实例的卡片显示**陈旧数据**：背景使用 `cardBgDim`、footer 两行：① `⚠ {错误信息}` ② `Cached {elapsed} ago`（基于 `slot.lastFetchedAt`，通过 `Date.timeSinceNow` 格式化）。当天没有任何成功数据时，显示原来的「Unable to load usage data」视图。
+  - "See details" 按钮始终保留——即使在失败状态用户也能跳转到 Provider 页面
 
 ### 3.5 偏好设置
 

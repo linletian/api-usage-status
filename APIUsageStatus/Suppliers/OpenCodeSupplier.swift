@@ -44,7 +44,7 @@ struct OpenCodeSupplier: Supplier {
             primaryData = try await runner.run(ShellCommand(
                 executable: opencodePath,
                 arguments: ["db", primarySQL, "--format", "json"],
-                timeout: 10
+                timeout: 30
             ))
         } catch {
             throw mapShellError(error)
@@ -69,7 +69,7 @@ struct OpenCodeSupplier: Supplier {
                 let monthlyData = try await runner.run(ShellCommand(
                     executable: opencodePath,
                     arguments: ["db", monthSQL, "--format", "json"],
-                    timeout: 10
+                    timeout: 30
                 ))
                 monthlyCost = try parser.parseMonthly(monthlyData)
             } catch {

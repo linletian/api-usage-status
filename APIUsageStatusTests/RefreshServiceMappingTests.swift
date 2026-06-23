@@ -71,6 +71,17 @@ final class RefreshServiceMappingTests: XCTestCase {
         XCTAssertEqual(s0.displayLimit, "")
         XCTAssertNotNil(s0.cycleRemainingSeconds)
         XCTAssertGreaterThan(s0.cycleRemainingSeconds!, 0)
+        // `cycleEndTime` is the absolute `Date` version of the same
+        // end_time ms the supplier reported. The view's live
+        // countdown uses this with `TimelineView`; without it the
+        // per-card "Xh Ym remaining" ticks once at refresh and freezes.
+        XCTAssertNotNil(s0.cycleEndTime, "5h snapshot must carry cycleEndTime for live countdown")
+        XCTAssertEqual(
+            s0.cycleEndTime!.timeIntervalSince1970,
+            TimeInterval(endTimeMs) / 1000.0,
+            accuracy: 0.001,
+            "cycleEndTime must match the supplier's end_time ms"
+        )
         XCTAssertEqual(s0.colorState, .critical, "99% ≥ 95 critical threshold")
         XCTAssertEqual(s0.configIndex, 1)
 
@@ -82,6 +93,11 @@ final class RefreshServiceMappingTests: XCTestCase {
         XCTAssertEqual(s1.percent, 100.0, accuracy: 0.01)
         XCTAssertEqual(s1.displayUsage, "100")
         XCTAssertEqual(s1.displayLimit, "")
+        // Weekly window has no `general:weekly_percent:end_time` in
+        // the rawData (only the 5h does) — `cycleEndTime` must be nil
+        // and `cycleRemainingSeconds` must mirror that.
+        XCTAssertNil(s1.cycleEndTime, "Weekly snapshot has no end_time → cycleEndTime is nil")
+        XCTAssertNil(s1.cycleRemainingSeconds, "cycleRemainingSeconds must mirror cycleEndTime nil-ness")
         XCTAssertEqual(s1.configIndex, 2)
 
         // --- Computed properties derive from first snapshot ---
@@ -167,6 +183,10 @@ final class RefreshServiceMappingTests: XCTestCase {
         XCTAssertEqual(s0.displayUsage, "$8.50")
         XCTAssertEqual(s0.displayLimit, "$12.00")
         XCTAssertNotNil(s0.cycleRemainingSeconds)
+        // All three OpenCode windows report `end_time` — every
+        // snapshot must carry `cycleEndTime` so the live countdown
+        // works on all of them.
+        XCTAssertNotNil(s0.cycleEndTime, "5h snapshot must carry cycleEndTime")
         XCTAssertEqual(s0.colorState, .normal)
         XCTAssertEqual(s0.configIndex, 1)
 
@@ -178,6 +198,7 @@ final class RefreshServiceMappingTests: XCTestCase {
         XCTAssertEqual(s1.displayUsage, "$15.00")
         XCTAssertEqual(s1.displayLimit, "$30.00")
         XCTAssertNotNil(s1.cycleRemainingSeconds)
+        XCTAssertNotNil(s1.cycleEndTime, "Weekly snapshot must carry cycleEndTime")
         XCTAssertEqual(s1.configIndex, 2)
 
         // --- Snapshot 2: monthly ---
@@ -188,6 +209,7 @@ final class RefreshServiceMappingTests: XCTestCase {
         XCTAssertEqual(s2.displayUsage, "$35.00")
         XCTAssertEqual(s2.displayLimit, "$60.00")
         XCTAssertNotNil(s2.cycleRemainingSeconds)
+        XCTAssertNotNil(s2.cycleEndTime, "Monthly snapshot must carry cycleEndTime")
         XCTAssertEqual(s2.configIndex, 3)
 
         // --- Computed: first snapshot drives instanceType / colorState ---
@@ -439,6 +461,68 @@ final class RefreshServiceMappingTests: XCTestCase {
         // 300 - 210 = 90 used, percent = 30%
         XCTAssertEqual(s.percent, 30.0, accuracy: 0.01)
         XCTAssertEqual(s.displayUsage, "90")
+    }
+
+    /// Copilot's parser writes the standard `<key>:end_time` ms key
+    /// (derived from `quota_reset_date_utc`). `RefreshService` must
+    /// pick it up and populate `cycleEndTime` so the per-card live
+    /// "Xh Ym remaining" countdown works for Copilot — this is the
+    /// integration test for that whole chain.
+    func testCopilotEndTimeFlowsThroughToSnapshot() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+
+        let metrics: [MetricConfig] = [
+            MetricConfig(key: "premium_interactions", group: nil, window: nil),
+        ]
+
+        let instance = Instance(
+            uuid: "copilot-endtime-1",
+            provider: Provider.githubCopilot.rawValue,
+            dimension: "premium_interactions",
+            metrics: metrics,
+            displayName: "Copilot",
+            shortName: "CP",
+            apiKeyRef: "copilot-key",
+            enabled: true,
+            sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+
+        // 1 hour from now, in ms — matches what the Copilot parser
+        // would have written for an ISO 8601 reset date 1h ahead.
+        let endTimeMs: Int64 = Int64(
+            Date().addingTimeInterval(3600).timeIntervalSince1970 * 1000
+        )
+
+        var rawData: [String: String] = [:]
+        rawData["premium_interactions"] = "30.0"
+        rawData["premium_interactions:unlimited"] = "false"
+        rawData["premium_interactions:entitlement"] = "300"
+        rawData["premium_interactions:remaining"] = "210"
+        rawData["premium_interactions:end_time"] = String(endTimeMs)
+
+        let response = SupplierResponse(rawData: rawData, currency: nil, isAvailable: true)
+
+        let result = await service.mapInstanceToSlotData(
+            instance: instance, response: response
+        )
+
+        let s = result.metricSnapshots[0]
+        XCTAssertNotNil(
+            s.cycleEndTime,
+            "Copilot snapshots must carry cycleEndTime once the parser writes <key>:end_time"
+        )
+        XCTAssertEqual(
+            s.cycleEndTime!.timeIntervalSince1970,
+            TimeInterval(endTimeMs) / 1000.0,
+            accuracy: 0.001
+        )
+        XCTAssertNotNil(s.cycleRemainingSeconds, "cycleRemainingSeconds mirrors cycleEndTime")
+        // Roughly 1h remaining (allow ±5s for test execution drift).
+        XCTAssertEqual(s.cycleRemainingSeconds!, 3600, accuracy: 5)
     }
 
     // MARK: - MiniMax weekly unlimited → MetricSnapshot.isUnlimited

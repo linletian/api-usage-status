@@ -7,6 +7,34 @@ struct UsageCardView: View {
     let slot: SlotViewData
     let lastRefreshAt: Date?
 
+    /// Error summary for this slot's instance from the most recent
+    /// failed cycle (per UUID). Used by the footer to display the
+    /// error message alongside the "Cached X ago" copy.
+    var staleError: ErrorSummary? = nil
+
+    /// True when the quota cycle window has passed (e.g., a 5h window
+    /// that ended). Rendered as a "Window expired" hint.
+    var windowExpired: Bool = false
+
+    /// True when a refresh cycle currently targeting this instance is
+    /// in flight (either via global Refresh that includes this instance,
+    /// or a per-instance click). The status dot swaps to a spinner in
+    /// this state.
+    var isRefreshing: Bool = false
+
+    /// Tapping the status dot refreshes just this instance. Wired by
+    /// the panel via `appStateProxy.triggerInstanceRefresh`. Nil in
+    /// read-only previews / tests.
+    var onRefreshTapped: (() -> Void)? = nil
+
+    /// Stale/cached data flag — read from `slot.isStale` (the single
+    /// source of truth for staleness per `docs/ARCHITECTURE.md §7.5`).
+    /// The menu bar reads the same field to decide whether to layer 80%
+    /// alpha on top of the threshold color.
+    private var isStale: Bool {
+        slot.isStale
+    }
+
     private var displayTitle: String {
         slot.displayName.isEmpty ? slot.shortName : slot.displayName
     }
@@ -44,7 +72,11 @@ struct UsageCardView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
                 Spacer()
-                ColorStateBadge(state: slot.colorState)
+                ColorStateBadge(
+                    state: slot.colorState,
+                    isRefreshing: isRefreshing,
+                    onRefreshTapped: onRefreshTapped
+                )
             }
 
             // Content
@@ -70,8 +102,11 @@ struct UsageCardView: View {
                 }
             }
 
-            // Footer: See details button + Last refresh time
-            HStack {
+            // Footer: See details button + Last refresh time / stale info.
+            // `lastTextBaseline` anchors the See details button to the bottom
+            // row of `footerStatusView` (1–3 rows depending on stale / window-expired
+            // state), keeping it visually pinned to the bottom-left of the card.
+            HStack(alignment: .lastTextBaseline) {
                 if let url = providerURL {
                     Button {
                         NSWorkspace.shared.open(url)
@@ -85,22 +120,52 @@ struct UsageCardView: View {
 
                 Spacer()
 
-                if let lastRefresh = lastRefreshAt {
-                    Text(formattedTime(lastRefresh))
-                        .font(.system(size: 9))
-                        .foregroundColor(.textSecondary)
-                }
+                footerStatusView
             }
         }
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.cardBg)
+                .fill(isStale ? Color.cardBgDim : Color.cardBg)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.progressTrackBg, lineWidth: 0.5)
         )
+    }
+
+    /// Right-aligned status text in the footer. Three layouts:
+    ///   1. Stale (cached) → "⚠ {error}" + "Cached X ago"
+    ///   2. Fresh + window expired → "Window expired"
+    ///   3. Fresh + window active → "Updated HH:MM"
+    @ViewBuilder
+    private var footerStatusView: some View {
+        if isStale {
+            VStack(alignment: .trailing, spacing: 2) {
+                if let message = staleError?.errorMessage {
+                    HStack(spacing: 3) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 9))
+                        Text(message)
+                    }
+                    .font(.system(size: 9))
+                    .foregroundColor(Color.warningYellow)
+                }
+                if let cachedAt = slot.lastFetchedAt {
+                    Text("Cached \(cachedAt.timeSinceNow) ago")
+                        .font(.system(size: 9))
+                        .foregroundColor(Color.textSecondary)
+                }
+            }
+        } else if windowExpired {
+            Text("Window expired")
+                .font(.system(size: 9))
+                .foregroundColor(Color.textSecondary)
+        } else if let lastRefresh = lastRefreshAt {
+            Text(formattedTime(lastRefresh))
+                .font(.system(size: 9))
+                .foregroundColor(.textSecondary)
+        }
     }
 
     // MARK: - Quota Content
@@ -149,9 +214,24 @@ struct UsageCardView: View {
             // resets) on the right. The "Next refresh" countdown is a
             // global value shared by all cards, so it's displayed once
             // at the bottom of the panel next to the Refresh button.
+            // `TimelineView` re-renders every minute so the countdown
+            // ticks down between refreshes; the timeline is cancelled
+            // automatically when this view is unmounted (popover
+            // closed), so no CPU is spent while the popup is hidden.
             HStack {
                 Spacer()
-                if let remaining = formatRemainingTime(cycleRemainingSeconds) {
+                if let endTime = firstCycleEndTime {
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        if let remaining = formatRemainingTime(endTime: endTime, now: context.date) {
+                            Text(remaining)
+                                .font(.system(size: 9))
+                                .foregroundColor(.textSecondary)
+                        }
+                    }
+                } else if let remaining = formatRemainingTime(cycleRemainingSeconds) {
+                    // Fallback for snapshots without a recorded end time
+                    // (legacy or balance-style): render the static value
+                    // captured at refresh time.
                     Text(remaining)
                         .font(.system(size: 9))
                         .foregroundColor(.textSecondary)
@@ -226,8 +306,30 @@ struct UsageCardView: View {
 
     /// Format cycle remaining seconds into a human-readable string.
     /// Returns nil if the value is 0 or negative (no point showing).
+    /// Kept as a static-at-refresh overload for callers that only have
+    /// the relative seconds (e.g. legacy fixtures, balance paths).
     private func formatRemainingTime(_ seconds: Int?) -> String? {
         guard let seconds, seconds > 0 else { return nil }
+        return Self.formatRemainingTime(seconds: seconds)
+    }
+
+    /// Live "Xh Ym remaining" formatter driven by `TimelineView`. The
+    /// view passes `context.date` so the countdown ticks down between
+    /// refreshes. Returns nil when `endTime` is in the past or not set.
+    private func formatRemainingTime(endTime: Date?, now: Date) -> String? {
+        guard let endTime else { return nil }
+        let seconds = max(0, Int(endTime.timeIntervalSince(now)))
+        return Self.formatRemainingTime(seconds: seconds)
+    }
+
+    /// Pure formatter: seconds → "Xd" / "Xh Ym" / "Xm" + " remaining".
+    /// Returns nil for 0 / negative. Sub-minute values are rounded up
+    /// to "1m" so the countdown doesn't flicker between "0m" and "1m"
+    /// near window close. Internal (not `private`) so
+    /// `UsageCardViewTests` can exercise the three branches directly
+    /// instead of mirroring the logic.
+    static func formatRemainingTime(seconds: Int) -> String? {
+        guard seconds > 0 else { return nil }
         if seconds >= 86_400 {
             let days = seconds / 86_400
             return "\(days)d remaining"
@@ -236,8 +338,6 @@ struct UsageCardView: View {
             let minutes = (seconds % 3_600) / 60
             return "\(hours)h \(minutes)m remaining"
         } else {
-            // Sub-minute values are rounded up to "1m" so the countdown
-            // doesn't flicker between "0m" and "1m" near window close.
             let minutes = max(1, seconds / 60)
             return "\(minutes)m remaining"
         }
@@ -386,9 +486,22 @@ struct UsageCardView: View {
                 flatMetricContent(snapshots: visibleSnapshots)
             }
 
-            if let remaining = formatRemainingTime(firstCycleRemaining) {
-                HStack {
-                    Spacer()
+            // Live "Xh Ym remaining" footer for the multi-metric layout
+            // (used by DeepSeek / OpenCode / Copilot). Mirrors the
+            // single-metric countdown: prefer `cycleEndTime` and tick it
+            // down with `TimelineView`; fall back to the static-at-refresh
+            // value when no end time is recorded.
+            HStack {
+                Spacer()
+                if let endTime = firstCycleEndTime {
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        if let remaining = formatRemainingTime(endTime: endTime, now: context.date) {
+                            Text(remaining)
+                                .font(.system(size: 9))
+                                .foregroundColor(.textSecondary)
+                        }
+                    }
+                } else if let remaining = formatRemainingTime(firstCycleRemaining) {
                     Text(remaining)
                         .font(.system(size: 9))
                         .foregroundColor(.textSecondary)
@@ -508,6 +621,15 @@ struct UsageCardView: View {
         slot.metricSnapshots.first(where: { $0.cycleRemainingSeconds != nil })?.cycleRemainingSeconds
     }
 
+    /// First snapshot that carries a `cycleEndTime` — the absolute window
+    /// end time the view feeds to `TimelineView` for the live countdown.
+    /// Falls back to `nil` for legacy snapshots where the parser didn't
+    /// record an end time; in that case the view renders the static
+    /// `cycleRemainingSeconds` value instead.
+    private var firstCycleEndTime: Date? {
+        slot.metricSnapshots.first(where: { $0.cycleEndTime != nil })?.cycleEndTime
+    }
+
     // MARK: - Helpers
 
     private func progressColor(for percent: Double) -> Color {
@@ -536,15 +658,38 @@ struct UsageCardView: View {
 
 struct ColorStateBadge: View {
     let state: ColorState
+    var isRefreshing: Bool = false
+    var onRefreshTapped: (() -> Void)? = nil
 
     var body: some View {
-        HStack(spacing: 2) {
-            Circle()
-                .fill(stateColor)
-                .frame(width: 8, height: 8)
+        let indicator = HStack(spacing: 2) {
+            if isRefreshing {
+                ProgressView()
+                    .scaleEffect(0.5)
+                    .frame(width: 10, height: 10)
+            } else {
+                Circle()
+                    .fill(stateColor)
+                    .frame(width: 8, height: 8)
+            }
             Text(stateText)
                 .font(.system(size: 9))
                 .foregroundColor(.textSecondary)
+        }
+
+        if let tap = onRefreshTapped {
+            Button(action: tap) {
+                indicator
+            }
+            .buttonStyle(.plain)
+            .help(isRefreshing ? "Refreshing…" : "Refresh this instance")
+            // When a refresh is in flight, the dot gesture is intentionally
+            // inert — `RefreshService.triggerInstanceRefresh` will no-op
+            // anyway, but disabling the visual hint makes the state
+            // unambiguous to the user.
+            .disabled(isRefreshing)
+        } else {
+            indicator
         }
     }
 

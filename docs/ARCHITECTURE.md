@@ -208,6 +208,32 @@
   6. 触发阈值评估与通知
 - 应用终止时取消 Timer
 
+**Cycle 抢占与单实例刷新**
+
+服务层通过 `cycleTask: Task<Void, Error>?` + `currentToken: CycleToken?` 槽位维护"当前正在跑的 performRefresh"，保证任意时刻最多一个 cycle 在执行。
+
+- **手动全局 Refresh（`triggerManualRefresh`）**——抢占式：取消当前 `cycleTask`，等待其 unwrap，然后启动新一轮全量刷新。await `task.value` 时若旧的 cycle 因取消而抛 `CancellationError`，调用方吞掉（不再传播）
+- **单实例刷新（`triggerInstanceRefresh(uuid:)`）**——非抢占：**仅当 `currentToken == nil` 时启动**；否则 no-op，避免打断用户已发起的定时/手动 cycle
+- **定时刷新（`runPeriodicCycle`）**——非抢占：`currentToken != nil` 时跳过本轮，下个 tick 再检查。两个入口（手动/单实例）走 `runPreemptiveCycle(targetUUID:)`，定时走 `runPeriodicCycle()`
+- **`CycleToken` 身份对象**：每次启动新 cycle 创建一个新的 `CycleToken` 实例；通过引用相等（`===`）判断"是否仍是当前 owner"。`runPreemptiveCycle` 在新建 token 之前**同步**调用旧 token 的 `markPreempted()`，随后才把新 token 写进 `currentToken`；旧 token 此刻已被标记，清理写入时读 `token.isPreempted == true` 即跳过
+- **Token-Preempted Cleanup 不变量**：`performRefresh` 接收 `token: CycleToken` 参数；所有写入 AppState 的地方（包括每组的 `pushProgress()`、early-return、`catch CancellationError`、末尾清理）之前必须 `!token.isPreempted`。被抢占的旧 cycle（token 已被标记）跳过清理 → 新 owner 的写入不会被覆盖；末位 cycle（token 未被标记）正常清理 → `refreshState` 不卡在 `.refreshing`。这是 cycle-slot 的核心并发契约，由 `RefreshServiceCycleSlotTests` 锁住
+- **被抢占 cycle 的错误处理**：`runPreemptiveCycle` 在 `await oldTask.value` 处用 `do/catch is CancellationError / catch` 区分——取消是预期路径（静默），非取消异常（如 Keychain 故障、解析崩溃）通过 `logger.error("Pre-empted cycle threw non-cancellation error: ...")` 记入日志，避免旧版 `try?` 静默吞咽导致的诊断盲区
+
+**`performRefresh(targetUUID: String? = nil)`** 是单入口：
+
+- `targetUUID == nil`：全量刷新。按 `api_key_ref` 逐组拉取，**每组完成后立刻通过 `pushProgress()` 推送到 UI**（流式逐组更新，不等所有组完成）。余额处理也在组内完成再推送
+- `targetUUID != nil`：仅刷新该实例。`targetInstances` 数组只包含目标实例，`Dictionary(grouping:)` 按 `api_key_ref` 分组后**只对目标所在的组发请求**（supplier 调用仍按整组拉，但 `mapInstanceToSlotData` 只为组内目标生成 `SlotViewData`，兄弟实例的 slot 保留上次缓存）。MiniMax auto-discover 在 `targetUUID != nil` 时跳过——避免副作用污染兄弟实例的 metrics
+- 入口处 `setRefreshingInstanceUUIDs(targetUUIDs)` 显示全部目标的菊花 → 每组完成后 `remainingRefreshing` 减去该组 UUID，逐步缩窄 → 末尾 `setRefreshingInstanceUUIDs([])` 确保所有菊花停止。每个 error catch 分支也调用 `pushProgress()` 将该组的错误状态立刻推送到 UI
+
+**取消协作（详见 §6.3）**
+
+`Task.cancel()` 必须能传达到网络层和 Shell 层：
+
+- `URLSession.data(for:)` 自动抛 `URLError(.cancelled)`，`NetworkClient.mapURLError` 单独识别 `.cancelled` → 抛 `CancellationError`，**不**映射为 `.networkUnreachable`、**不**触发 RetryPolicy 重试
+- `ShellProcessRunner.run` 用 `withTaskCancellationHandler` 包裹，在 `onCancel` 中立刻 `process.terminate()`（SIGTERM），不等 timeout
+- `RetryPolicy.withRetry` 每次 `attempt` 顶端 `try Task.checkCancellation()`
+- `performRefresh` 自身在每个 key 组循环顶端也调用 `try Task.checkCancellation()`，让取消尽快冒泡
+
 ### 2.8 供应商协议（`Supplier.swift`）
 
 **职责**：定义 API 供应商的接口。
@@ -343,18 +369,38 @@ AppDelegate.applicationDidFinishLaunching()
 ### 3.2 刷新周期（完整流程）
 
 ```
-Timer 触发 / 手动触发
+入口触发（Timer tick / triggerManualRefresh / triggerInstanceRefresh）
     │
-    ▼
-RefreshService.performRefresh()
+    ├── triggerManualRefresh ──▶ runPreemptiveCycle(targetUUID: nil)
+    │       标记 currentToken.isPreempted → 取消 cycleTask → 等待 unwrap → 启动新 cycle
+    │
+    ├── triggerInstanceRefresh(uuid) ──▶ 若 currentToken == nil 才启动
+    │       runPreemptiveCycle(targetUUID: uuid)
+    │       否则 no-op（"补刷新"手势不打断）
+    │
+    └── Timer tick ──▶ runPeriodicCycle()
+            若 currentToken == nil 才启动；否则跳过本轮
+
+            ▼
+RefreshService.performRefresh(targetUUID: String?)
     │
     ├──▶ AppState.setRefreshState(.refreshing)
+    ├──▶ AppState.setRefreshingInstanceUUIDs(targetUUIDs)
+    │       （驱动面板卡片圆点的旋转 ProgressView）
     │
-    ├──▶ 按 api_key_ref 分组实例
+    ├──▶ 解析 targetUUID：
+    │     nil → targetInstances = 所有 enabled 实例
+    │     非 nil → targetInstances = filter { $0.uuid == targetUUID && $0.enabled }
+    │              找不到时 silent bail（不动其他状态）
+    │
+    ├──▶ 按 api_key_ref 分组 targetInstances
     │     例如：实例 A、B 的 api_key_ref 均为 "minimax-token-plan"
     │           → 合并为一个 MiniMax 组
+    │     单实例刷新时，组内只含目标实例（兄弟实例不在该组）
     │
     ├──▶ 对每个唯一 api_key_ref：
+    │     │
+    │     │ try Task.checkCancellation()   // 协作取消，详见 §6.3
     │     │
     │     ├──▶ PersistenceService.getApiKey(ref) ──▶ KeychainService
     │     │
@@ -364,40 +410,76 @@ RefreshService.performRefresh()
     │     │         │
     │     │         ├── 成功 ──▶ 解析 SupplierResponse
     │     │         │
-    │     │         └── 失败 ──▶ 指数退避重试（最多 3 次）
+    │     │         └── 失败 ──▶ 指数退避重试（最多 3 次，每次重试前
+    │     │                              try Task.checkCancellation())
     │     │                              │
     │     │                              ├── 全部重试失败 ──▶ ErrorSummary
     │     │                              └── 重试成功 ──▶ SupplierResponse
     │     │
-    │     └──▶ 映射 SupplierResponse → 每 Instance 的 SlotViewData
-    │              （RefreshService.mapInstanceToSlotData 做 1:N 映射：
+    │     └──▶ 映射 SupplierResponse → 组内每 Instance 的 SlotViewData
+    │              （mapInstanceToSlotData 做 1:N 映射：
     │               遍历 instance.metrics，每个 MetricConfig 产生一个 MetricSnapshot）
     │
-    ├──▶ 对每个配额型实例，解析响应时算出 `cycleRemainingSeconds`（基于 `<model>:end_time` 毫秒时间戳 - 当前时刻），注入到 `InstanceType.quota` 关联值，UI 层据此格式化为 `Xh Ym` / `Xm` / `Xd remaining`。字段缺失则该行隐藏
+    └──▶ 组内后处理（每组完成后立即执行，不等其他组）：
+          │
+          ├──▶ 对每个配额型实例，解析响应时算出 `cycleEndTime`（基于 `<model>:end_time`
+          │     毫秒时间戳转 `Date`）并存入 `MetricSnapshot`，同时派生
+          │     `cycleRemainingSeconds`（`cycleEndTime - now`，向下取整到 0）以兼容
+          │     `InstanceType.quota` 与测试 fixture。UI 层用 `TimelineView(.periodic(by: 60))`
+          │     包装渲染：popover 打开时 `cycleEndTime - context.date` 每分钟重算一次，
+          │     格式化为 `Xh Ym` / `Xm` / `Xd remaining`；popover 关闭时 timeline 自动停止
+          │     （视图卸载）。字段缺失则该行隐藏
+          │
+          ├──▶ [targetUUID == nil 时] MiniMax auto-discover：把响应中
+          │     新发现的 model_name 加为 5h + weekly 两个 MetricConfig，
+          │     更新 instance + 写回 instances.json
+          │     （targetUUID != nil 时跳过，避免污染兄弟实例）
+          │
+          ├──▶ 对组内每个余额型实例：
+          │     ├──▶ BalanceCalculator.calculate(latestData, history) ──▶ 更新 BalanceSnapshot
+          │     │     PersistenceService.saveBalanceSnapshot(uuid, snapshot)
+          │     └──▶ [自动修正货币] 若 API 响应含 currency 字段，且与实例当前 currency 不同：
+          │              ├──▶ AppState 更新该实例的 currency
+          │              └──▶ 若 currency 发生变更，PersistenceService.saveInstances(...)
+          │                    写回 instances.json
+          │
+          ├──▶ 从 remainingRefreshing 集合中移除该组 UUID
+          │
+          ├──▶ AppState.mergeCycleResult(cycleSuccesses, cycleErroredUUIDs)
+          │     （立刻合并到 _slotViewDataList，不等其他组；单实例刷新时该数组只含目标，
+          │      兄弟实例 slot 保留上次缓存）
+          │
+          ├──▶ setErrorSummaries（累计至今的所有 error）：
+          │     targetUUID == nil → 整组替换
+          │     targetUUID != nil → 读旧值 → 过滤掉目标 UUID → 拼接本轮 errors
+          │
+          ├──▶ AppState.setRefreshingInstanceUUIDs(remainingRefreshing)
+          │     （已完成组的实例立刻停止菊花，待处理组的实例继续转动）
+          │
+          └──▶ AppStateProxy.syncFromState()
+                 （将 Actor 数据副本拉到 MainActor，触发 @Published → SwiftUI 重绘。
+                  流式逐组推送：先拉到的供应商先出数据，后拉到的继续转菊花）
+
+遍历完所有组后：
     │
-    ├──▶ AppState.updateSlotData(slotViewDataList)
-    │
-    ├──▶ 对每个余额型实例：
-    │     │
-    │     ├──▶ BalanceCalculator.calculate(latestData, history) ──▶ 更新 BalanceSnapshot
-    │     │     PersistenceService.saveBalanceSnapshot(uuid, snapshot)
-    │     │
-    │     └──▶ [自动修正货币] 若 API 响应含 currency 字段，且与实例当前 currency 不同：
-    │              ├──▶ AppState 更新该实例的 currency
-    │              └──▶ 若 currency 发生变更，PersistenceService.saveInstances(...) 写回 instances.json
+    ├──▶ 按 sortOrder 排序 allSlotData
     │
     ├──▶ NotificationManager.evaluateThresholds(instances, data)
     │         │
     │         └──▶ 若超过严重阈值则触发通知
     │
     ├──▶ AppState.setRefreshState(.idle)
-    │     AppState.setErrorSummaries(errors)
+    │     AppState.setLastRefreshAt(Date())
     │
-    ├──▶ AppStateProxy.syncFromState()
-    │        （将 Actor 数据副本拉到 MainActor，触发 @Published → SwiftUI 重绘）
+    ├──▶ AppState.setRefreshingInstanceUUIDs([])   // 末位清理：确保所有菊花停止
     │
-    └──▶ MenuBarIconRenderer 触发重绘（观察 AppStateProxy）
-         面板更新（观察 AppStateProxy）
+    └──▶ AppStateProxy.syncFromState()
+          面板末次重绘（所有圆点恢复为 OK/WARN/CRIT 静态度）
+
+取消路径：
+  catch CancellationError → setRefreshingInstanceUUIDs([])
+                          → throw（由 runPreemptiveCycle / runPeriodicCycle 的
+                            try { await task.value } catch { } 吞掉）
 ```
 
 ### 3.3 菜单栏渲染流程
@@ -505,7 +587,8 @@ struct MetricSnapshot: Equatable {
     let percent: Double              // 用量百分比 (0–100)
     let displayUsage: String         // 预格式化的用量字符串（如 "28.0%"、"¥42.50"）
     let displayLimit: String         // 预格式化的上限字符串（可为空）
-    let cycleRemainingSeconds: Int?  // 当前重置周期剩余秒数
+    let cycleEndTime: Date?          // 当前重置周期的绝对结束时间（UI 用 TimelineView 实时倒计时的权威源）
+    let cycleRemainingSeconds: Int?  // 同次刷新时刻的剩余秒数快照（cycleEndTime - now，向下取整到 0），供 InstanceType.quota 等无 Date() 的调用方使用
     let colorState: ColorState
     let configIndex: Int             // 1-based 位置，用于稳定排序
     let displayInMenuBar: Bool
@@ -742,28 +825,20 @@ struct Endpoint {
 
 ```
 第 1 次：立即
-第 2 次：等待 1s + random(0, 1s)
-第 3 次：等待 2s + random(0, 2s)
-每组 API 总计最长等待时间：约 5s
+第 2 次：等待 100ms + random(0, 50ms)
+第 3 次：等待 1s + random(0, 1s) / 2s + random(0, 1s)
+每组 API 总计最长等待时间：约 5s（不含单次请求 timeout）
 ```
 
-```swift
-func withRetry<T>(maxAttempts: Int = 3, operation: () async throws -> T) async throws -> T {
-    var lastError: Error?
-    for attempt in 0..<maxAttempts {
-        do {
-            return try await operation()
-        } catch {
-            lastError = error
-            if attempt < maxAttempts - 1 {
-                let delay = pow(2.0, Double(attempt)) + Double.random(in: 0...1)
-                try await Task.sleep(for: .seconds(delay))
-            }
-        }
-    }
-    throw lastError ?? RefreshError.maxRetriesExceeded
-}
-```
+**取消协作（`Task.cancel()` 协作前提）：**
+
+- 每次 `attempt` 顶端调用 `try Task.checkCancellation()`——否则取消会被吞掉继续重试，导致手动抢占在网络慢时要等完整个重试链才生效（最坏 30s+30s+30s ≈ 90s）
+- 抛出的 `CancellationError` **不**视为"网络错误重试"，因此重试策略在遇到 cancellation 时直接上抛，由外层 `performRefresh` 触发 `setRefreshingInstanceUUIDs([])` 清理
+
+**网络层与 Shell 层的 cancellation 透传：**
+
+- `NetworkClient.request` 捕获 `URLError(.cancelled)` 时**不**映射为 `.networkUnreachable`，而是直接 `throw CancellationError()`——否则会把"用户取消"伪装成"网络故障"，RetryPolicy 会对 cancellation 触发重试，浪费 30s+ 且日志误导
+- `ShellProcessRunner.run` 用 `withTaskCancellationHandler { … } onCancel: { process.terminate() }` 包裹，在父任务被取消时立即给子进程发 SIGTERM（不等配置的 timeout）。Task.detached 内部的 `waitUntilExit()` / `readDataToEndOfFile()` 不需要主动取消——进程被 SIGTERM 后它们会自然返回
 
 ### 6.4 供应商实现
 
@@ -897,12 +972,24 @@ enum RefreshError: Error {
 
 | 用途 | 色值 | 说明 |
 |------|------|------|
-| 置灰色 | `#D6D0A0` | 所有非活跃状态（加载中/禁用/失败/余额不可用）统一置灰色。文字等所有槽位元素均以此色渲染 |
+| 置灰色 | `#D6D0A0` | 所有非活跃状态（加载中/禁用/余额不可用）统一置灰色。文字等所有槽位元素均以此色渲染。**注意**：刷新失败（陈旧）不再使用此色，详见 §7.5 |
 | 安全 | `#4CAF50` | 彩色模式下的正常状态 |
 | 警告 | `#FFC107` | 彩色模式下的警告阈值 |
 | 严重 | `#F44336` | 彩色模式下的严重阈值 |
 
 **置灰实现方式**：不通过 `alphaValue` 或透明度操作，而是**直接以 `#D6D0A0` 作为文字颜色传入 `NSAttributedString`**，替换掉正常情况下应使用的颜色（无论单色还是彩色模式）。这避免了降 alpha 在单色模式下与系统外观颜色叠加后产生不可预期的视觉效果。
+
+#### SwiftUI 面板配色（`Color+Theme.swift`）
+
+SwiftUI 面板使用独立的语义色彩令牌（与菜单栏 NSColor 互不影响）。每种颜色包含 light 和 dark 两种 hex 值，通过 `Color.init(light:dark:)` 自动根据系统外观切换。
+
+| 令牌 | light | dark | 用途 |
+|------|-------|------|------|
+| `cardBg` | `0xFFFFFF` | `0x2C2C2E` | 正常卡片的背景色 |
+| `cardBgDim` | `0xF5F5F5` | `0x232325` | 陈旧（缓存）卡片的背景色，与 `cardBg` 形成微弱色差以便用户识别缓存数据 |
+| `textPrimary` | `0x1A1A1A` | `0xFFFFFF` | 正文 |
+| `textSecondary` | `0x666666` | `0xAEAEB2` | 副文 |
+| `warningBg` | `0xFFF3E0` | `0x4A3A00` | 错误 / 提示栏背景 |
 
 #### 单色模式
 - 所有文字：跟随系统菜单栏外观（浅色主题黑色，深色主题白色）
@@ -943,11 +1030,28 @@ enum RefreshError: Error {
 | 加载中（首次刷新） | `•••` | 以 `#D6D0A0` 系统字体渲染 |
 | 全部实例已禁用 | `NO API` | 以 `#D6D0A0` 系统字体渲染 |
 | 余额不可用（`is_available = false`） | `N/A` | 以 `#D6D0A0` 系统字体渲染 |
-| 刷新失败 | 上次成功数据照常显示，但全部元素以 `#D6D0A0` 渲染 | 以 `#D6D0A0` 系统字体渲染，菜单栏不展示错误文字 |
+| 刷新失败 | 上次成功数据照常显示，但渲染时整体应用 80% 透明度 | 文字保留原阈值颜色（warning yellow / critical red / safe green），仅降低透明度；菜单栏不展示错误文字 |
+| 刷新进行中（任意 cycle） | **无菜单栏视觉变化** | 菜单栏沿用上次成功数据渲染；刷新进度只在面板卡片圆点（→ 旋转 ProgressView）+ "Next refresh" 文案（→ "Refreshing…"）反馈，详见 §2.4 / PRD §3.4 |
+
+**陈旧槽位 80% 透明度渲染**（2026-06-22）：刷新失败时陈旧（`isStale=true`）槽位的视觉信号简化为"在原阈值颜色上整体应用 80% 透明度"：
+
+- 文字保留原始阈值颜色（warning yellow / critical red / safe green），不变色；单色模式下保留黑/白文字。
+- 通过 `slotColor.withAlphaComponent(0.8)` 对文字 + 阴影呼吸一并降透明度。
+- 不绘制 pill 背景、不切换为 `#D6D0A0` 灰色——避免视觉冲击过重。
+- 陈旧 warning/critical 槽位**保留**呼吸动画（`colorState` 仍为 `.warning` / `.critical`），陈旧态只影响透明度、不影响动画。
+- 陈旧检测与阈值判断**正交**：`colorState` 反映阈值，`isStale` 反映数据时效性，两个字段独立读取。
+- 详见 `docs/menu-bar-stale-alpha.md`。
+
+**ColorState.error 语义**（2026-06-22）：
+
+- `colorState` 计算属性**始终**反映 `metricSnapshots` 聚合的阈值状态——**不再**有 `isStale ? .error` 短路。
+- `isStale` 是存储字段（`Bool`，默认 `false`），由 `AppState.mergeCycleResult` 在刷新失败时置 `true`，刷新成功后重置为 `false`。**这是陈旧检测的唯一通道**——面板和菜单栏都从这里读取。
+- 之前的 `SlotViewData.underlyingColorState` 已删除（无调用方后无存在必要）。`colorState` 始终反映真实阈值，不再需要"绕路"通道。
+- 这一设计消除了之前"两个并行属性 + 短路逻辑"造成的阅读心智负担：阈值颜色始终来自 `colorState`，陈旧状态始终来自 `isStale`。
 
 > **默认动画行为**：默认动画仅在无实例配置时运行，一旦添加实例即自动停止。
 
-> **设计理由**：选择固定色值 `#D6D0A0`（低饱和暖灰）而非降低 `alphaValue` 的方式，是因为：(1) 单色模式下 alpha 叠加系统黑/白色后视觉效果不稳定；(2) 固定色值在两种色彩模式和明暗主题下均能清晰传递「非活跃」语义，且与系统菜单栏常见的灰色图标风格协调。
+> **设计理由**（2026-06-22）：陈旧渲染从"挖空 pill + 灰色"改为"原阈值颜色 + 80% alpha"——视觉信号更克制（pill 强提示不再必要），并消除了挖空 pill 的复杂渲染逻辑（`CTLineDraw` + `destinationOut` 混合模式）。macOS 菜单栏的 NSImage 渲染管道会做正确的预乘 alpha 合成，0.8 alpha 在两种色彩模式 + 明暗主题下视觉效果稳定且一致。
 
 ---
 
@@ -1060,6 +1164,7 @@ actor AppState {
     private(set) var refreshState: RefreshState = .idle
     private(set) var errorSummaries: [ErrorSummary] = []
     private(set) var globalSettings: GlobalSettings = .default
+    private(set) var refreshingInstanceUUIDs: Set<String> = []  // 驱动面板卡片圆点旋转动画
 
     // 变更方法（由服务层 Actor 调用，不由 UI 调用）
     func setInstances(_ newInstances: [Instance]) { ... }
@@ -1067,8 +1172,11 @@ actor AppState {
     func setRefreshState(_ state: RefreshState) { ... }
     func setErrorSummaries(_ summaries: [ErrorSummary]) { ... }
     func updateSettings(_ settings: GlobalSettings) { ... }
+    func setRefreshingInstanceUUIDs(_ uuids: Set<String>) { ... }
 }
 ```
+
+> **`refreshState` vs `refreshingInstanceUUIDs`**：`refreshState` 是全局 `.idle/.refreshing` 标志（驱动 Refresh 按钮的 spinner），只在一个 cycle 进入/退出时翻一次；`refreshingInstanceUUIDs` 是**当前 cycle 正在处理的具体实例集合**，由 `RefreshService.performRefresh` 在入口/三个退出点维护。前者用于按钮文案 + 倒计时切换，后者用于卡片圆点的旋转动画。两者都暴露给 UI，独立读取、独立使用。
 
 ### 9.3 AppStateProxy：SwiftUI 桥接层
 
@@ -1084,6 +1192,7 @@ final class AppStateProxy: ObservableObject {
     @Published var refreshState: RefreshState = .idle
     @Published var errorSummaries: [ErrorSummary] = []
     @Published var globalSettings: GlobalSettings = .default
+    @Published var refreshingInstanceUUIDs: Set<String> = []  // 驱动卡片圆点旋转动画
 
     init(state: AppState) {
         self.state = state
@@ -1096,15 +1205,22 @@ final class AppStateProxy: ObservableObject {
         let r = await state.refreshState
         let e = await state.errorSummaries
         let g = await state.globalSettings
+        let refreshing = await state.refreshingInstanceUUIDs
         self.instances = i
         self.slotViewDataList = s
         self.refreshState = r
         self.errorSummaries = e
         self.globalSettings = g
+        self.refreshingInstanceUUIDs = refreshing
     }
 
     func triggerManualRefresh() async {
         // 委托给 RefreshService，刷新完成后会回调 syncFromState()
+    }
+
+    func triggerInstanceRefresh(instanceUUID: String) async {
+        // 单实例刷新入口；currentToken != nil 时 RefreshService 内部 no-op
+        await refreshService.triggerInstanceRefresh(instanceUUID: instanceUUID)
     }
 }
 ```
@@ -1168,8 +1284,34 @@ struct UsagePanelView: View {
 
 ### 10.2 降级策略
 
-- **保留最后已知数据**：刷新失败时，槽位显示上次成功数据，但所有元素以置灰色 `#D6D0A0` 渲染（详见 §7.3 色彩定义、§7.5 特殊状态）。面板显示上次成功刷新时间戳。
-- **部分成功处理**：若组 A（MiniMax）成功但组 B（DeepSeek）失败，MiniMax 实例正常更新，DeepSeek 实例单独置灰。
+- **保留最后已知数据**：刷新失败时，槽位显示上次成功数据。菜单栏：文字保留原阈值颜色、整体应用 80% 透明度（详见 §7.5 特殊状态）。面板：卡片背景使用 `cardBgDim`，footer 显示 `⚠ {错误信息}` + `Cached {elapsed} ago`（详见 §10.x 面板 footer）。面板显示上次成功刷新时间戳。
+- **部分成功处理**：若组 A（MiniMax）成功但组 B（DeepSeek）失败，MiniMax 实例正常更新，DeepSeek 实例单独进入陈旧态（菜单栏 80% 透明度 / 面板 footer 陈旧提示）。
+
+#### mergeCycleResult 合并策略（2026-06-21）
+
+每个刷新周期结束后，`RefreshService` 调用 `AppState.mergeCycleResult(cycleSuccesses:cycleErroredUUIDs:)` 一次性合并结果：
+
+1. **成功覆盖**：`cycleSuccesses` 中的槽位写入 `_slotViewDataList`（ `isStale=false`，`lastFetchedAt` 更新）。
+2. **失败保留**：`cycleErroredUUIDs` 中的 UUID 在 `_slotViewDataList` 里保留原槽位数据，但 `isStale=true`（陈旧检测的唯一字段）。
+3. **删除清理**：`mergeCycleResult` 内部读取 `_instances`（而非外面传入 UUID 快照），消除 `getInstances()` → `merge` 间的 TOCTOU 窗口。实例被删除后，下次 merge 自动清理其缓存槽位。
+
+> **并发安全**：`mergeCycleResult` 内部构造字典时使用 last-wins 模式（`byUUID[uuid] = slot`）而非 `Dictionary(uniqueKeysWithValues:)`。后者在重复 UUID 时 crash——正常路径不会发生，但对调用方 bug 是防御性安全。
+
+#### 面板 footer 陈旧提示（2026-06-22）
+
+陈旧检测统一通过 `slot.isStale` 字段读取（详见 §7.5）。陈旧态与阈值颜色判断正交：阈值颜色来自 `slot.colorState`，陈旧状态来自 `slot.isStale`，两者独立。
+
+**当 `slot.isStale == true`**（陈旧数据）：
+
+- 卡片背景使用 `cardBgDim`（而非 `cardBg`），整体视觉变暗。
+- Footer 右对齐显示两行（按此顺序）：
+  1. `⚠ {errorType.errorMessage}`（来自 `errorSummaryByUUID`）
+  2. `Cached {elapsed} ago`（基于 `slot.lastFetchedAt`，通过 `Date.timeSinceNow` 格式化）
+- "See details" 按钮始终保留——用户即使在失败状态下也能跳转 Provider 页面。
+
+**当 `slot.isStale == false`**（新鲜数据）：
+
+- Footer 显示 `Updated HH:MM`（基于 `lastRefreshAt`），或 `Window expired`（当 `windowExpired == true` 时）。
 - **无连锁故障**：每个 `api_key_ref` 组独立失败。一组的失败不会阻止或延迟其他组。
 
 ### 10.3 日志记录

@@ -23,8 +23,15 @@ struct RetryPolicy {
         var lastError: Error?
 
         for attempt in 0..<maxAttempts {
+            try Task.checkCancellation()
             do {
                 return try await operation()
+            } catch is CancellationError {
+                // The operation itself threw CancellationError (e.g.,
+                // `NetworkClient` re-raises URLError.cancelled as
+                // CancellationError). Don't treat that as a network
+                // hiccup to retry through — propagate it immediately.
+                throw CancellationError()
             } catch {
                 lastError = error
 

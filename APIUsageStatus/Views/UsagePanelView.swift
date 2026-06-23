@@ -43,7 +43,13 @@ struct UsagePanelView: View {
                                 slot: slot,
                                 lastRefreshAt: appStateProxy.lastRefreshAt,
                                 staleError: errorSummaryByUUID[slot.uuid],
-                                windowExpired: isWindowExpired(slot)
+                                windowExpired: isWindowExpired(slot),
+                                isRefreshing: appStateProxy.refreshingInstanceUUIDs.contains(slot.uuid),
+                                onRefreshTapped: {
+                                    Task {
+                                        await appStateProxy.triggerInstanceRefresh(instanceUUID: slot.uuid)
+                                    }
+                                }
                             )
                         }
                     }
@@ -56,6 +62,12 @@ struct UsagePanelView: View {
 
             // Action buttons
             HStack(spacing: 12) {
+                // Manual Refresh button. Stays clickable while a refresh
+                // is running — clicking it again preempts the in-flight
+                // cycle and starts a fresh one (the per-cycle slot in
+                // `RefreshService` guarantees only one ever runs at a
+                // time). The label flips to a spinner + "Refreshing…"
+                // for visual continuity.
                 Button {
                     Task {
                         await appStateProxy.triggerManualRefresh()
@@ -70,24 +82,25 @@ struct UsagePanelView: View {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 10, weight: .medium))
                         }
-                        Text(appStateProxy.isRefreshing ? "Refreshing..." : "Refresh")
+                        Text(appStateProxy.isRefreshing ? "Refreshing…" : "Refresh")
                             .font(.system(size: 12, weight: .medium))
                     }
                 }
-                .disabled(appStateProxy.isRefreshing)
                 .buttonStyle(.borderless)
 
-                if !appStateProxy.isRefreshing {
-                    // Live countdown until the next automatic refresh.
-                    // `TimelineView` ticks every minute so the number
-                    // decrements without a fresh API refresh; the
-                    // timeline is cancelled automatically when this
-                    // view is unmounted (popover closed).
-                    TimelineView(.periodic(from: .now, by: 60)) { context in
-                        Text("Next refresh: ≈ \(minutesUntilNextRefresh(now: context.date))m")
-                            .font(.system(size: 9))
-                            .foregroundColor(Color.textSecondary)
-                    }
+                // Live status text on the right of the Refresh button.
+                // While a refresh cycle is in flight we show "Refreshing…"
+                // instead of the countdown so the user gets explicit
+                // feedback that work is happening (the menu-bar icon alone
+                // doesn't change for global refresh). When idle, the
+                // TimelineView ticks every minute and the countdown
+                // decrements without an API call.
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    Text(appStateProxy.isRefreshing
+                         ? "Refreshing…"
+                         : "Next refresh: ≈ \(minutesUntilNextRefresh(now: context.date))m")
+                        .font(.system(size: 9))
+                        .foregroundColor(Color.textSecondary)
                 }
 
                 Spacer()

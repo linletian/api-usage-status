@@ -16,6 +16,17 @@ struct UsageCardView: View {
     /// that ended). Rendered as a "Window expired" hint.
     var windowExpired: Bool = false
 
+    /// True when a refresh cycle currently targeting this instance is
+    /// in flight (either via global Refresh that includes this instance,
+    /// or a per-instance click). The status dot swaps to a spinner in
+    /// this state.
+    var isRefreshing: Bool = false
+
+    /// Tapping the status dot refreshes just this instance. Wired by
+    /// the panel via `appStateProxy.triggerInstanceRefresh`. Nil in
+    /// read-only previews / tests.
+    var onRefreshTapped: (() -> Void)? = nil
+
     /// Stale/cached data flag — read from `slot.isStale` (the single
     /// source of truth for staleness per `docs/ARCHITECTURE.md §7.5`).
     /// The menu bar reads the same field to decide whether to layer 80%
@@ -61,7 +72,11 @@ struct UsageCardView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
                 Spacer()
-                ColorStateBadge(state: slot.colorState)
+                ColorStateBadge(
+                    state: slot.colorState,
+                    isRefreshing: isRefreshing,
+                    onRefreshTapped: onRefreshTapped
+                )
             }
 
             // Content
@@ -643,15 +658,43 @@ struct UsageCardView: View {
 
 struct ColorStateBadge: View {
     let state: ColorState
+    var isRefreshing: Bool = false
+    var onRefreshTapped: (() -> Void)? = nil
 
     var body: some View {
-        HStack(spacing: 2) {
-            Circle()
-                .fill(stateColor)
-                .frame(width: 8, height: 8)
+        let indicator = HStack(spacing: 2) {
+            if isRefreshing {
+                // Default ProgressView is ~16pt; scale to ~10pt to match
+                // the static dot footprint and PRD §3.4 spec. The `.frame`
+                // constrains the layout box; `.scaleEffect` actually
+                // renders the spinner at the target size (otherwise the
+                // 16pt spinner gets clipped to 10×10 and looks cropped).
+                ProgressView()
+                    .scaleEffect(0.625)
+                    .frame(width: 10, height: 10)
+            } else {
+                Circle()
+                    .fill(stateColor)
+                    .frame(width: 8, height: 8)
+            }
             Text(stateText)
                 .font(.system(size: 9))
                 .foregroundColor(.textSecondary)
+        }
+
+        if let tap = onRefreshTapped {
+            Button(action: tap) {
+                indicator
+            }
+            .buttonStyle(.plain)
+            .help(isRefreshing ? "Refreshing…" : "Refresh this instance")
+            // When a refresh is in flight, the dot gesture is intentionally
+            // inert — `RefreshService.triggerInstanceRefresh` will no-op
+            // anyway, but disabling the visual hint makes the state
+            // unambiguous to the user.
+            .disabled(isRefreshing)
+        } else {
+            indicator
         }
     }
 

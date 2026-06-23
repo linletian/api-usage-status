@@ -17,6 +17,7 @@ final class AppStateProxy: ObservableObject {
     @Published private(set) var globalSettings: GlobalSettings = .default
     @Published private(set) var minimaxModelNames: [String] = []
     @Published private(set) var lastRefreshAt: Date? = nil
+    @Published private(set) var refreshingInstanceUUIDs: Set<String> = []  // used by per-instance dot spinner
 
     // MARK: - Internal References
 
@@ -85,9 +86,10 @@ final class AppStateProxy: ObservableObject {
         async let settingsTask = appState.getGlobalSettings()
         async let modelsTask = appState.getMiniMaxModelNames()
         async let lastRefreshTask = appState.getLastRefreshAt()
+        async let refreshingUUIDsTask = appState.getRefreshingInstanceUUIDs()
 
-        let (loadedInstances, loadedSlots, loadedRefresh, loadedErrors, loadedSettings, loadedModels, loadedLastRefresh) = await (
-            instancesTask, slotsTask, refreshTask, errorsTask, settingsTask, modelsTask, lastRefreshTask
+        let (loadedInstances, loadedSlots, loadedRefresh, loadedErrors, loadedSettings, loadedModels, loadedLastRefresh, loadedRefreshing) = await (
+            instancesTask, slotsTask, refreshTask, errorsTask, settingsTask, modelsTask, lastRefreshTask, refreshingUUIDsTask
         )
 
         self.instances = loadedInstances
@@ -97,6 +99,7 @@ final class AppStateProxy: ObservableObject {
         self.globalSettings = loadedSettings
         self.minimaxModelNames = loadedModels
         self.lastRefreshAt = loadedLastRefresh
+        self.refreshingInstanceUUIDs = loadedRefreshing
     }
 
     // MARK: - Manual Refresh
@@ -104,6 +107,14 @@ final class AppStateProxy: ObservableObject {
     func triggerManualRefresh() async {
         await refreshService.triggerManualRefresh()
         // syncFromState() is automatically invoked via onRefreshComplete
+    }
+
+    /// Refresh just one instance. No-op if any refresh is currently in
+    /// flight (global or per-instance) — clicking the per-instance dot is
+    /// a "补刷新" gesture that should never preempt a running cycle.
+    /// See `RefreshService.triggerInstanceRefresh` for the gate.
+    func triggerInstanceRefresh(instanceUUID: String) async {
+        await refreshService.triggerInstanceRefresh(instanceUUID: instanceUUID)
     }
 
     // MARK: - Computed Properties

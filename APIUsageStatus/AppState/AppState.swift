@@ -10,6 +10,7 @@ actor AppState {
     private var _globalSettings: GlobalSettings = .default
     private var _miniMaxModelNames: [String] = []
     private var _lastRefreshAt: Date? = nil
+    private var _refreshingInstanceUUIDs: Set<String> = []  // currently in-flight per-instance
 
     // MARK: - Getters
 
@@ -43,6 +44,19 @@ actor AppState {
 
     func getLastRefreshAt() -> Date? {
         _lastRefreshAt
+    }
+
+    /// UUIDs of instances whose slot is being refreshed right now.
+    /// Driven by `RefreshService` at the start/end of every supplier call
+    /// so the UI can show a spinner on the corresponding dot without
+    /// relying on the global `refreshState` (which only flips once per
+    /// whole cycle).
+    func getRefreshingInstanceUUIDs() -> Set<String> {
+        _refreshingInstanceUUIDs
+    }
+
+    func setRefreshingInstanceUUIDs(_ uuids: Set<String>) {
+        _refreshingInstanceUUIDs = uuids
     }
 
     // MARK: - Setters

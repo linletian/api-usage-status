@@ -45,8 +45,15 @@ actor NetworkClient {
             logger.debug("Request succeeded: \(endpoint.url)")
             return data
         } catch let error as URLError {
-            // All URLError codes are network-level failures, map to appropriate RefreshError.
-            // DNS failures, SSL errors, connection refused, etc. are all network issues, not API errors.
+            // Cancellation: when the parent task is cancelled mid-request,
+            // URLSession throws .cancelled. This is NOT a network failure
+            // — propagating it as `.networkUnreachable` would cause
+            // RetryPolicy to retry it as if the network was flaky, which
+            // both wastes 30s and obscures the real cause. Re-raise the
+            // cancellation so callers see the real intent.
+            if error.code == .cancelled {
+                throw CancellationError()
+            }
             let mappedError = mapURLError(error)
             logger.error("URLError [\(error.code.rawValue)]: \(error.localizedDescription)")
             throw mappedError

@@ -208,6 +208,33 @@
   6. 触发阈值评估与通知
 - 应用终止时取消 Timer
 
+**Cycle 抢占与单实例刷新**
+
+服务层通过 `cycleTask: Task<Void, Error>?` + `currentToken: CycleToken?` 槽位维护"当前正在跑的 performRefresh"，保证任意时刻最多一个 cycle 在执行。
+
+- **手动全局 Refresh（`triggerManualRefresh`）**——抢占式：取消当前 `cycleTask`，等待其 unwrap，然后启动新一轮全量刷新。await `task.value` 时若旧的 cycle 因取消而抛 `CancellationError`，调用方吞掉（不再传播）
+- **单实例刷新（`triggerInstanceRefresh(uuid:)`）**——非抢占：**仅当 `currentToken == nil` 时启动**；否则 no-op，避免打断用户已发起的定时/手动 cycle
+- **定时刷新（`runPeriodicCycle`）**——非抢占：`currentToken != nil` 时跳过本轮，下个 tick 再检查。两个入口（手动/单实例）走 `runPreemptiveCycle(targetUUID:)`，定时走 `runPeriodicCycle()`
+- **`CycleToken` 身份对象**：每次启动新 cycle 创建一个新的 `CycleToken` 实例；通过引用相等（`===`）判断"是否仍是当前 owner"。`runPreemptiveCycle` 在新建 token 之前**同步**调用旧 token 的 `markPreempted()`，随后才把新 token 写进 `currentToken`；旧 token 此刻已被标记，清理写入时读 `token.isPreempted == true` 即跳过
+- **Token-Preempted Cleanup 不变量**：`performRefresh` 接收 `token: CycleToken` 参数；三个退出点（empty-target early-return / `catch CancellationError` / success-path cleanup）写入 `setRefreshingInstanceUUIDs` / `setRefreshState` 之前必须 `!token.isPreempted`。被抢占的旧 cycle（token 已被标记）跳过清理 → 新 owner 的写入不会被覆盖；末位 cycle（token 未被标记）正常清理 → `refreshState` 不卡在 `.refreshing`。这是 cycle-slot 的核心并发契约，由 `RefreshServiceCycleSlotTests` 锁住
+- **被抢占 cycle 的错误处理**：`runPreemptiveCycle` 在 `await oldTask.value` 处用 `do/catch is CancellationError / catch` 区分——取消是预期路径（静默），非取消异常（如 Keychain 故障、解析崩溃）通过 `logger.error("Pre-empted cycle threw non-cancellation error: ...")` 记入日志，避免旧版 `try?` 静默吞咽导致的诊断盲区
+
+**`performRefresh(targetUUID: String? = nil)`** 是单入口：
+
+- `targetUUID == nil`：全量刷新，行为同旧版
+- `targetUUID != nil`：仅刷新该实例。`targetInstances` 数组只包含目标实例，`Dictionary(grouping:)` 按 `api_key_ref` 分组后**只对目标所在的组发请求**（supplier 调用仍按整组拉，但 `mapInstanceToSlotData` 只为组内目标生成 `SlotViewData`，兄弟实例的 slot 保留上次缓存）。MiniMax auto-discover 在 `targetUUID != nil` 时跳过——避免副作用污染兄弟实例的 metrics
+- 入口处 `setRefreshingInstanceUUIDs(targetUUIDs)`，三个退出点（normal end / early return 2 / `catch CancellationError`）各自显式 `setRefreshingInstanceUUIDs([])`——Swift 5.9 不允许 `await` 出现在 `defer` 体内，而 `Task { }` 包装会与下一轮 `set…` 竞态（参见 §6.3）
+- `targetUUID != nil` 时 `setErrorSummaries` 改为"读旧值 → 过滤掉目标 UUID → 拼接本轮 errors"，保留兄弟实例的错误状态
+
+**取消协作（详见 §6.3）**
+
+`Task.cancel()` 必须能传达到网络层和 Shell 层：
+
+- `URLSession.data(for:)` 自动抛 `URLError(.cancelled)`，`NetworkClient.mapURLError` 单独识别 `.cancelled` → 抛 `CancellationError`，**不**映射为 `.networkUnreachable`、**不**触发 RetryPolicy 重试
+- `ShellProcessRunner.run` 用 `withTaskCancellationHandler` 包裹，在 `onCancel` 中立刻 `process.terminate()`（SIGTERM），不等 timeout
+- `RetryPolicy.withRetry` 每次 `attempt` 顶端 `try Task.checkCancellation()`
+- `performRefresh` 自身在每个 key 组循环顶端也调用 `try Task.checkCancellation()`，让取消尽快冒泡
+
 ### 2.8 供应商协议（`Supplier.swift`）
 
 **职责**：定义 API 供应商的接口。
@@ -343,18 +370,38 @@ AppDelegate.applicationDidFinishLaunching()
 ### 3.2 刷新周期（完整流程）
 
 ```
-Timer 触发 / 手动触发
+入口触发（Timer tick / triggerManualRefresh / triggerInstanceRefresh）
     │
-    ▼
-RefreshService.performRefresh()
+    ├── triggerManualRefresh ──▶ runPreemptiveCycle(targetUUID: nil)
+    │       标记 currentToken.isPreempted → 取消 cycleTask → 等待 unwrap → 启动新 cycle
+    │
+    ├── triggerInstanceRefresh(uuid) ──▶ 若 currentToken == nil 才启动
+    │       runPreemptiveCycle(targetUUID: uuid)
+    │       否则 no-op（"补刷新"手势不打断）
+    │
+    └── Timer tick ──▶ runPeriodicCycle()
+            若 currentToken == nil 才启动；否则跳过本轮
+
+            ▼
+RefreshService.performRefresh(targetUUID: String?)
     │
     ├──▶ AppState.setRefreshState(.refreshing)
+    ├──▶ AppState.setRefreshingInstanceUUIDs(targetUUIDs)
+    │       （驱动面板卡片圆点的旋转 ProgressView）
     │
-    ├──▶ 按 api_key_ref 分组实例
+    ├──▶ 解析 targetUUID：
+    │     nil → targetInstances = 所有 enabled 实例
+    │     非 nil → targetInstances = filter { $0.uuid == targetUUID && $0.enabled }
+    │              找不到时 silent bail（不动其他状态）
+    │
+    ├──▶ 按 api_key_ref 分组 targetInstances
     │     例如：实例 A、B 的 api_key_ref 均为 "minimax-token-plan"
     │           → 合并为一个 MiniMax 组
+    │     单实例刷新时，组内只含目标实例（兄弟实例不在该组）
     │
     ├──▶ 对每个唯一 api_key_ref：
+    │     │
+    │     │ try Task.checkCancellation()   // 协作取消，详见 §6.3
     │     │
     │     ├──▶ PersistenceService.getApiKey(ref) ──▶ KeychainService
     │     │
@@ -364,20 +411,28 @@ RefreshService.performRefresh()
     │     │         │
     │     │         ├── 成功 ──▶ 解析 SupplierResponse
     │     │         │
-    │     │         └── 失败 ──▶ 指数退避重试（最多 3 次）
+    │     │         └── 失败 ──▶ 指数退避重试（最多 3 次，每次重试前
+    │     │                              try Task.checkCancellation())
     │     │                              │
     │     │                              ├── 全部重试失败 ──▶ ErrorSummary
     │     │                              └── 重试成功 ──▶ SupplierResponse
     │     │
-    │     └──▶ 映射 SupplierResponse → 每 Instance 的 SlotViewData
-    │              （RefreshService.mapInstanceToSlotData 做 1:N 映射：
+    │     └──▶ 映射 SupplierResponse → 组内每 Instance 的 SlotViewData
+    │              （mapInstanceToSlotData 做 1:N 映射：
     │               遍历 instance.metrics，每个 MetricConfig 产生一个 MetricSnapshot）
     │
     ├──▶ 对每个配额型实例，解析响应时算出 `cycleEndTime`（基于 `<model>:end_time` 毫秒时间戳转 `Date`）并存入 `MetricSnapshot`，同时派生 `cycleRemainingSeconds`（`cycleEndTime - now`，向下取整到 0）以兼容 `InstanceType.quota` 与测试 fixture。UI 层用 `TimelineView(.periodic(by: 60))` 包装渲染：popover 打开时 `cycleEndTime - context.date` 每分钟重算一次，格式化为 `Xh Ym` / `Xm` / `Xd remaining`；popover 关闭时 timeline 自动停止（视图卸载）。字段缺失则该行隐藏。`CopilotResponseParser` 在 parse 阶段把 `quota_reset_date_utc` 解析为 epoch ms 写入标准 `<model>:end_time` key，其余供应商直接透传毫秒时间戳
     │
-    ├──▶ AppState.updateSlotData(slotViewDataList)
+    ├──▶ [targetUUID == nil 时] MiniMax auto-discover：把响应中
+    │     新发现的 model_name 加为 5h + weekly 两个 MetricConfig，
+    │     更新 instance + 写回 instances.json
+    │     （targetUUID != nil 时跳过，避免污染兄弟实例）
     │
-    ├──▶ 对每个余额型实例：
+    ├──▶ AppState.mergeCycleResult(cycleSuccesses, cycleErroredUUIDs)
+    │     （合并到 _slotViewDataList；单实例刷新时该数组只含目标，
+    │      兄弟实例 slot 保留上次缓存）
+    │
+    ├──▶ 对每个余额型实例（targetInstances 范围内）：
     │     │
     │     ├──▶ BalanceCalculator.calculate(latestData, history) ──▶ 更新 BalanceSnapshot
     │     │     PersistenceService.saveBalanceSnapshot(uuid, snapshot)
@@ -390,14 +445,27 @@ RefreshService.performRefresh()
     │         │
     │         └──▶ 若超过严重阈值则触发通知
     │
+    ├──▶ setErrorSummaries：
+    │     targetUUID == nil → 整组替换
+    │     targetUUID != nil → 读旧值 → 过滤掉目标 UUID → 拼接本轮 errors
+    │
     ├──▶ AppState.setRefreshState(.idle)
-    │     AppState.setErrorSummaries(errors)
+    │     AppState.setLastRefreshAt(Date())
+    │
+    ├──▶ AppState.setRefreshingInstanceUUIDs([])   // 三个退出点都必须显式清理
     │
     ├──▶ AppStateProxy.syncFromState()
-    │        （将 Actor 数据副本拉到 MainActor，触发 @Published → SwiftUI 重绘）
+    │        （将 Actor 数据副本拉到 MainActor，触发 @Published → SwiftUI 重绘；
+    │         refreshingInstanceUUIDs 进入 → 对应圆点变 ProgressView，
+    │         退出后变回 OK/WARN/CRIT 静态圆点）
     │
     └──▶ MenuBarIconRenderer 触发重绘（观察 AppStateProxy）
-         面板更新（观察 AppStateProxy）
+         面板更新（观察 AppStateProxy，详见 §2.4 / §9.3）
+
+取消路径：
+  catch CancellationError → setRefreshingInstanceUUIDs([])
+                          → throw（由 runPreemptiveCycle / runPeriodicCycle 的
+                            try { await task.value } catch { } 吞掉）
 ```
 
 ### 3.3 菜单栏渲染流程
@@ -743,28 +811,20 @@ struct Endpoint {
 
 ```
 第 1 次：立即
-第 2 次：等待 1s + random(0, 1s)
-第 3 次：等待 2s + random(0, 2s)
-每组 API 总计最长等待时间：约 5s
+第 2 次：等待 100ms + random(0, 50ms)
+第 3 次：等待 1s + random(0, 1s) / 2s + random(0, 1s)
+每组 API 总计最长等待时间：约 5s（不含单次请求 timeout）
 ```
 
-```swift
-func withRetry<T>(maxAttempts: Int = 3, operation: () async throws -> T) async throws -> T {
-    var lastError: Error?
-    for attempt in 0..<maxAttempts {
-        do {
-            return try await operation()
-        } catch {
-            lastError = error
-            if attempt < maxAttempts - 1 {
-                let delay = pow(2.0, Double(attempt)) + Double.random(in: 0...1)
-                try await Task.sleep(for: .seconds(delay))
-            }
-        }
-    }
-    throw lastError ?? RefreshError.maxRetriesExceeded
-}
-```
+**取消协作（`Task.cancel()` 协作前提）：**
+
+- 每次 `attempt` 顶端调用 `try Task.checkCancellation()`——否则取消会被吞掉继续重试，导致手动抢占在网络慢时要等完整个重试链才生效（最坏 30s+30s+30s ≈ 90s）
+- 抛出的 `CancellationError` **不**视为"网络错误重试"，因此重试策略在遇到 cancellation 时直接上抛，由外层 `performRefresh` 触发 `setRefreshingInstanceUUIDs([])` 清理
+
+**网络层与 Shell 层的 cancellation 透传：**
+
+- `NetworkClient.request` 捕获 `URLError(.cancelled)` 时**不**映射为 `.networkUnreachable`，而是直接 `throw CancellationError()`——否则会把"用户取消"伪装成"网络故障"，RetryPolicy 会对 cancellation 触发重试，浪费 30s+ 且日志误导
+- `ShellProcessRunner.run` 用 `withTaskCancellationHandler { … } onCancel: { process.terminate() }` 包裹，在父任务被取消时立即给子进程发 SIGTERM（不等配置的 timeout）。Task.detached 内部的 `waitUntilExit()` / `readDataToEndOfFile()` 不需要主动取消——进程被 SIGTERM 后它们会自然返回
 
 ### 6.4 供应商实现
 
@@ -957,6 +1017,7 @@ SwiftUI 面板使用独立的语义色彩令牌（与菜单栏 NSColor 互不影
 | 全部实例已禁用 | `NO API` | 以 `#D6D0A0` 系统字体渲染 |
 | 余额不可用（`is_available = false`） | `N/A` | 以 `#D6D0A0` 系统字体渲染 |
 | 刷新失败 | 上次成功数据照常显示，但渲染时整体应用 80% 透明度 | 文字保留原阈值颜色（warning yellow / critical red / safe green），仅降低透明度；菜单栏不展示错误文字 |
+| 刷新进行中（任意 cycle） | **无菜单栏视觉变化** | 菜单栏沿用上次成功数据渲染；刷新进度只在面板卡片圆点（→ 旋转 ProgressView）+ "Next refresh" 文案（→ "Refreshing…"）反馈，详见 §2.4 / PRD §3.4 |
 
 **陈旧槽位 80% 透明度渲染**（2026-06-22）：刷新失败时陈旧（`isStale=true`）槽位的视觉信号简化为"在原阈值颜色上整体应用 80% 透明度"：
 
@@ -1089,6 +1150,7 @@ actor AppState {
     private(set) var refreshState: RefreshState = .idle
     private(set) var errorSummaries: [ErrorSummary] = []
     private(set) var globalSettings: GlobalSettings = .default
+    private(set) var refreshingInstanceUUIDs: Set<String> = []  // 驱动面板卡片圆点旋转动画
 
     // 变更方法（由服务层 Actor 调用，不由 UI 调用）
     func setInstances(_ newInstances: [Instance]) { ... }
@@ -1096,8 +1158,11 @@ actor AppState {
     func setRefreshState(_ state: RefreshState) { ... }
     func setErrorSummaries(_ summaries: [ErrorSummary]) { ... }
     func updateSettings(_ settings: GlobalSettings) { ... }
+    func setRefreshingInstanceUUIDs(_ uuids: Set<String>) { ... }
 }
 ```
+
+> **`refreshState` vs `refreshingInstanceUUIDs`**：`refreshState` 是全局 `.idle/.refreshing` 标志（驱动 Refresh 按钮的 spinner），只在一个 cycle 进入/退出时翻一次；`refreshingInstanceUUIDs` 是**当前 cycle 正在处理的具体实例集合**，由 `RefreshService.performRefresh` 在入口/三个退出点维护。前者用于按钮文案 + 倒计时切换，后者用于卡片圆点的旋转动画。两者都暴露给 UI，独立读取、独立使用。
 
 ### 9.3 AppStateProxy：SwiftUI 桥接层
 
@@ -1113,6 +1178,7 @@ final class AppStateProxy: ObservableObject {
     @Published var refreshState: RefreshState = .idle
     @Published var errorSummaries: [ErrorSummary] = []
     @Published var globalSettings: GlobalSettings = .default
+    @Published var refreshingInstanceUUIDs: Set<String> = []  // 驱动卡片圆点旋转动画
 
     init(state: AppState) {
         self.state = state
@@ -1125,15 +1191,22 @@ final class AppStateProxy: ObservableObject {
         let r = await state.refreshState
         let e = await state.errorSummaries
         let g = await state.globalSettings
+        let refreshing = await state.refreshingInstanceUUIDs
         self.instances = i
         self.slotViewDataList = s
         self.refreshState = r
         self.errorSummaries = e
         self.globalSettings = g
+        self.refreshingInstanceUUIDs = refreshing
     }
 
     func triggerManualRefresh() async {
         // 委托给 RefreshService，刷新完成后会回调 syncFromState()
+    }
+
+    func triggerInstanceRefresh(instanceUUID: String) async {
+        // 单实例刷新入口；currentToken != nil 时 RefreshService 内部 no-op
+        await refreshService.triggerInstanceRefresh(instanceUUID: instanceUUID)
     }
 }
 ```

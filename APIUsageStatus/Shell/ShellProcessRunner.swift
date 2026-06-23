@@ -44,19 +44,29 @@ actor ShellProcessRunner {
             stderrPipe.fileHandleForReading.readDataToEndOfFile()
         }
 
-        let exitCode = await exitTask.value
-        let stdoutData = await stdoutDataTask.value
-        let stderrData = await stderrDataTask.value
-        timeoutTask.cancel()
-        let wasTerminatedByTimeout = await timeoutTask.value
+        // Propagate parent cancellation to the child process. Without this,
+        // cancelling the calling Task only marks it cancelled — `waitUntilExit`
+        // keeps blocking until the configured timeout, so a manual Refresh
+        // "kill" would silently take up to `timeout` seconds to take effect.
+        return try await withTaskCancellationHandler {
+            let exitCode = await exitTask.value
+            let stdoutData = await stdoutDataTask.value
+            let stderrData = await stderrDataTask.value
+            timeoutTask.cancel()
+            let wasTerminatedByTimeout = await timeoutTask.value
 
-        if wasTerminatedByTimeout {
-            throw ShellError.timedOut(seconds: command.timeout)
+            if wasTerminatedByTimeout {
+                throw ShellError.timedOut(seconds: command.timeout)
+            }
+            if exitCode != 0 {
+                let stderrStr = String(data: stderrData, encoding: .utf8) ?? ""
+                throw ShellError.nonZeroExit(code: exitCode, stderr: stderrStr)
+            }
+            return stdoutData
+        } onCancel: {
+            if process.isRunning {
+                process.terminate()
+            }
         }
-        if exitCode != 0 {
-            let stderrStr = String(data: stderrData, encoding: .utf8) ?? ""
-            throw ShellError.nonZeroExit(code: exitCode, stderr: stderrStr)
-        }
-        return stdoutData
     }
 }

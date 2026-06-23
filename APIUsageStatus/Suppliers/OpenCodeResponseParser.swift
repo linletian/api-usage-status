@@ -14,8 +14,9 @@ struct OpenCodeResponseParser {
         /// 0..100, clamped.
         let percent: Double
         /// Absolute reset time as Unix milliseconds, used by
-        /// `RefreshService` to compute `cycleRemainingSeconds`. `nil` when
-        /// the parser cannot determine when the window resets.
+        /// `RefreshService` to compute `cycleEndTime` (and derive
+        /// `cycleRemainingSeconds` from it). `nil` when the parser cannot
+        /// determine when the window resets.
         let endTimeMs: Int64?
     }
 

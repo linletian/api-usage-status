@@ -106,6 +106,7 @@
 		FF533B21141B7E91FF494C0F /* GlobalSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C73DE7CC280E8C32B5CBEC49 /* GlobalSettings.swift */; };
 2841A819732F41E0957D8B26 /* AppStateMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 986E96F7150D41D18E2F875E /* AppStateMergeTests.swift */; };
 C697FB8E85AB4745AA8C5082 /* UsageCardViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3494FB8AA7E14133A747AC95 /* UsageCardViewTests.swift */; };
+		BB1A2B3C4D5E6F7A8B9C0D1F /* UsagePanelViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1A2B3C4D5E6F7A8B9C0D1E /* UsagePanelViewTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -222,6 +223,7 @@ C697FB8E85AB4745AA8C5082 /* UsageCardViewTests.swift in Sources */ = {isa = PBXB
 		FCFC6B3B9299C7DDB8264B6C /* ShellCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellCommand.swift; sourceTree = "<group>"; };
 986E96F7150D41D18E2F875E /* AppStateMergeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateMergeTests.swift; sourceTree = "<group>"; };
 3494FB8AA7E14133A747AC95 /* UsageCardViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageCardViewTests.swift; sourceTree = "<group>"; };
+		BB1A2B3C4D5E6F7A8B9C0D1E /* UsagePanelViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsagePanelViewTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -374,6 +376,7 @@ C697FB8E85AB4745AA8C5082 /* UsageCardViewTests.swift in Sources */ = {isa = PBXB
 				A9B02229A006D2DADE005681 /* InstanceDecodingTests.swift */,
 				986E96F7150D41D18E2F875E /* AppStateMergeTests.swift */,
 				3494FB8AA7E14133A747AC95 /* UsageCardViewTests.swift */,
+				BB1A2B3C4D5E6F7A8B9C0D1E /* UsagePanelViewTests.swift */,
 				7AA4335ECDEFC0A614346853 /* MenuBarIconRendererTests.swift */,
 				E579BF96EE109EAF0D663C7A /* MetricConfigCodableTests.swift */,
 				FC5D83D4218C5C4635B415E8 /* MiniMaxResponseParserTests.swift */,
@@ -658,6 +661,7 @@ C697FB8E85AB4745AA8C5082 /* UsageCardViewTests.swift in Sources */ = {isa = PBXB
 			files = (
 				2841A819732F41E0957D8B26 /* AppStateMergeTests.swift in Sources */,
 				C697FB8E85AB4745AA8C5082 /* UsageCardViewTests.swift in Sources */,
+				BB1A2B3C4D5E6F7A8B9C0D1F /* UsagePanelViewTests.swift in Sources */,
 				E151C0B79689A158AD80C756 /* BalanceCalculatorTests.swift in Sources */,
 				BF9F801A979A7AE6169DC54D /* BreathingMathTests.swift in Sources */,
 				63E92BE9CFBBEFE55E5D62B6 /* CopilotResponseParserTests.swift in Sources */,

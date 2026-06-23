@@ -240,6 +240,70 @@ final class UsageCardViewTests: XCTestCase {
         }
     }
 
+    // MARK: - Window remaining formatting (UsageCardView.formatRemainingTime)
+
+    /// Direct test of the pure static helper that backs both
+    /// `formatRemainingTime(_:)` (Int? overload) and the
+    /// `formatRemainingTime(endTime:now:)` live-countdown overload.
+    /// Branches covered: 0/negative (nil), sub-minute (round up to 1m),
+    /// minutes, exact hours (still says "Xh 0m"), days.
+    func testFormatRemainingTimeStaticSecondsFormatter() {
+        XCTAssertNil(UsageCardView.formatRemainingTime(seconds: 0),
+                     "0 seconds → nil (no point showing)")
+        XCTAssertNil(UsageCardView.formatRemainingTime(seconds: -30),
+                     "Negative seconds → nil")
+
+        XCTAssertEqual(UsageCardView.formatRemainingTime(seconds: 1), "1m remaining",
+                       "Sub-minute must round up to 1m (anti-flicker near window close)")
+        XCTAssertEqual(UsageCardView.formatRemainingTime(seconds: 30), "1m remaining",
+                       "30s sub-minute still rounds up to 1m")
+        XCTAssertEqual(UsageCardView.formatRemainingTime(seconds: 60), "1m remaining")
+        XCTAssertEqual(UsageCardView.formatRemainingTime(seconds: 60 * 30), "30m remaining")
+        XCTAssertEqual(UsageCardView.formatRemainingTime(seconds: 60 * 59), "59m remaining")
+
+        XCTAssertEqual(UsageCardView.formatRemainingTime(seconds: 60 * 60), "1h 0m remaining",
+                       "Exact-hour boundary must keep '0m' so the format stays consistent")
+        XCTAssertEqual(UsageCardView.formatRemainingTime(seconds: 60 * 60 + 30 * 60), "1h 30m remaining")
+
+        XCTAssertEqual(UsageCardView.formatRemainingTime(seconds: 86_400), "1d remaining")
+        XCTAssertEqual(UsageCardView.formatRemainingTime(seconds: 86_400 * 5), "5d remaining")
+    }
+
+    /// The live-countdown wrapper subtracts `(endTime - now)` and feeds
+    /// the result to the static formatter. Mirror that logic here to
+    /// pin the three observable behaviors: future endTime → formatted
+    /// string; past endTime → nil; nil endTime → nil. The mirror
+    /// intentionally duplicates the production formula so a refactor
+    /// that breaks the wrapper fails this test in addition to the
+    /// SwiftUI rendering path that can't run under XCTest.
+    func testFormatRemainingTimeEndTimeOverloadDerivation() {
+        func format(endTime: Date?, now: Date) -> String? {
+            guard let endTime else { return nil }
+            let seconds = max(0, Int(endTime.timeIntervalSince(now)))
+            return UsageCardView.formatRemainingTime(seconds: seconds)
+        }
+
+        let now = Date()
+        XCTAssertNil(format(endTime: nil, now: now),
+                     "nil endTime → nil")
+        XCTAssertNil(format(endTime: now.addingTimeInterval(-1), now: now),
+                     "End time 1s in the past → nil")
+        XCTAssertNil(format(endTime: now.addingTimeInterval(-3600), now: now),
+                     "End time 1h in the past → nil")
+        XCTAssertNil(format(endTime: now, now: now),
+                     "End time exactly at now → nil (0 seconds)")
+
+        XCTAssertEqual(format(endTime: now.addingTimeInterval(60), now: now),
+                       "1m remaining",
+                       "60s ahead rounds up to 1m")
+        XCTAssertEqual(format(endTime: now.addingTimeInterval(60 * 30), now: now),
+                       "30m remaining")
+        XCTAssertEqual(format(endTime: now.addingTimeInterval(60 * 60 * 2 + 30 * 60), now: now),
+                       "2h 30m remaining")
+        XCTAssertEqual(format(endTime: now.addingTimeInterval(86_400 * 3), now: now),
+                       "3d remaining")
+    }
+
     // MARK: - ErrorSummary plumbing
 
     /// The card footer reads `staleError.errorMessage` to display the

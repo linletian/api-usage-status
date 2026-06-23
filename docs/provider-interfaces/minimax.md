@@ -117,7 +117,7 @@ Authorization: Bearer <apiKey>
 | `<model_name>:weekly_status` | `current_weekly_status` 原始值 | 判定 weekly `isUnlimited` |
 | `<model_name>:weekly_remaining` | weekly 剩余百分比 | 周窗口精度 |
 | `<model_name>:weekly_percent` | weekly 用量百分比 | 周窗口主显示 |
-| `<model_name>:end_time` | 5h 窗口 end_time 毫秒时间戳 | **字段依赖**:RefreshService 算成 `cycleRemainingSeconds` 注入 `InstanceType.quota`,UI 层 `UsageCardView.formatRemainingTime` 格式化为 `Xh Ym` / `Xm` / `Xd remaining`。字段缺失则倒计时行整行隐藏 |
+| `<model_name>:end_time` | 5h 窗口 end_time 毫秒时间戳 | **字段依赖**:RefreshService 转成 `cycleEndTime: Date?` 存入 `MetricSnapshot`，同时派生 `cycleRemainingSeconds` 注入 `InstanceType.quota`（兼容旧调用方）。UI 层 `UsageCardView.formatRemainingTime(endTime:now:)` 用 `TimelineView(.periodic(by: 60))` 驱动重算，格式化为 `Xh Ym` / `Xm` / `Xd remaining`，popover 关闭时 timeline 自动停止。字段缺失则倒计时行整行隐藏 |
 | `_model_names` | 逗号拼接的 model 列表 | `InstanceEditorView` 维度选择器 |
 
 **示例**（响应里有 `general` 一条）：

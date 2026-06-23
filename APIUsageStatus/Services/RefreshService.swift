@@ -360,18 +360,21 @@ actor RefreshService {
                 let valueString = response.value(forDimension: key) ?? "0"
                 let percent = parsePercent(from: valueString)
 
-                // Compute cycle remaining seconds from interval end_time
-                // (ms timestamp). The view layer formats this as "Xd" /
-                // "Xh Ym" / "Xm" based on magnitude.
-                let cycleRemainingSeconds: Int? = {
-                    if let ets = response.value(forDimension: "\(key):end_time"),
-                       let endTimeMs = Int64(ets), endTimeMs > 0 {
-                        let endDate = Date(timeIntervalSince1970: TimeInterval(endTimeMs) / 1000.0)
-                        let remaining = endDate.timeIntervalSinceNow
-                        return max(0, Int(remaining))
-                    }
-                    return nil
+                // Resolve the window's absolute end time from the supplier's
+                // `<key>:end_time` rawData (ms epoch). The view layer uses
+                // `cycleEndTime` with `TimelineView` to render a live
+                // "Xh Ym remaining" countdown; `cycleRemainingSeconds` is
+                // the static-at-refresh derived copy kept for callers
+                // (e.g. `SlotViewData.instanceType`) that don't have a
+                // current `Date()` to subtract against.
+                let cycleEndTime: Date? = {
+                    guard let ets = response.value(forDimension: "\(key):end_time"),
+                          let endTimeMs = Int64(ets), endTimeMs > 0 else { return nil }
+                    return Date(timeIntervalSince1970: TimeInterval(endTimeMs) / 1000.0)
                 }()
+                let cycleRemainingSeconds: Int? = cycleEndTime.map {
+                    max(0, Int($0.timeIntervalSinceNow))
+                }
 
                 // Provider-specific display values. Copilot stores absolute
                 // credit counts, so the panel shows used/total credits.
@@ -436,7 +439,8 @@ actor RefreshService {
                     configIndex: configIndex,
                     displayInMenuBar: metricConfig.displayInMenuBar,
                     isUnlimited: isUnlimited,
-                    shortName: metricConfig.shortName
+                    shortName: metricConfig.shortName,
+                    cycleEndTime: cycleEndTime
                 ))
             }
 

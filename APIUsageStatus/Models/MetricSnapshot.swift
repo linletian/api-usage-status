@@ -41,8 +41,18 @@ struct MetricSnapshot: Equatable {
     /// `"¥100.00"`). May be empty for metrics that have no upper bound.
     let displayLimit: String
 
-    /// Seconds remaining in the current reset cycle. `nil` for metrics that
-    /// are not windowed (balance) or when the API does not provide it.
+    /// Absolute end time of the current reset cycle. `nil` for metrics that
+    /// are not windowed (balance) or when the API does not provide it. The
+    /// view layer combines this with `Date()` to render a live "Xh Ym
+    /// remaining" countdown via `TimelineView` — kept as an absolute `Date`
+    /// (not a relative seconds snapshot) so the countdown ticks down
+    /// smoothly between refreshes.
+    let cycleEndTime: Date?
+
+    /// Seconds remaining in the current reset cycle at the moment the
+    /// snapshot was built. Derived from `cycleEndTime` for the same refresh
+    /// tick. Kept as a separate field for callers (tests, `SlotViewData`)
+    /// that want a static value without re-deriving it from `Date()`.
     let cycleRemainingSeconds: Int?
 
     /// Aggregated state the renderer uses to pick a color. Computed at
@@ -80,7 +90,8 @@ struct MetricSnapshot: Equatable {
         configIndex: Int = 0,
         displayInMenuBar: Bool = true,
         isUnlimited: Bool = false,
-        shortName: String? = nil
+        shortName: String? = nil,
+        cycleEndTime: Date? = nil
     ) {
         self.key = key
         self.group = group
@@ -88,6 +99,7 @@ struct MetricSnapshot: Equatable {
         self.percent = percent
         self.displayUsage = displayUsage
         self.displayLimit = displayLimit
+        self.cycleEndTime = cycleEndTime
         self.cycleRemainingSeconds = cycleRemainingSeconds
         self.colorState = colorState
         self.configIndex = configIndex

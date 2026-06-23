@@ -78,9 +78,16 @@ struct UsagePanelView: View {
                 .buttonStyle(.borderless)
 
                 if !appStateProxy.isRefreshing {
-                    Text("Next refresh: ≈ \(nextRefreshMinutes)m")
-                        .font(.system(size: 9))
-                        .foregroundColor(Color.textSecondary)
+                    // Live countdown until the next automatic refresh.
+                    // `TimelineView` ticks every minute so the number
+                    // decrements without a fresh API refresh; the
+                    // timeline is cancelled automatically when this
+                    // view is unmounted (popover closed).
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        Text("Next refresh: ≈ \(minutesUntilNextRefresh(now: context.date))m")
+                            .font(.system(size: 9))
+                            .foregroundColor(Color.textSecondary)
+                    }
                 }
 
                 Spacer()
@@ -104,16 +111,17 @@ struct UsagePanelView: View {
         .ignoresSafeArea(edges: .top)
     }
 
-    /// Minutes until the next automatic refresh cycle. All cards share
-    /// the same global refresh interval, so this is computed once at
-    /// the panel level rather than per-card. Falls back to the full
-    /// interval if no refresh has happened yet.
-    private var nextRefreshMinutes: Int {
+    /// Minutes until the next automatic refresh cycle, evaluated at
+    /// `now` (which `TimelineView` advances by 1 minute per tick). All
+    /// cards share the same global refresh interval, so this is computed
+    /// once at the panel level rather than per-card. Falls back to the
+    /// full interval if no refresh has happened yet.
+    private func minutesUntilNextRefresh(now: Date) -> Int {
         let intervalMinutes = appStateProxy.globalSettings.refreshIntervalMinutes
         guard let lastRefresh = appStateProxy.lastRefreshAt else {
             return intervalMinutes
         }
-        let elapsed = Date().timeIntervalSince(lastRefresh)
+        let elapsed = now.timeIntervalSince(lastRefresh)
         let remaining = TimeInterval(intervalMinutes * 60) - elapsed
         return max(0, Int(remaining / 60))
     }

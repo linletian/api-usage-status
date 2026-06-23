@@ -373,7 +373,7 @@ RefreshService.performRefresh()
     │              （RefreshService.mapInstanceToSlotData 做 1:N 映射：
     │               遍历 instance.metrics，每个 MetricConfig 产生一个 MetricSnapshot）
     │
-    ├──▶ 对每个配额型实例，解析响应时算出 `cycleRemainingSeconds`（基于 `<model>:end_time` 毫秒时间戳 - 当前时刻），注入到 `InstanceType.quota` 关联值，UI 层据此格式化为 `Xh Ym` / `Xm` / `Xd remaining`。字段缺失则该行隐藏
+    ├──▶ 对每个配额型实例，解析响应时算出 `cycleEndTime`（基于 `<model>:end_time` 毫秒时间戳转 `Date`）并存入 `MetricSnapshot`，同时派生 `cycleRemainingSeconds`（`cycleEndTime - now`，向下取整到 0）以兼容 `InstanceType.quota` 与测试 fixture。UI 层用 `TimelineView(.periodic(by: 60))` 包装渲染：popover 打开时 `cycleEndTime - context.date` 每分钟重算一次，格式化为 `Xh Ym` / `Xm` / `Xd remaining`；popover 关闭时 timeline 自动停止（视图卸载）。字段缺失则该行隐藏。`CopilotResponseParser` 在 parse 阶段把 `quota_reset_date_utc` 解析为 epoch ms 写入标准 `<model>:end_time` key，其余供应商直接透传毫秒时间戳
     │
     ├──▶ AppState.updateSlotData(slotViewDataList)
     │
@@ -505,7 +505,8 @@ struct MetricSnapshot: Equatable {
     let percent: Double              // 用量百分比 (0–100)
     let displayUsage: String         // 预格式化的用量字符串（如 "28.0%"、"¥42.50"）
     let displayLimit: String         // 预格式化的上限字符串（可为空）
-    let cycleRemainingSeconds: Int?  // 当前重置周期剩余秒数
+    let cycleEndTime: Date?          // 当前重置周期的绝对结束时间（UI 用 TimelineView 实时倒计时的权威源）
+    let cycleRemainingSeconds: Int?  // 同次刷新时刻的剩余秒数快照（cycleEndTime - now，向下取整到 0），供 InstanceType.quota 等无 Date() 的调用方使用
     let colorState: ColorState
     let configIndex: Int             // 1-based 位置，用于稳定排序
     let displayInMenuBar: Bool

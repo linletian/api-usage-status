@@ -199,9 +199,24 @@ struct UsageCardView: View {
             // resets) on the right. The "Next refresh" countdown is a
             // global value shared by all cards, so it's displayed once
             // at the bottom of the panel next to the Refresh button.
+            // `TimelineView` re-renders every minute so the countdown
+            // ticks down between refreshes; the timeline is cancelled
+            // automatically when this view is unmounted (popover
+            // closed), so no CPU is spent while the popup is hidden.
             HStack {
                 Spacer()
-                if let remaining = formatRemainingTime(cycleRemainingSeconds) {
+                if let endTime = firstCycleEndTime {
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        if let remaining = formatRemainingTime(endTime: endTime, now: context.date) {
+                            Text(remaining)
+                                .font(.system(size: 9))
+                                .foregroundColor(.textSecondary)
+                        }
+                    }
+                } else if let remaining = formatRemainingTime(cycleRemainingSeconds) {
+                    // Fallback for snapshots without a recorded end time
+                    // (legacy or balance-style): render the static value
+                    // captured at refresh time.
                     Text(remaining)
                         .font(.system(size: 9))
                         .foregroundColor(.textSecondary)
@@ -276,8 +291,30 @@ struct UsageCardView: View {
 
     /// Format cycle remaining seconds into a human-readable string.
     /// Returns nil if the value is 0 or negative (no point showing).
+    /// Kept as a static-at-refresh overload for callers that only have
+    /// the relative seconds (e.g. legacy fixtures, balance paths).
     private func formatRemainingTime(_ seconds: Int?) -> String? {
         guard let seconds, seconds > 0 else { return nil }
+        return Self.formatRemainingTime(seconds: seconds)
+    }
+
+    /// Live "Xh Ym remaining" formatter driven by `TimelineView`. The
+    /// view passes `context.date` so the countdown ticks down between
+    /// refreshes. Returns nil when `endTime` is in the past or not set.
+    private func formatRemainingTime(endTime: Date?, now: Date) -> String? {
+        guard let endTime else { return nil }
+        let seconds = max(0, Int(endTime.timeIntervalSince(now)))
+        return Self.formatRemainingTime(seconds: seconds)
+    }
+
+    /// Pure formatter: seconds → "Xd" / "Xh Ym" / "Xm" + " remaining".
+    /// Returns nil for 0 / negative. Sub-minute values are rounded up
+    /// to "1m" so the countdown doesn't flicker between "0m" and "1m"
+    /// near window close. Internal (not `private`) so
+    /// `UsageCardViewTests` can exercise the three branches directly
+    /// instead of mirroring the logic.
+    static func formatRemainingTime(seconds: Int) -> String? {
+        guard seconds > 0 else { return nil }
         if seconds >= 86_400 {
             let days = seconds / 86_400
             return "\(days)d remaining"
@@ -286,8 +323,6 @@ struct UsageCardView: View {
             let minutes = (seconds % 3_600) / 60
             return "\(hours)h \(minutes)m remaining"
         } else {
-            // Sub-minute values are rounded up to "1m" so the countdown
-            // doesn't flicker between "0m" and "1m" near window close.
             let minutes = max(1, seconds / 60)
             return "\(minutes)m remaining"
         }
@@ -436,9 +471,22 @@ struct UsageCardView: View {
                 flatMetricContent(snapshots: visibleSnapshots)
             }
 
-            if let remaining = formatRemainingTime(firstCycleRemaining) {
-                HStack {
-                    Spacer()
+            // Live "Xh Ym remaining" footer for the multi-metric layout
+            // (used by DeepSeek / OpenCode / Copilot). Mirrors the
+            // single-metric countdown: prefer `cycleEndTime` and tick it
+            // down with `TimelineView`; fall back to the static-at-refresh
+            // value when no end time is recorded.
+            HStack {
+                Spacer()
+                if let endTime = firstCycleEndTime {
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        if let remaining = formatRemainingTime(endTime: endTime, now: context.date) {
+                            Text(remaining)
+                                .font(.system(size: 9))
+                                .foregroundColor(.textSecondary)
+                        }
+                    }
+                } else if let remaining = formatRemainingTime(firstCycleRemaining) {
                     Text(remaining)
                         .font(.system(size: 9))
                         .foregroundColor(.textSecondary)
@@ -556,6 +604,15 @@ struct UsageCardView: View {
 
     private var firstCycleRemaining: Int? {
         slot.metricSnapshots.first(where: { $0.cycleRemainingSeconds != nil })?.cycleRemainingSeconds
+    }
+
+    /// First snapshot that carries a `cycleEndTime` — the absolute window
+    /// end time the view feeds to `TimelineView` for the live countdown.
+    /// Falls back to `nil` for legacy snapshots where the parser didn't
+    /// record an end time; in that case the view renders the static
+    /// `cycleRemainingSeconds` value instead.
+    private var firstCycleEndTime: Date? {
+        slot.metricSnapshots.first(where: { $0.cycleEndTime != nil })?.cycleEndTime
     }
 
     // MARK: - Helpers

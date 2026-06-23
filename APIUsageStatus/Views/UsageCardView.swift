@@ -585,7 +585,7 @@ struct UsageCardView: View {
 
         ForEach(sortedGroupKeys, id: \.self) { groupKey in
             if let snapshots = groups[groupKey] {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 4) {
                     if !groupKey.isEmpty {
                         Text(groupKey.capitalized)
                             .font(.system(size: 9, weight: .semibold))
@@ -616,7 +616,7 @@ struct UsageCardView: View {
     @ViewBuilder
     private func metricRow(snapshot: MetricSnapshot) -> some View {
         if snapshot.isUnlimited {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
                     Text(metricLabel(for: snapshot))
                         .font(.system(size: 9))
@@ -627,10 +627,10 @@ struct UsageCardView: View {
                         .foregroundColor(.textSecondary)
                 }
                 FlowingGlowBar()
-                    .frame(height: 3)
+                    .frame(height: 4)
             }
         } else {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
                     Text(metricLabel(for: snapshot))
                         .font(.system(size: 9))
@@ -645,7 +645,7 @@ struct UsageCardView: View {
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .foregroundColor(percentTextColor(for: snapshot.percent))
                 }
-                quotaProgressBar(percent: snapshot.percent, height: 3)
+                quotaProgressBar(percent: snapshot.percent, height: 4)
             }
         }
     }
@@ -786,7 +786,7 @@ struct ColorStateBadge: View {
 /// the view leaves the hierarchy, SwiftUI tears down the timeline and stops
 /// driving redraws — no manual start/stop is needed.
 struct FlowingGlowBar: View {
-    private let barHeight: CGFloat = 3
+    private let barHeight: CGFloat = 4
     private let shimmerWidthFraction: CGFloat = 0.45
     private let duration: Double = 2.4
 

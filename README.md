@@ -2,21 +2,22 @@
 
 > **Languages:** English | [简体中文](README_zh-CN.md)
 
-A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek API usage and balance in real time.
-**Since mainstream similar apps don't support macOS 13, this project is only a self-use scaffold project.**
+A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek / GitHub Copilot / OpenCode Go API usage and balance in real time.
+**Since mainstream alternatives no longer support macOS 13, this project is a self-use scaffold only.**
 
 ## Features
 
-- **Menu Bar Icon** — rendered in SF Pro 8pt, two-line stacked layout, one slot per enabled instance (unbounded), each sized by content width
+- **Menu Bar Icon** — rendered in SF Pro 8pt, two-line stacked layout, one slot per enabled metric (a MiniMax instance with N tracked windows becomes N slots; other providers are 1 slot each), unbounded count, each sized by content width
 - **Usage Panel** — click the icon to pop up a floating window showing usage cards, error summary, manual refresh, and a settings entry
 - **Multi-Metric Tracking** — MiniMax tracks usage for each capability bucket (`general`, `video`, `speech-hd`, etc.) independently, each with its own 5h + weekly dual-window metrics
 - **Weekly Quota Display** — MiniMax instance card shows a weekly window progress bar at the bottom; unlimited plans display a cyan-blue flowing glow bar animation
 - **Threshold Alerts** — quota percentages or balance amounts trigger macOS system notifications; click the notification to view details
 - **Deep-Link to Web Dashboard** — each card exposes a `See details` button that opens the provider's web usage page in the default browser (DeepSeek, MiniMax, GitHub Copilot → static URLs; OpenCode → `https://opencode.ai/workspace/<id>/go`, where `<id>` is recovered from `~/.local/share/opencode/log/*.log`; falls back to `https://opencode.ai/zh/go` if not yet recovered)
 - **Balance Tracking** — records historical snapshots, displays daily averages by week / month / last 7 days / last 30 days
-- **Zero External Dependencies** — only uses system frameworks like AppKit, SwiftUI, Security. OpenCode Go provider requires the `opencode` CLI to be installed locally.
+- **Zero External Dependencies** — only uses system frameworks such as AppKit, SwiftUI, and Security. OpenCode Go provider requires the `opencode` CLI to be installed locally.
 
-<img src="docs/README_assets/ScreenShot.png" alt="Usage Panel Screenshot" style="max-width: 100%;">
+| <img src="docs/README_assets/ScreenShot_Light.png" alt="Usage panel screenshot (light mode)"> | <img src="docs/README_assets/ScreenShot_Dark.png" alt="Usage panel screenshot (dark mode)"> |
+|---|---|
 
 ### Supported Providers
 
@@ -31,9 +32,9 @@ A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek
 
 Each provider has a different authentication model. All credentials are stored in macOS Keychain (InternetPassword type) and never written to disk in plain text.
 
-- **MiniMax** — Paste a Token Plan Key from the MiniMax developer console. It is independent from your per-request API key.
+- **MiniMax** — Paste a Token Plan Key from the MiniMax developer console. It is independent of your per-request API key.
 - **DeepSeek** — Paste the API Key from your DeepSeek open platform account.
-- **GitHub Copilot** — Paste a **GitHub Personal Access Token (PAT)**. Unlike the other two, Copilot does not issue its own API key; it is accessed via your GitHub identity.
+- **GitHub Copilot** — Paste a **GitHub Personal Access Token (PAT)**. Unlike DeepSeek and MiniMax, Copilot does not issue its own API key; it is accessed via your GitHub identity.
 
   Generate a PAT with these steps:
   1. Open https://github.com/settings/tokens
@@ -68,6 +69,8 @@ xcodegen generate
 ```
 
 ### 2. Command Line Build
+
+> If `xcodebuild` complains `tool 'xcodebuild' requires Xcode`, prepend `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` to the commands or run `sudo xcode-select -s /Applications/Xcode.app`.
 
 ```bash
 # Debug build
@@ -111,28 +114,7 @@ xcodebuild -project APIUsageStatus.xcodeproj \
 
 Or press Cmd+U in Xcode.
 
-### Test Suites (159 cases in total, excluding deprecated)
-
-| Suite | Count | Coverage |
-|-------|-------|----------|
-| BalanceCalculatorTests | 14 | Consumption calculation, cross-day archiving, top-up detection, daily average statistics, history trimming |
-| MiniMaxResponseParserTests | 11 | Normal parsing, auth errors, business errors, malformed JSON, multiple models, weekly fields |
-| DeepSeekResponseParserTests | 8 | CNY priority parsing, fallback, `is_available=false`, empty array |
-| CopilotResponseParserTests | 12 | GitHub Copilot API response parsing, token scopes, error responses |
-| RetryPolicyTests | 6 | Retry behavior, backoff delay, max attempts |
-| WeeklyQuotaTests | 10 | Weekly field parsing, `isUnlimited` judgment, missing field fallback |
-| FlowingGlowBarTests | 5 | Glow bar phase, width, geometry constraints |
-| MenuBarIconRendererTests | 15 | Property-assertion + snapshot: breathing state tracking, shadow, animation lifecycle, monochrome, multi-slot |
-| OpenCodeResponseParserTests | 11 | Real fixture parsing, window algorithm tests, makeResponse shape |
-| ShellProcessRunnerTests | 4 | Success, executable-not-found, non-zero exit, timeout |
-| BreathingMathTests | 17 | Breathing animation phase, shadow radius, shadow opacity, config validation |
-| InstanceCardViewTests | 12 | Rendering (display name, subtitle, shortName badge, toggle, buttons), edit/delete callbacks, provider display mapping |
-| SettingsViewModelTests | 12 | Sidebar navigation (Services/General/About), form bindings (refresh interval, color mode, launch at login, notifications) |
-| ProviderPickerAndThresholdTests | 13 | Provider picker UI, MiniMax model selection, threshold validation (quota + balance) |
-| StatusDotViewTests | 2 | Pixel-level color resolution for trackingOn/trackingOff via snapshot |
-| EmptyStateGuideViewTests | 4 | Empty state rendering (icon, text, CTA button), button action callback |
-| ProviderIconTests | 3 | SF Symbol name mapping for all 4 providers |
-| ~~PixelFontEngineTests~~ | ~~58~~ | ~~(Deprecated) Original pixel font engine tests; code is commented out and does not run~~ |
+The test target covers parsers (MiniMax / DeepSeek / Copilot / OpenCode), refresh & persistence services, balance calculation, menu-bar rendering, SwiftUI views, and snapshot-based pixel verification. The original `PixelFontEngineTests` (58 cases) is kept under `#if false` for historical reference and does not run.
 
 ## Deploy to /Applications
 
@@ -167,20 +149,12 @@ APIUsageStatus/
 ├── Utilities/                     # Logging + atomic writes
 ├── Resources/                     # Info.plist + AppIcon source files
 └── Assets.xcassets/               # Compiled AppIcon asset catalog
-APIUsageStatusTests/
-├── BalanceCalculatorTests.swift
-├── MiniMaxResponseParserTests.swift
-├── DeepSeekResponseParserTests.swift
-├── CopilotResponseParserTests.swift
-├── RetryPolicyTests.swift
-├── WeeklyQuotaTests.swift
-├── FlowingGlowBarTests.swift
-├── MenuBarIconRendererTests.swift
-├── OpenCodeResponseParserTests.swift
-├── ShellProcessRunnerTests.swift
-├── BreathingMathTests.swift
-├── ~~PixelFontEngineTests.swift~~  # Deprecated (code commented out)
-└── ReferenceImages/               # Snapshot test golden images
+APIUsageStatusTests/                # Unit + snapshot tests covering parsers,
+                                    # services, balance calculator, menu-bar
+                                    # rendering, and SwiftUI views.
+                                    # ReferenceImages/ holds snapshot goldens.
+                                    # PixelFontEngineTests.swift is gated by
+                                    # `#if false` (deprecated).
 ```
 
 ## Security & Privacy

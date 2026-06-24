@@ -2,20 +2,22 @@
 
 > **语言：** [English](README.md) | 简体中文
 
-一个专为 macOS 13 设计的纯菜单栏 macOS 应用，实时监控 MiniMax / DeepSeek 的 API 用量与余额。
-**因主流同类应用不兼容 macOS13，故本项目仅为自用脚手架项目。**
+一个专为 macOS 13 设计的纯菜单栏 macOS 应用，实时监控 MiniMax / DeepSeek / GitHub Copilot / OpenCode Go 的 API 用量与余额。
+**因主流同类应用不再兼容 macOS 13，故本项目仅为自用脚手架项目。**
 
 ## 功能概览
 
-- **菜单栏图标** — SF Pro 8pt 渲染，2 行堆叠布局，每个启用实例独立占一个槽位（数量无上限），宽度由内容决定
+- **菜单栏图标** — SF Pro 8pt 渲染，2 行堆叠布局，每个启用的 metric 占一个槽位（MiniMax 实例按选中的窗口展开成多个槽位，其他供应商各 1 个槽位），数量无上限，宽度由内容决定
 - **用量面板** — 点击图标弹出浮动窗口，展示用量卡片、错误汇总、手动刷新和设置入口
+- **多指标追踪** — MiniMax 按 `model_name`（能力桶，如 `general`、`video`、`speech-hd` 等）独立追踪用量，每个桶都有自己的 5h + weekly 双窗口指标
 - **周配额展示** — MiniMax 实例卡片底部展示周窗口进度条；无限额计划用青蓝辉光条动画呈现
 - **阈值告警** — 配额百分比或余额金额触发 macOS 系统通知，点击通知查看详情
 - **Web 控制台深链** — 每张卡片底部「See details」按钮一键在默认浏览器打开对应供应商的用量详情页（DeepSeek / MiniMax / GitHub Copilot 用静态 URL；OpenCode 解析本地日志得到 workspace ID 后跳转到 `https://opencode.ai/workspace/<id>/go`，未拿到时兜底到 `https://opencode.ai/zh/go`）
 - **余额追踪** — 记录历史快照，按周/月/近7天/近30天展示日均消耗
-- **零外部依赖** — 仅使用 AppKit、SwiftUI、Security 等系统框架。OpenCode Go 供应商需本地安装 `opencode` CLI
+- **零外部依赖** — 仅使用 AppKit、SwiftUI、Security 等系统框架。OpenCode Go 供应商需本地安装 `opencode` CLI。
 
-<img src="docs/README_assets/ScreenShot.png" alt="用量面板截图" style="max-width: 100%;">
+| <img src="docs/README_assets/ScreenShot_Light.png" alt="用量面板截图（浅色）"> | <img src="docs/README_assets/ScreenShot_Dark.png" alt="用量面板截图（深色）"> |
+|---|---|
 
 ### 支持的供应商
 
@@ -47,7 +49,7 @@
   - Token 对应的 GitHub 账号必须已开通 Copilot 订阅（Free / Pro / Pro+ / Business / Enterprise 均可）
   - 可随时在 https://github.com/settings/tokens 撤销
 
-- **OpenCode Go** — 无需 API Key。供应商通过 shell 调用本地 `opencode` CLI（需安装在 `~/.opencode/bin/opencode`、`/usr/local/bin/opencode` 或 `/opt/homebrew/bin/opencode`），直接读取 OpenCode SQLite 数据库（`~/.local/share/opencode/opencode.db`）中的用量数据。数据层详见 `docs/provider-interfaces/opencode_go.md`；为「See details」深链提供 workspace ID 的离线恢复机制详见 `docs/provider-interfaces/opencode_workspace_resolver.md`
+- **OpenCode Go** — 无需 API Key。供应商通过 shell 调用本地 `opencode` CLI（需安装在 `~/.opencode/bin/opencode`、`/usr/local/bin/opencode` 或 `/opt/homebrew/bin/opencode`），直接读取 OpenCode SQLite 数据库（`~/.local/share/opencode/opencode.db`）中的用量数据。数据层详见 `docs/provider-interfaces/opencode_go.md`；为「See details」深链提供 workspace ID 的离线恢复机制详见 `docs/provider-interfaces/opencode_workspace_resolver.md`。
 
 ## 系统要求
 
@@ -67,6 +69,8 @@ xcodegen generate
 ```
 
 ### 2. 命令行构建
+
+> 若 `xcodebuild` 报错 `tool 'xcodebuild' requires Xcode`，需在命令前加 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`，或执行 `sudo xcode-select -s /Applications/Xcode.app` 切换工具链。
 
 ```bash
 # Debug 构建
@@ -88,13 +92,13 @@ xcodebuild -project APIUsageStatus.xcodeproj \
 open APIUsageStatus.xcodeproj
 ```
 
-然后 Cmd+R 运行。应用启动后会在菜单栏显示动画 "AI" 图标（底行循环 `%`/`%%`/`%%%`，无 Dock 图标），添加第一个实例后自动切换为数据槽位。
+然后 Cmd+R 运行。应用启动后会在菜单栏显示动画 `AI` 图标（底行循环 `%`/`%%`/`%%%`，无 Dock 图标），添加第一个实例后自动切换为数据槽位。
 
 ### 4. 首次配置
 
 1. 点击菜单栏图标 → **Settings**
 2. 点击 **+**（首次使用点击 **Add Your First Instance**）添加实例
-3. 选择供应商 —— MiniMax 可选择要跟踪的模型及窗口（5h / weekly）；其他供应商自动配置默认指标
+3. 选择供应商 —— MiniMax 可选择要跟踪的模型及窗口（5h / 每周）；其他供应商自动配置默认指标
 4. 输入显示名和 2-3 个字符的简称（用于菜单栏），粘贴 API Key（保存在 Keychain 中）
 5. 配置告警阈值
 6. 菜单栏图标将自动刷新为用量状态
@@ -110,28 +114,7 @@ xcodebuild -project APIUsageStatus.xcodeproj \
 
 或在 Xcode 中按 Cmd+U。
 
-### 测试套件（共 159 个用例，不含已弃用）
-
-| 套件 | 数量 | 覆盖范围 |
-|------|------|---------|
-| BalanceCalculatorTests | 14 | 消耗计算、跨日归档、充值检测、日均统计、历史裁剪 |
-| MiniMaxResponseParserTests | 11 | 正常解析、鉴权错误、业务错误、畸形 JSON、多模型、周字段 |
-| DeepSeekResponseParserTests | 8 | CNY 优先解析、降级回退、is_available=false、空数组 |
-| CopilotResponseParserTests | 12 | GitHub Copilot API 响应解析、token scopes、错误响应 |
-| RetryPolicyTests | 6 | 重试行为、退避延迟、最大尝试次数 |
-| WeeklyQuotaTests | 10 | 周字段解析、isUnlimited 判定、缺失字段回退 |
-| FlowingGlowBarTests | 5 | 辉光条相位、宽度、几何约束 |
-| MenuBarIconRendererTests | 15 | 属性断言+快照：呼吸状态跟踪、阴影、动画生命周期、单色模式、多槽位 |
-| OpenCodeResponseParserTests | 11 | 真实数据解析、窗口算法测试、makeResponse 结构验证 |
-| ShellProcessRunnerTests | 4 | 成功执行、可执行文件不存在、非零退出码、超时 |
-| BreathingMathTests | 17 | 呼吸动画相位、阴影半径、阴影透明度、配置校验 |
-| InstanceCardViewTests | 12 | 渲染（显示名、subtitle、shortName 徽章、切换开关、按钮）、编辑/删除回调、供应商显示名映射 |
-| SettingsViewModelTests | 12 | 侧边栏导航（Services/General/About）、表单绑定（刷新间隔、色彩模式、开机自启、通知） |
-| ProviderPickerAndThresholdTests | 13 | 供应商选择器 UI、MiniMax 模型选择、阈值校验（配额 + 余额） |
-| StatusDotViewTests | 2 | trackingOn/trackingOff 颜色令牌的像素级快照验证 |
-| EmptyStateGuideViewTests | 4 | 空状态渲染（图标、文字、CTA 按钮）、按钮回调 |
-| ProviderIconTests | 3 | 全部 4 个供应商的 SF Symbol 名称映射 |
-| ~~PixelFontEngineTests~~ | ~~58~~ | ~~（已弃用）原像素字模引擎测试，代码已注释，不参与运行~~ |
+测试目标覆盖各供应商响应解析（MiniMax / DeepSeek / Copilot / OpenCode）、刷新与持久化服务、余额计算、菜单栏渲染、SwiftUI 视图，以及基于快照的像素级校验。原 `PixelFontEngineTests`（58 个用例）保留在 `#if false` 内仅供历史参考，不参与运行。
 
 ## 部署到 /Applications
 
@@ -166,20 +149,12 @@ APIUsageStatus/
 ├── Utilities/                     # 日志 + 原子写入
 ├── Resources/                     # Info.plist + AppIcon 源文件
 └── Assets.xcassets/               # 编译期 AppIcon 图标集
-APIUsageStatusTests/
-├── BalanceCalculatorTests.swift
-├── MiniMaxResponseParserTests.swift
-├── DeepSeekResponseParserTests.swift
-├── CopilotResponseParserTests.swift
-├── RetryPolicyTests.swift
-├── WeeklyQuotaTests.swift
-├── FlowingGlowBarTests.swift
-├── MenuBarIconRendererTests.swift
-├── OpenCodeResponseParserTests.swift
-├── ShellProcessRunnerTests.swift
-├── BreathingMathTests.swift
-├── ~~PixelFontEngineTests.swift~~  # 已弃用（代码已注释）
-└── ReferenceImages/               # 快照测试金标准图片
+APIUsageStatusTests/                # 单测 + 快照测试，覆盖各供应商解析、
+                                    # 刷新与持久化服务、余额计算、菜单栏
+                                    # 渲染、SwiftUI 视图等。
+                                    # ReferenceImages/ 存放快照金标准。
+                                    # PixelFontEngineTests.swift 已用
+                                    # `#if false` 关闭（已弃用）。
 ```
 
 ## 安全与隐私

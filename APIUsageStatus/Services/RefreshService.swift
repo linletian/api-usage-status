@@ -104,9 +104,25 @@ actor RefreshService {
             guard let self = self else { return }
             // Initial refresh immediately
             await self.runPeriodicCycle()
-            // Periodic loop
+            // Periodic loop. Each iteration logs the wall-clock instant at
+            // which the cycle is about to enter its sleep, then after
+            // resuming measures the actual elapsed time. Pairing
+            // `cycle tick` with the existing "Refresh cycle completed" log
+            // gives the *actual* per-cycle interval, and the drift
+            // measurement exposes App-Nap-induced suspensions that pure
+            // wall-clock inspection of the menu bar can't catch.
             while !Task.isCancelled {
+                let sleepStartedAt = Date()
+                logger.info("cycle tick: next interval=\(intervalSeconds)s, now=\(sleepStartedAt)")
                 try? await Task.sleep(for: .seconds(intervalSeconds))
+                let actualSleep = Date().timeIntervalSince(sleepStartedAt)
+                let drift = actualSleep - intervalSeconds
+                let driftPct = intervalSeconds > 0 ? (drift / intervalSeconds) * 100.0 : 0
+                if driftPct > 50 {
+                    logger.warning("sleep drift: requested=\(Int(intervalSeconds))s actual=\(Int(actualSleep))s drift=+\(Int(drift))s (\(Int(driftPct))%) — possible App Nap suspension")
+                } else {
+                    logger.debug("sleep drift OK: requested=\(Int(intervalSeconds))s actual=\(Int(actualSleep))s drift=+\(Int(drift))s")
+                }
                 if !Task.isCancelled {
                     await self.runPeriodicCycle()
                 }
@@ -123,6 +139,7 @@ actor RefreshService {
     }
 
     func restartTimer(interval: TimeInterval) {
+        logger.info("RefreshService restartTimer called with interval: \(interval * 60)s — this cancels the existing periodic task")
         refreshInterval = interval * 60
         start() // Will stop existing and restart
     }
@@ -135,6 +152,7 @@ actor RefreshService {
     /// fresh full refresh begins. Awaited synchronously so the caller
     /// knows when the click has been fully processed.
     func triggerManualRefresh() async {
+        logger.info("RefreshService manual refresh triggered")
         await runPreemptiveCycle(targetUUID: nil)
     }
 
@@ -155,7 +173,10 @@ actor RefreshService {
     /// avoids duplicate cycles when a user clicks manual right before
     /// the periodic tick fires.
     private func runPeriodicCycle() async {
-        guard currentToken == nil else { return }
+        if currentToken != nil {
+            logger.debug("periodic cycle skipped: token already in flight (id=\(ObjectIdentifier(currentToken!)))")
+            return
+        }
         let token = CycleToken(targetUUID: nil)
         let task = Task<Void, Error> { try await self.performRefresh(targetUUID: nil, token: token) }
         adoptCycle(token: token, task: task)

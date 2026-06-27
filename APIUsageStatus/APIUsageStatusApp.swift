@@ -18,7 +18,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notificationManager: NotificationManager?
     private var detailPanelController: InstanceDetailPanelController?
 
+    /// Retained observer tokens for NSWorkspace / NSApplication lifecycle
+    /// notifications, paired with the NotificationCenter that registered
+    /// them — `removeObserver(_:)` is a no-op on the wrong center, so
+    /// we must remember where each token lives. Block-based observers
+    /// are torn down when their tokens are deallocated; we hold them
+    /// for the AppDelegate's lifetime.
+    private var lifecycleObservers: [(NSObjectProtocol, NotificationCenter)] = []
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppLogger.lifecycle.info("app launched at \(Date())")
+        observeLifecycle()
+
         // Set activation policy to accessory (no Dock icon, pure menu bar app)
         NSApp.setActivationPolicy(.accessory)
 
@@ -99,10 +110,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //    scan. The view layer reads `cachedWorkspaceID()` only; this
         //    populates that cache.
         OpenCodeWorkspaceResolver.prewarm()
+
+        // 7. Diagnostic snapshot for the "auto-refresh stops after hours"
+        //    investigation — thermal/power state transitions are sparse
+        //    events but strong correlators with App Nap throttling.
+        let pi = ProcessInfo.processInfo
+        AppLogger.lifecycle.info("ProcessInfo initial: thermal=\(pi.thermalState.rawValue) lowPowerMode=\(pi.isLowPowerModeEnabled)")
+        let thermalToken = NotificationCenter.default.addObserver(
+            forName: ProcessInfo.thermalStateDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            AppLogger.lifecycle.info("ProcessInfo thermalState changed → \(ProcessInfo.processInfo.thermalState.rawValue)")
+        }
+        lifecycleObservers.append((thermalToken, NotificationCenter.default))
+        let powerToken = NotificationCenter.default.addObserver(
+            forName: Notification.Name.NSProcessInfoPowerStateDidChange,
+            object: nil,
+            queue: .main
+        ) { _ in
+            AppLogger.lifecycle.info("ProcessInfo isLowPowerModeEnabled → \(ProcessInfo.processInfo.isLowPowerModeEnabled)")
+        }
+        lifecycleObservers.append((powerToken, NotificationCenter.default))
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Placeholder for cleanup logic (future use)
+        AppLogger.lifecycle.info("app will terminate at \(Date())")
+        for (token, center) in lifecycleObservers {
+            center.removeObserver(token)
+        }
+        lifecycleObservers.removeAll()
     }
 
     // MARK: - Main Menu
@@ -131,5 +168,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(.separator())
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+    }
+
+    /// Subscribe to system and display sleep/wake events plus app focus
+    /// changes. These are the diagnostic breadcrumbs for the
+    /// "auto-refresh stops after hours" investigation — pairing them with
+    /// the `cycle tick` log in `RefreshService` lets us correlate timer
+    /// suspensions with system state transitions (App Nap, system sleep,
+    /// display sleep, focus loss).
+    ///
+    /// Note: `NSWorkspace` notifications route through
+    /// `NSWorkspace.shared.notificationCenter`, while `NSApplication`
+    /// active/resign notifications route through `NotificationCenter.default`.
+    /// Mixing them on the wrong center silently drops events — the
+    /// `didResignActive` signal that maps a focus-loss window onto a
+    /// `sleep drift` spike is exactly the App Nap diagnosis we need.
+    private func observeLifecycle() {
+        let workspaceEvents: [(NotificationCenter, Notification.Name, String)] = [
+            (NSWorkspace.shared.notificationCenter, NSWorkspace.willSleepNotification, "system willSleep"),
+            (NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification, "system didWake"),
+            (NSWorkspace.shared.notificationCenter, NSWorkspace.screensDidSleepNotification, "screens didSleep"),
+            (NSWorkspace.shared.notificationCenter, NSWorkspace.screensDidWakeNotification, "screens didWake"),
+        ]
+        let appEvents: [(NotificationCenter, Notification.Name, String)] = [
+            (NotificationCenter.default, NSApplication.didBecomeActiveNotification, "app didBecomeActive"),
+            (NotificationCenter.default, NSApplication.didResignActiveNotification, "app didResignActive"),
+        ]
+        for (center, name, label) in workspaceEvents + appEvents {
+            let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                AppLogger.lifecycle.info("\(label) at \(Date())")
+                _ = self
+            }
+            lifecycleObservers.append((token, center))
+        }
     }
 }

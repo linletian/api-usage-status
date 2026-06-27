@@ -43,4 +43,5 @@ extension AppLogger {
     static let render = AppLogger(category: "render")
     static let opencode = AppLogger(category: "opencode")
     static let app = AppLogger(category: "app")
+    static let lifecycle = AppLogger(category: "lifecycle")
 }

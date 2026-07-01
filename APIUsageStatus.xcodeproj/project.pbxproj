@@ -27,6 +27,7 @@
 		306CCD5F44AC169344CD1410 /* normal_no_breathing_color.png in Resources */ = {isa = PBXBuildFile; fileRef = AA58D02A44678480C38FE01E /* normal_no_breathing_color.png */; };
 		31CFA12DBEB3D22F39955943 /* phase_050.png in Resources */ = {isa = PBXBuildFile; fileRef = AFB8B181B80D24743C529B52 /* phase_050.png */; };
 		40EE381667DE4DF4CF64013D /* APIUsageStatusApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5408EE11C15AFC05611C02A5 /* APIUsageStatusApp.swift */; };
+		435B4BAA9703E3A5DFF8C135 /* PeakPeriodBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0FE456E9192F3FBB5F2343B /* PeakPeriodBadge.swift */; };
 		43C82B54982192D27582D57E /* Date+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92758FB867464F45A1CE6E28 /* Date+Extensions.swift */; };
 		454B1C315B149F9EE710716D /* WeeklyQuotaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FB67C814A9EED39AF26D7B /* WeeklyQuotaTests.swift */; };
 		4728C124A26EE960053A3B8C /* InstanceDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B02229A006D2DADE005681 /* InstanceDecodingTests.swift */; };
@@ -209,6 +210,7 @@
 		CF1B4A6DBD7E72FCA7BD9E00 /* APIUsageStatus.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = APIUsageStatus.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CF7A42715FBDCF7D61599A3C /* Thresholds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Thresholds.swift; sourceTree = "<group>"; };
 		D042E8620FC4A1162C5A2A5A /* InstanceCardViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstanceCardViewTests.swift; sourceTree = "<group>"; };
+		D0FE456E9192F3FBB5F2343B /* PeakPeriodBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PeakPeriodBadge.swift; path = APIUsageStatus/Views/PeakPeriodBadge.swift; sourceTree = SOURCE_ROOT; };
 		D42C4226FA11167ACF09A438 /* CopilotResponseParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotResponseParser.swift; sourceTree = "<group>"; };
 		D8510DAC180E0828A2BA5214 /* RetryPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryPolicyTests.swift; sourceTree = "<group>"; };
 		DC5B105EDE59DCD49A65E149 /* Instance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Instance.swift; sourceTree = "<group>"; };
@@ -485,6 +487,7 @@
 				AA606449405746D0F97359FA /* APIUsageStatusTests */,
 				3D59BAB076C61DD22E612CF5 /* Products */,
 				6FB44E9B9B4B2DE264237AB1 /* PeakPeriod.swift */,
+				D0FE456E9192F3FBB5F2343B /* PeakPeriodBadge.swift */,
 				8C92443CB1F1D97198B2CE13 /* PeakPeriodTests.swift */,
 			);
 			sourceTree = "<group>";
@@ -661,6 +664,7 @@
 				19767C30858AE92B41527006 /* UsageCardView.swift in Sources */,
 				D125D32B242ACE4998F9D078 /* UsagePanelView.swift in Sources */,
 				00CE4E008412F53381F5195C /* PeakPeriod.swift in Sources */,
+				435B4BAA9703E3A5DFF8C135 /* PeakPeriodBadge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

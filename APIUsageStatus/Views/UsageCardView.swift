@@ -455,9 +455,20 @@ struct UsageCardView: View {
 
                 // Today usage
                 if let today = slot.todayUsage, !today.isEmpty {
-                    Text("≈ \(currency?.currencySymbol ?? "¥")\(today) today")
-                        .font(.system(size: 10))
-                        .foregroundColor(.textSecondary)
+                    HStack(spacing: 6) {
+                        Text("≈ \(currency?.currencySymbol ?? "¥")\(today) today")
+                            .font(.system(size: 10))
+                            .foregroundColor(.textSecondary)
+                        // DeepSeek peak/off-peak pill — wraps in TimelineView
+                        // so the label flips automatically at the BJT window
+                        // boundaries (60 s granularity) without AppState
+                        // plumbing. See `PeakSchedule` for window definition.
+                        if slot.provider == Provider.deepseek.rawValue {
+                            TimelineView(.periodic(from: .now, by: 60)) { _ in
+                                PeakPeriodBadge(period: PeakSchedule.isPeak())
+                            }
+                        }
+                    }
                 }
 
                 // Daily averages

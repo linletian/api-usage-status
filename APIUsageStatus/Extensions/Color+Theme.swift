@@ -144,5 +144,14 @@ extension NSColor {
     /// Intentionally distinct from the SwiftUI `Color.criticalRed` — see
     /// the comment above for the rationale.
     static let menuBarCritical = NSColor(srgbHex: 0xF44336)
+
+    /// Saturated amber used as the menu-bar overlay background during
+    /// DeepSeek peak hours (09:00–12:00 and 14:00–18:00 BJT). Distinct from
+    /// the SwiftUI `warningBg` (0xFFF3E0) which is too pale against the
+    /// translucent vibrancy-blended menu bar surface; this Material Amber
+    /// 200 hue reads at 8pt on top of macOS's menu bar in both Light and
+    /// Dark appearance. Rendered behind yellow text in `MenuBarIconRenderer`
+    /// when a DeepSeek slot is currently in peak period.
+    static let menuBarPeakBg = NSColor(srgbHex: 0xFFE082)
 }
 #endif

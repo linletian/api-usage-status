@@ -229,3 +229,52 @@ SlotViewData → MenuBarIcon 渲染（显示金额 + 币种）
 | 金额精度丢失 | 大金额四舍五入 | API 返回 string，Parser 直接保留，UI 渲染时再 `Decimal` 处理 |
 | `NetworkClient` 是单例 | Supplier 端到端测试难 | 需要时抽 `HTTPClient` 协议 |
 | DeepSeek 增加 quota 接口（不只是 balance） | 单维度不够用 | 当前架构是 1 supplier = 1 维度集合；如需按 model 切分要重构 |
+
+---
+
+## 11. 峰/谷计费窗口
+
+DeepSeek 官方公告（2026/06 邮件）确认 API 用量按时段差异计费：
+
+- **峰段（peak）**：北京时间 09:00 ≤ t < 12:00，14:00 ≤ t < 18:00
+- **谷段（off-peak）**：其余时段
+
+应用不计算逐 token 价格，只把当前时刻标记为 peak / off-peak，使用户对"最近请求是否按更高费率计费"有一眼可见的提示。
+
+> **与 §10 「已知缺口」的关系**：本节新增的功能仅在 UI 层加时段标签，并不替代或推进 §10 末尾「DeepSeek 增加 quota 接口（不只是 balance）」那条历史债——后者仍待后续 PR 单独处理。
+
+`PeakSchedule.policyVersion`（`APIUsageStatus/Models/PeakPeriod.swift`）保留当前策略版本号。
+**策略更新时**四处需同步：
+
+1. `PeakSchedule.peakWindows`（区间数组）
+2. `PeakSchedule.policyVersion`（版本号）
+3. 本文件 §11 的描述、表格与"失效场景"段落
+4. `README.md` / `README_zh-CN.md` 中对 `policyVersion` 的引用
+
+### 11.1 时区锚点（Asia/Shanghai, UTC+8）
+
+`PeakSchedule` 不在运行时做时区换算，而是用 `Calendar(timeZone: "Asia/Shanghai")` 直接读 BJT 的 hour/minute：
+
+- 北京时区无 DST，无跳变风险。
+- 同一 `Date` instant 在任何本机时区下都得到一致的 `.peak` / `.offPeak` 分类（生产重载 `isPeak(at:)` 总用 BJT 日历）。
+- `PeakPeriodTests` 用 UTC calendar 复现同 instant 分类差异作为反向契约测试，确保误用本地时区时不会被悄悄接受。
+
+### 11.2 双 UI 入口
+
+| 入口 | 触发机制 | 翻牌粒度 |
+|------|---------|----------|
+| 菜单栏 peak overlay（`MenuBarIconRenderer.renderTwoLineSlot` 判定 `inPeak`） | `MenuBarController.updateMenuBar` 在含 DeepSeek 槽位时启停 `peakTimer`（60 s，`RunLoop.main.add(_:forMode: .common)`） | 60 s |
+| 弹窗卡片 `PeakPeriodBadge`（`UsageCardView.balanceContent` 内 HStack） | SwiftUI `TimelineView(.periodic(by: 60))` | 60 s |
+
+两入口各自计时，但**都调用 `PeakSchedule.isPeak(at:)` 这同一个无状态函数**，避免双源状态漂移。
+
+### 11.3 已知边界滞后
+
+最长滞后为 60 s（用户在 09:00:00 BJT 之前一帧看菜单栏，最坏仍持续到 09:00:59 BJT 才看到 overlay 翻转）。这是 hint 性质功能，不参与实际计费逻辑，可接受。
+
+### 11.4 失效场景
+
+- **DeepSeek 调整窗口**（如扩展为 09:00–13:00）→ 改 `PeakSchedule.peakWindows` 的 `Range`，更新 `policyVersion`。
+- **区域化计费**（不同 user 看到不同时段）→ 当前架构不直接支持，需新增 `Instance.peakSchedule` 字段并参数化 `PeakSchedule.isPeak(at:instance:)`，超出本 PR 范围。
+- **App Nap 节流**：菜单栏 `peakTimer` 已注册在 `.common` RunLoop mode；弹窗 `TimelineView` 由 SwiftUI 驱动，不受 App Nap 直接影响。两者在 §11.2 表中都已标注。
+- **运行验证状态**：`peakTimer` 的 App Nap 缓解目前是*轻量级*策略——`.common` RunLoop mode 加 60 s 间隔，未加 `NSActivity` 断言或修改 timer tolerance。在 `MenuBarIconRenderer.swift` `peakTimer` 头部注释里已注明"待 App Nap 缓解策略的进一步验证"。如果应用长时间空闲后弹窗上 peak overlay 不能在 60 s 内翻牌，说明此处需要追加 `ProcessInfo.processInfo.beginActivity(options: .userInitiated, ...)` 包装。

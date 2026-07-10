@@ -6,7 +6,11 @@ actor RefreshService {
     private let persistenceService: PersistenceService
     private let appState: AppState
     private var notificationManager: NotificationManager?
-    private var refreshTask: Task<Void, Never>?
+    private var timerSource: DispatchSourceTimer?
+    private static let timerQueue = DispatchQueue(
+        label: "com.example.APIUsageStatus.refresh.timer",
+        qos: .utility
+    )
     private var refreshInterval: TimeInterval = 300 // 5 minutes default
     private var lastRefreshAt: Date?
     private var onRefreshComplete: (@Sendable () async -> Void)?
@@ -31,12 +35,23 @@ actor RefreshService {
     /// over, and `performRefresh` skips cleanup writes once it observes
     /// the flag. Reference semantics let the cleanup sites compare with
     /// `token.isPreempted` without passing a separate generation number.
-    private final class CycleToken {
+    fileprivate final class CycleToken {
         let targetUUID: String?
+        let startedAt: Date
         private(set) var isPreempted: Bool = false
 
-        init(targetUUID: String?) {
+        convenience init(targetUUID: String?) {
+            self.init(targetUUID: targetUUID, startedAt: Date())
+        }
+
+        /// Designated initializer. The public single-arg init forwards
+        /// here with `Date()` so production callers capture the cycle's
+        /// "fired at" timestamp automatically. Tests use the 2-arg form
+        /// to backdate a token and exercise the age-based force-clear
+        /// path deterministically.
+        init(targetUUID: String?, startedAt: Date) {
             self.targetUUID = targetUUID
+            self.startedAt = startedAt
         }
 
         /// Called by the coordinator synchronously when this token is
@@ -66,6 +81,23 @@ actor RefreshService {
         }
     }
 
+    /// Clear cycle-owned UI state (`refreshState` + `refreshingInstanceUUIDs`)
+    /// only when `token` is still the current owner. Mirrors `clearCycleIfStill`'s
+    /// identity-check shape — `runPreemptiveCycle` always swaps `currentToken`
+    /// (step 4 `adoptCycle`) BEFORE cancelling the old task (step 5), so a
+    /// pre-empted token can never still own the slot by the time its cleanup
+    /// runs. Bundling both writes into one helper lets every exit of
+    /// `performRefresh` — early return, normal return, CancellationError at
+    /// line 397, non-cancellation throw, force-clear — drain UI state through
+    /// a single entry point, eliminating the spinner-leak paths described in
+    /// §12.6 of the investigation doc.
+    private func clearRefreshStateIfStill(_ token: CycleToken) async {
+        guard currentToken === token else { return }
+        await appState.setRefreshingInstanceUUIDs([])
+        await appState.setRefreshState(.idle)
+        await onRefreshComplete?()
+    }
+
     private let logger = AppLogger(category: "refresh")
 
     init(persistenceService: PersistenceService, appState: AppState) {
@@ -92,54 +124,62 @@ actor RefreshService {
             refreshInterval = interval * 60 // Convert minutes to seconds
         }
 
-        stop() // Cancel any existing task
+        stop() // Cancel any existing timer
 
-        // Capture the interval locally so the Task doesn't read the actor
-        // property across isolation domains. The captured value stays
-        // stable for the lifetime of this timer cycle — restartTimer
-        // always calls stop()+start() to begin a fresh cycle.
         let intervalSeconds = refreshInterval
 
-        refreshTask = Task { [weak self] in
+        // DispatchSourceTimer is a kernel-level timer — its queue attribute
+        // is not subject to App Nap throttling, unlike `Task.sleep` on the
+        // Swift Concurrency cooperative pool (see §13.2 of the investigation
+        // doc). Critically, this timer does NOT influence power management:
+        // system sleep is unaffected. Replacing the previous `Task.sleep`
+        // loop is what fixes §4.1 (auto-refresh stops after hours).
+        let source = DispatchSource.makeTimerSource(queue: Self.timerQueue)
+
+        // First deadline at +interval rather than `.now()` so the periodic
+        // cadence is regular from t=interval onward. The initial fire
+        // (matching the previous loop's `await runPeriodicCycle()` at
+        // start) is handled by the inline Task below.
+        source.schedule(
+            deadline: .now() + intervalSeconds,
+            repeating: intervalSeconds,
+            leeway: .milliseconds(250)
+        )
+
+        // Bridge dispatch handler → actor-isolated `runPeriodicCycle`. The
+        // outer `[weak self]` guards actor deallocation; the inner
+        // `[weak self]` guards the await race between guard and call.
+        source.setEventHandler { [weak self] in
             guard let self = self else { return }
-            // Initial refresh immediately
-            await self.runPeriodicCycle()
-            // Periodic loop. Each iteration logs the wall-clock instant at
-            // which the cycle is about to enter its sleep, then after
-            // resuming measures the actual elapsed time. Pairing
-            // `cycle tick` with the existing "Refresh cycle completed" log
-            // gives the *actual* per-cycle interval, and the drift
-            // measurement exposes App-Nap-induced suspensions that pure
-            // wall-clock inspection of the menu bar can't catch.
-            while !Task.isCancelled {
-                let sleepStartedAt = Date()
-                logger.info("cycle tick: next interval=\(intervalSeconds)s, now=\(sleepStartedAt)")
-                try? await Task.sleep(for: .seconds(intervalSeconds))
-                let actualSleep = Date().timeIntervalSince(sleepStartedAt)
-                let drift = actualSleep - intervalSeconds
-                let driftPct = intervalSeconds > 0 ? (drift / intervalSeconds) * 100.0 : 0
-                if driftPct > 50 {
-                    logger.warning("sleep drift: requested=\(Int(intervalSeconds))s actual=\(Int(actualSleep))s drift=+\(Int(drift))s (\(Int(driftPct))%) — possible App Nap suspension")
-                } else {
-                    logger.debug("sleep drift OK: requested=\(Int(intervalSeconds))s actual=\(Int(actualSleep))s drift=+\(Int(drift))s")
-                }
-                if !Task.isCancelled {
-                    await self.runPeriodicCycle()
-                }
+            Task { [weak self] in
+                guard let self = self else { return }
+                await self.runPeriodicCycle()
             }
         }
 
-        logger.info("RefreshService started with interval: \(self.refreshInterval)s")
+        source.resume()
+        timerSource = source
+
+        // Initial-fire parity with the previous loop's first
+        // `runPeriodicCycle()` call. Fire-and-forget — start() does not
+        // await this — so the caller's frame is not blocked on a network
+        // round trip.
+        Task { [weak self] in
+            guard let self = self else { return }
+            await self.runPeriodicCycle()
+        }
+
+        logger.info("RefreshService started with interval: \(intervalSeconds)s (DispatchSourceTimer, leeway=250ms)")
     }
 
     func stop() {
-        refreshTask?.cancel()
-        refreshTask = nil
+        timerSource?.cancel()
+        timerSource = nil
         logger.info("RefreshService stopped")
     }
 
     func restartTimer(interval: TimeInterval) {
-        logger.info("RefreshService restartTimer called with interval: \(interval * 60)s — this cancels the existing periodic task")
+        logger.info("RefreshService restartTimer called with interval: \(interval * 60)s — this cancels the existing timer source")
         refreshInterval = interval * 60
         start() // Will stop existing and restart
     }
@@ -172,7 +212,25 @@ actor RefreshService {
     /// iteration is skipped — the next tick will check again. This
     /// avoids duplicate cycles when a user clicks manual right before
     /// the periodic tick fires.
+    ///
+    /// Before the skip-check, an in-flight token older than
+    /// `2 × refreshInterval` is force-cleared: a `performRefresh`
+    /// that has stalled indefinitely (e.g. URLSession never timed
+    /// out, `RetryPolicy.withRetry` blocked on `Task.sleep` we cannot
+    /// wake) would otherwise leak the slot and leave the per-instance
+    /// spinner UI permanently spinning. Cancelling the task is
+    /// cooperative; `clearCycleIfStill` is identity-checked so a newer
+    /// owner that took over during this tick is never clobbered.
     private func runPeriodicCycle() async {
+        if let stale = currentToken {
+            let age = Date().timeIntervalSince(stale.startedAt)
+            let threshold = 2 * refreshInterval
+            if age > threshold {
+                logger.warning("Forcibly clearing stale cycle token: age=\(Int(age))s threshold=\(Int(threshold))s id=\(ObjectIdentifier(stale))")
+                cycleTask?.cancel()
+                clearCycleIfStill(stale)
+            }
+        }
         if currentToken != nil {
             logger.debug("periodic cycle skipped: token already in flight (id=\(ObjectIdentifier(currentToken!)))")
             return
@@ -259,101 +317,97 @@ actor RefreshService {
     private func performRefresh(targetUUID: String? = nil, token: CycleToken) async throws {
         logger.info("Starting refresh cycle targetUUID=\(targetUUID ?? "all") token=\(ObjectIdentifier(token))")
 
-        // 1. Set refresh state to refreshing
-        await appState.setRefreshState(.refreshing)
+        // All UI state set inside this `do` block (`refreshState` =
+        // `.refreshing`, `refreshingInstanceUUIDs` populated) is drained
+        // by the `catch` on any throw — most importantly the
+        // `try Task.checkCancellation()` at the top of the supplier
+        // for-loop, which throws BEFORE the inner `catch is
+        // CancellationError` block can run. Without this outer wrapper
+        // the cancellation would propagate up and leave the per-instance
+        // spinner permanently on for every UUID the cycle had populated
+        // (see §12.6 of the investigation doc). The helper's identity
+        // check is what makes this safe under preemption.
+        do {
+            // 1. Set refresh state to refreshing
+            await appState.setRefreshState(.refreshing)
 
-        let instances = await appState.getInstances()
-        let enabledInstances = instances.filter { $0.enabled }
+            let instances = await appState.getInstances()
+            let enabledInstances = instances.filter { $0.enabled }
 
-        // 2. Resolve targets — full cycle (targetUUID == nil) or single
-        //    instance (targetUUID set). For per-instance, if the target is
-        //    missing or disabled, we silently bail without touching any
-        //    other state.
-        let targetInstances: [Instance]
-        if let uuid = targetUUID {
-            targetInstances = enabledInstances.filter { $0.uuid == uuid }
-            if targetInstances.isEmpty {
-                logger.info("Target instance \(uuid) not found or not enabled; skipping")
-                // Token-preempted: if a newer cycle pre-empted us, it
-                // owns `refreshState`. Don't reset it on their behalf.
-                if !token.isPreempted {
-                    await appState.setRefreshState(.idle)
-                    await onRefreshComplete?()
+            // 2. Resolve targets — full cycle (targetUUID == nil) or single
+            //    instance (targetUUID set). For per-instance, if the target is
+            //    missing or disabled, we silently bail without touching any
+            //    other state.
+            let targetInstances: [Instance]
+            if let uuid = targetUUID {
+                targetInstances = enabledInstances.filter { $0.uuid == uuid }
+                if targetInstances.isEmpty {
+                    logger.info("Target instance \(uuid) not found or not enabled; skipping")
+                    await clearRefreshStateIfStill(token)
+                    return
                 }
+            } else {
+                targetInstances = enabledInstances
+            }
+
+            let targetUUIDs = Set(targetInstances.map { $0.uuid })
+            await appState.setRefreshingInstanceUUIDs(targetUUIDs)
+            // Push the new "refreshing" set to the UI BEFORE doing any work,
+            // otherwise the per-instance dot spinner never appears — UI only
+            // observes this field via `AppStateProxy.syncFromState()`,
+            // which historically ran only at cycle end (by then the set is
+            // already cleared back to []). See ARCHITECTURE.md §9.2.
+            await onRefreshComplete?()
+
+            if targetInstances.isEmpty {
+                // Global path with no enabled instances — reset everything,
+                // but only if we're still the current cycle. The helper's
+                // identity check handles the pre-empted-owner case.
+                await clearRefreshStateIfStill(token)
+                await appState.updateSlotData([])
+                lastRefreshAt = Date()
+                logger.info("No enabled instances, refresh skipped")
                 return
             }
-        } else {
-            targetInstances = enabledInstances
-        }
 
-        let targetUUIDs = Set(targetInstances.map { $0.uuid })
-        await appState.setRefreshingInstanceUUIDs(targetUUIDs)
-        // Push the new "refreshing" set to the UI BEFORE doing any work,
-        // otherwise the per-instance dot spinner never appears — UI only
-        // observes this field via `AppStateProxy.syncFromState()`,
-        // which historically ran only at cycle end (by then the set is
-        // already cleared back to []). See ARCHITECTURE.md §9.2.
-        await onRefreshComplete?()
-        // Cleanup is done explicitly at every exit point (no `defer`):
-        // Swift 5.9 doesn't allow `await` inside a `defer` body, and a
-        // `Task { }` wrapper would race against the next cycle's set
-        // and clobber its UUID set.
+            // 3. Group targets by api_key_ref. Note: a supplier call fetches
+            //    data for the whole key group, but `instancesInGroup` is
+            //    already filtered to `targetInstances` — siblings outside the
+            //    target (for per-instance) are NOT in this group and won't
+            //    have their slot data refreshed.
+            let groupedByKeyRef = Dictionary(grouping: targetInstances) { $0.apiKeyRef }
+            var allSlotData: [SlotViewData] = []
+            var errorSummaries: [ErrorSummary] = []
+            var remainingRefreshing = targetUUIDs
 
-        if targetInstances.isEmpty {
-            // Global path with no enabled instances — reset everything,
-            // but only if we're still the current cycle. If a newer
-            // cycle pre-empted us (token.isPreempted), it owns the
-            // state — touching it here would clobber its writes.
-            if !token.isPreempted {
-                await appState.setRefreshingInstanceUUIDs([])
-                await onRefreshComplete?()
-                await appState.updateSlotData([])
-                await appState.setRefreshState(.idle)
+            /// Push accumulated results to AppState + UI mid-cycle. Called after
+            /// each supplier group completes (success or permanent error) so
+            /// instances update as data arrives instead of waiting for all
+            /// groups. Token-preempted check prevents a pre-empted old cycle
+            /// from clobbering the new owner's state.
+            func pushProgress() async {
+                guard !token.isPreempted else { return }
+                await appState.setRefreshingInstanceUUIDs(remainingRefreshing)
+                if targetUUID == nil {
+                    await appState.setErrorSummaries(errorSummaries)
+                } else {
+                    let currentErrors = await appState.getErrorSummaries()
+                    let otherErrors = currentErrors.filter { $0.id != targetUUID }
+                    await appState.setErrorSummaries(otherErrors + errorSummaries)
+                }
+                let erroredUUIDs = Set(errorSummaries.map(\.id))
+                await appState.mergeCycleResult(
+                    cycleSuccesses: allSlotData,
+                    cycleErroredUUIDs: erroredUUIDs
+                )
                 await onRefreshComplete?()
             }
-            lastRefreshAt = Date()
-            logger.info("No enabled instances, refresh skipped")
-            return
-        }
 
-        // 3. Group targets by api_key_ref. Note: a supplier call fetches
-        //    data for the whole key group, but `instancesInGroup` is
-        //    already filtered to `targetInstances` — siblings outside the
-        //    target (for per-instance) are NOT in this group and won't
-        //    have their slot data refreshed.
-        let groupedByKeyRef = Dictionary(grouping: targetInstances) { $0.apiKeyRef }
-        var allSlotData: [SlotViewData] = []
-        var errorSummaries: [ErrorSummary] = []
-        var remainingRefreshing = targetUUIDs
-
-        /// Push accumulated results to AppState + UI mid-cycle. Called after
-        /// each supplier group completes (success or permanent error) so
-        /// instances update as data arrives instead of waiting for all
-        /// groups. Token-preempted check prevents a pre-empted old cycle
-        /// from clobbering the new owner's state.
-        func pushProgress() async {
-            guard !token.isPreempted else { return }
-            await appState.setRefreshingInstanceUUIDs(remainingRefreshing)
-            if targetUUID == nil {
-                await appState.setErrorSummaries(errorSummaries)
-            } else {
-                let currentErrors = await appState.getErrorSummaries()
-                let otherErrors = currentErrors.filter { $0.id != targetUUID }
-                await appState.setErrorSummaries(otherErrors + errorSummaries)
-            }
-            let erroredUUIDs = Set(errorSummaries.map(\.id))
-            await appState.mergeCycleResult(
-                cycleSuccesses: allSlotData,
-                cycleErroredUUIDs: erroredUUIDs
-            )
-            await onRefreshComplete?()
-        }
-
-        // 4. Process each api_key_ref group serially
-        for (apiKeyRef, instancesInGroup) in groupedByKeyRef {
-            // Cooperative cancellation — propagate Task.cancel() promptly
-            // so a manual Refresh can interrupt within one supplier call.
-            try Task.checkCancellation()
+            // 4. Process each api_key_ref group serially
+            for (apiKeyRef, instancesInGroup) in groupedByKeyRef {
+                // Cooperative cancellation — propagate Task.cancel() promptly
+                // so a manual Refresh can interrupt within one supplier call.
+                try Task.checkCancellation()
 
             // 4a. Get API key from Keychain
             guard let apiKey = await persistenceService.getApiKey(for: apiKeyRef) else {
@@ -538,18 +592,10 @@ actor RefreshService {
                 // Propagate cancellation so the cycleTask wrapper can
                 // observe it. Clean up refreshing UUIDs and refreshState
                 // before re-throwing — we won't reach the success-path
-                // cleanup. Both writes are token-preempted: if a newer
-                // cycle pre-empted us, it already owns these fields and
-                // touching them would clobber its set.
-                if !token.isPreempted {
-                    await appState.setRefreshingInstanceUUIDs([])
-                    await appState.setRefreshState(.idle)
-                    // Push the cleared state to UI before propagating;
-                    // the cycleTask wrapper that catches our rethrow
-                    // only logs, so without this the spinner stays stuck
-                    // and `refreshState` stays at `.refreshing`.
-                    await onRefreshComplete?()
-                }
+                // cleanup. The helper's identity check is what prevents
+                // the pre-empted cycle from clobbering the new owner's
+                // UUID set / refreshState.
+                await clearRefreshStateIfStill(token)
                 throw CancellationError()
             } catch {
                 for instance in instancesInGroup {
@@ -566,37 +612,43 @@ actor RefreshService {
                 await pushProgress()
             }
         }
-
         // 5. Sort accumulated slot data for notification evaluation.
-        allSlotData.sort { $0.sortOrder < $1.sortOrder }
+            allSlotData.sort { $0.sortOrder < $1.sortOrder }
 
-        // 6. Evaluate thresholds and send notifications. Use the full
-        //    instance list (not just targets) so per-instance refresh can
-        //    still trigger notifications for that instance if a threshold
-        //    was crossed by the fresh data.
-        let globalSettings = await appState.getGlobalSettings()
-        await notificationManager?.evaluateThresholds(
-            instances: await appState.getInstances(),
-            slotData: allSlotData,
-            settings: globalSettings
-        )
+            // 6. Evaluate thresholds and send notifications. Use the full
+            //    instance list (not just targets) so per-instance refresh can
+            //    still trigger notifications for that instance if a threshold
+            //    was crossed by the fresh data.
+            let globalSettings = await appState.getGlobalSettings()
+            await notificationManager?.evaluateThresholds(
+                instances: await appState.getInstances(),
+                slotData: allSlotData,
+                settings: globalSettings
+            )
 
-        // 7. Final cleanup: the per-group pushes above already merged slot
-        //    data and error summaries. Here we only reset the global flags.
-        if !token.isPreempted {
-            // Note: error summaries were already set progressively by
-            // pushProgress(); for global path we keep the last push's
-            // value. For per-instance the merge was also done inline.
-            await appState.setRefreshState(.idle)
+            // 7. Final cleanup on the success path. Error summaries were already
+            //    set progressively by pushProgress(); for global path we keep
+            //    the last push's value. For per-instance the merge was also
+            //    done inline. setLastRefreshAt stays outside the helper — it
+            //    isn't part of the spinner / refreshState cleanup contract.
             await appState.setLastRefreshAt(Date())
-            await appState.setRefreshingInstanceUUIDs([])
+            await clearRefreshStateIfStill(token)
+
+            lastRefreshAt = Date()
+            logger.info("Refresh cycle completed: \(allSlotData.count) slots, \(errorSummaries.count) errors")
+        } catch {
+            // Any throw — most importantly the `try Task.checkCancellation()`
+            // at the top of the supplier for-loop, which throws BEFORE the
+            // inner `catch is CancellationError` block can run, plus any
+            // throw from getInstances / persistence / pushProgress that
+            // escapes the inner catch — must drain UI state. The helper's
+            // identity check is what makes this safe under preemption: a
+            // pre-empted cycle's `currentToken` was already replaced by
+            // `adoptCycle`, so the check is false and the pre-empted cycle
+            // leaves the new owner's UUID set / refreshState untouched.
+            await clearRefreshStateIfStill(token)
+            throw error
         }
-
-        lastRefreshAt = Date()
-        logger.info("Refresh cycle completed: \(allSlotData.count) slots, \(errorSummaries.count) errors")
-
-        // Sync UI immediately — no race window because the closure is awaited directly
-        await onRefreshComplete?()
     }
 
     // MARK: - Helper Methods
@@ -822,5 +874,69 @@ actor RefreshService {
             }
             return nil
         }
+    }
+}
+
+// MARK: - Test seams
+
+/// Test-only helpers for deterministic verification of the cycle-slot
+/// behaviors. Names are prefixed `_test` and only reachable from
+/// `@testable import` in the test target — production callers have no
+/// reason to invoke them.
+extension RefreshService {
+    /// Set `refreshInterval` directly without triggering the periodic
+    /// loop. Avoids races with `restartTimer`, whose initial
+    /// `runPeriodicCycle()` runs on a separate spawned Task and may
+    /// not have cleared the slot when the test wants to seed a token.
+    func _testSetRefreshInterval(_ seconds: TimeInterval) {
+        refreshInterval = seconds
+    }
+
+    /// Run the periodic-cycle entry point directly. Equivalent to the
+    /// timer firing, without the `Task.sleep` wait.
+    func _testRunPeriodicCycle() async {
+        await runPeriodicCycle()
+    }
+
+    /// Install a synthetic `currentToken` backdated by `ageSeconds`,
+    /// exercising the age-based force-clear path in `runPeriodicCycle`.
+    /// Caller must ensure `currentToken == nil` before calling.
+    func _testSeedStaleToken(ageSeconds: TimeInterval) {
+        precondition(currentToken == nil, "Seed only when slot is empty")
+        currentToken = CycleToken(
+            targetUUID: nil,
+            startedAt: Date(timeIntervalSinceNow: -ageSeconds)
+        )
+    }
+
+    /// `currentToken != nil` without exposing the fileprivate
+    /// `CycleToken` type.
+    var _testHasCurrentToken: Bool {
+        currentToken != nil
+    }
+
+    /// Age of the in-flight token, if any.
+    var _testCurrentTokenAge: TimeInterval? {
+        currentToken.map { Date().timeIntervalSince($0.startedAt) }
+    }
+
+    /// `timerSource != nil` without exposing the `DispatchSourceTimer`
+    /// type. Used by `testStopCanBeCalledWhenTimerIsNotRunning` to lock
+    /// the start/stop lifecycle: after `stop()`, this must be false;
+    /// after a back-to-back `stop()` it must still be false (no crash).
+    var _testHasTimerSource: Bool {
+        timerSource != nil
+    }
+
+    /// Cancel the in-flight `cycleTask` if any. Lets tests simulate the
+    /// force-clear / preempt path: cancellation propagates to
+    /// `Task.sleep` / URLSession inside `performRefresh`; if the
+    /// cancellation hits at `Task.checkCancellation()` (top of the
+    /// supplier for-loop, ~line 410) it throws BEFORE the inner
+    /// `catch is CancellationError`, so the only path that can drain
+    /// UI state is the outer `do/catch` in `performRefresh`. Locks
+    /// the §4.7 + §12.6 leak regression.
+    func _testCancelCurrentCycleTask() {
+        cycleTask?.cancel()
     }
 }

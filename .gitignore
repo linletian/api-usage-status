@@ -30,6 +30,10 @@ Thumbs.db
 build/
 tmp/
 
+# macOS app bundle (local artifact built for verification, not source)
+APIUsageStatus.app
+*.app
+
 # Sensitive
 *.plist.keys
 *.entitlements.keys

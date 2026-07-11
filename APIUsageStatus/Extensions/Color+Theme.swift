@@ -146,12 +146,25 @@ extension NSColor {
     static let menuBarCritical = NSColor(srgbHex: 0xF44336)
 
     /// Saturated amber used as the menu-bar overlay background during
-    /// DeepSeek peak hours (09:00–12:00 and 14:00–18:00 BJT). Distinct from
-    /// the SwiftUI `warningBg` (0xFFF3E0) which is too pale against the
-    /// translucent vibrancy-blended menu bar surface; this Material Amber
-    /// 200 hue reads at 8pt on top of macOS's menu bar in both Light and
-    /// Dark appearance. Rendered behind yellow text in `MenuBarIconRenderer`
-    /// when a DeepSeek slot is currently in peak period.
+    /// DeepSeek peak hours (09:00–12:00 and 14:00–18:00 BJT) when
+    /// `ColorMode == .color`. Distinct from the SwiftUI `warningBg`
+    /// (0xFFF3E0) which is too pale against the translucent vibrancy-
+    /// blended menu bar surface; this Material Amber 200 hue reads at
+    /// 8pt on top of macOS's menu bar in both Light and Dark appearance.
+    /// Rendered behind yellow text in `MenuBarIconRenderer` when a
+    /// DeepSeek slot is currently in peak period.
     static let menuBarPeakBg = NSColor(srgbHex: 0xFFE082)
+
+    /// 75% alpha black used as the menu-bar overlay background during
+    /// DeepSeek peak hours when `ColorMode == .monochrome`. Keeps the
+    /// overlay inside the same black/white palette as the rest of the
+    /// monochrome icon (paired with white text in the renderer) — the
+    /// amber `menuBarPeakBg` above would break the monochrome visual
+    /// contract, and the SwiftUI `warningBg` (too pale against the menu
+    /// bar) is wrong here. On a Light menu bar this reads as a dark gray
+    /// pill; on a Dark menu bar it sits barely darker than the surface
+    /// so the white text is the dominant signal — both are intentional,
+    /// the peak hint is soft, not loud.
+    static let menuBarPeakBgMonochrome = NSColor.black.withAlphaComponent(0.75)
 }
 #endif

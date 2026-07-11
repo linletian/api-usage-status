@@ -23,7 +23,11 @@ import Foundation
 //   2. `PeakSchedule.policyVersion` (the version tag the docs/UI reference)
 //   3. `docs/provider-interfaces/deepseek.md` §11
 //   4. `README.md` / `README_zh-CN.md` 中对 `policyVersion` 的引用
-// The four-place edit ensures the on-screen label, source of truth, and user
+//   5. `Color+Theme.swift` 的 `menuBarPeakBg` / `menuBarPeakBgMonochrome` 与
+//      `PeakPeriodBadge.swift` 的 tone 选择（peak → `warningYellow`，
+//      off-peak → `trackingOn`）—— 仅在改 peak 窗口边界或想换视觉信号时需要，
+//      纯时段调整不必动。详见 deepseek.md §11.2。
+// The five-place edit ensures the on-screen label, source of truth, and user
 // docs never drift apart. `policyVersion` is `2026-06` for the current rules.
 
 enum PeakPeriod {

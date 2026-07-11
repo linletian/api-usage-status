@@ -631,6 +631,11 @@ enum ColorMode: String, Codable {
     case monochrome
     case color
 }
+// `colorMode` 不仅决定常规槽位文本/图标的调色板（参见 `MenuBarIconRenderer.colorForSlot`），
+// 也参与 DeepSeek peak 时段的菜单栏 overlay 视觉样式——`color` 走琥珀底+黄字，
+// `monochrome` 走 75% 黑底+白字。完整 4 格矩阵 (`colorMode × isPeak`) 集中于
+// `MenuBarIconRenderer.peakOverlayStyle(...)`，映射表见
+// `docs/provider-interfaces/deepseek.md §11.2`。
 
 // === 运行时视图数据（不持久化） ===
 struct SlotViewData {

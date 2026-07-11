@@ -244,12 +244,15 @@ DeepSeek 官方公告（2026/06 邮件）确认 API 用量按时段差异计费�
 > **与 §10 「已知缺口」的关系**：本节新增的功能仅在 UI 层加时段标签，并不替代或推进 §10 末尾「DeepSeek 增加 quota 接口（不只是 balance）」那条历史债——后者仍待后续 PR 单独处理。
 
 `PeakSchedule.policyVersion`（`APIUsageStatus/Models/PeakPeriod.swift`）保留当前策略版本号。
-**策略更新时**四处需同步：
+**策略更新时**五处需同步：
 
 1. `PeakSchedule.peakWindows`（区间数组）
 2. `PeakSchedule.policyVersion`（版本号）
 3. 本文件 §11 的描述、表格与"失效场景"段落
 4. `README.md` / `README_zh-CN.md` 中对 `policyVersion` 的引用
+5. `Color+Theme.swift` 中的 `menuBarPeakBg` / `menuBarPeakBgMonochrome` 与 `PeakPeriodBadge.swift` 中的 tone 选择（peak → `warningYellow`，off-peak → `trackingOn`）—— 只有在改 peak 窗口边界或想换视觉信号时需要；纯时段调整不必动
+
+> 注：第 5 项是 §11.2 引入 colorMode 分支 + 双色调徽章后新增的「视觉规则同步项」；之前是 4 项，详见 `git log b6b1cfc`。
 
 ### 11.1 时区锚点（Asia/Shanghai, UTC+8）
 
@@ -261,12 +264,16 @@ DeepSeek 官方公告（2026/06 邮件）确认 API 用量按时段差异计费�
 
 ### 11.2 双 UI 入口
 
-| 入口 | 触发机制 | 翻牌粒度 |
-|------|---------|----------|
-| 菜单栏 peak overlay（`MenuBarIconRenderer.renderTwoLineSlot` 判定 `inPeak`） | `MenuBarController.updateMenuBar` 在含 DeepSeek 槽位时启停 `peakTimer`（60 s，`RunLoop.main.add(_:forMode: .common)`） | 60 s |
-| 弹窗卡片 `PeakPeriodBadge`（`UsageCardView.balanceContent` 内 HStack） | SwiftUI `TimelineView(.periodic(by: 60))` | 60 s |
+| 入口 | 触发机制 | 翻牌粒度 | 视觉样式（peak vs off-peak） |
+|------|---------|----------|------------------------------|
+| 菜单栏 peak overlay（`MenuBarIconRenderer.renderTwoLineSlot` 判定 `inPeak`） | `MenuBarController.updateMenuBar` 在含 DeepSeek 槽位时启停 `peakTimer`（60 s，`RunLoop.main.add(_:forMode: .common)`） | 60 s | off-peak：原阈值色透明渲染；peak：`ColorMode == .color` → 琥珀底 (`menuBarPeakBg` = #FFE082) + 黄字 (`menuBarWarning`)；`ColorMode == .monochrome` → 75% 黑底 (`menuBarPeakBgMonochrome`) + 白字 |
+| 弹窗卡片 `PeakPeriodBadge`（`UsageCardView.balanceContent` 内 HStack） | SwiftUI `TimelineView(.periodic(by: 60))` | 60 s | 双色调 pill：peak → `Color.warningYellow` + 25% 同色 capsule 填充；off-peak → `Color.trackingOn` + 25% 同色 capsule 填充 |
 
 两入口各自计时，但**都调用 `PeakSchedule.isPeak(at:)` 这同一个无状态函数**，避免双源状态漂移。
+
+**菜单栏 overlay 的 colorMode 分支**集中在 `MenuBarIconRenderer.peakOverlayStyle(colorMode:isPeak:resolvedColor:)`（`internal static`），由 `renderTwoLineSlot` 调用。该函数返回 `(textColor, peakBgColor?)` 二元组，是 §11.2 表格"视觉样式"列与代码之间的唯一映射点；`MenuBarIconRendererTests` 用四组单元测试 pin 住 `colorMode × isPeak` 矩阵，避免回归。
+
+**弹窗徽章的 tone 选择**集中在 `PeakPeriodBadge.tone` 计算属性；9pt semibold、25% capsule 填充两处数值在文件内是常量，目前未做参数化。
 
 ### 11.3 已知边界滞后
 
@@ -277,4 +284,5 @@ DeepSeek 官方公告（2026/06 邮件）确认 API 用量按时段差异计费�
 - **DeepSeek 调整窗口**（如扩展为 09:00–13:00）→ 改 `PeakSchedule.peakWindows` 的 `Range`，更新 `policyVersion`。
 - **区域化计费**（不同 user 看到不同时段）→ 当前架构不直接支持，需新增 `Instance.peakSchedule` 字段并参数化 `PeakSchedule.isPeak(at:instance:)`，超出本 PR 范围。
 - **App Nap 节流**：菜单栏 `peakTimer` 已注册在 `.common` RunLoop mode；弹窗 `TimelineView` 由 SwiftUI 驱动，不受 App Nap 直接影响。两者在 §11.2 表中都已标注。
+- **`ColorMode == .monochrome` + Dark 菜单栏背景下的 overlay 对比度偏弱**：`menuBarPeakBgMonochrome = NSColor.black.withAlphaComponent(0.75)` 在 Light 菜单栏上读为深灰 pill（清晰），在 Dark 菜单栏上几乎与表面融为一体，白字主导。这是 §11.2 表格中明确写出的"soft hint, not loud"设计意图，但若将来要提升 Dark 模式可识别度，可改为白色低 alpha（如 `white.withAlphaComponent(0.25)`）+ 黑字，与 Light 模式对称。需要先确认是否破坏 monochrome 视觉契约（图标其余部分仍是黑/白硬切换，无中间灰）。
 - **运行验证状态**：`peakTimer` 的 App Nap 缓解目前是*轻量级*策略——`.common` RunLoop mode 加 60 s 间隔，未加 `NSActivity` 断言或修改 timer tolerance。在 `MenuBarIconRenderer.swift` `peakTimer` 头部注释里已注明"待 App Nap 缓解策略的进一步验证"。如果应用长时间空闲后弹窗上 peak overlay 不能在 60 s 内翻牌，说明此处需要追加 `ProcessInfo.processInfo.beginActivity(options: .userInitiated, ...)` 包装。

@@ -169,6 +169,7 @@ final class MenuBarIconRenderer {
                 width: slotWidth,
                 data: slot,
                 color: renderColor,
+                colorMode: colorMode,
                 in: context,
                 shadowBlurRadius: shadowBlur,
                 shadowOpacity: shadowOp
@@ -505,14 +506,53 @@ final class MenuBarIconRenderer {
 
     // MARK: - Private: two-line slot rendering (fresh)
 
+    /// Decide the text color and optional peak-overlay background for a slot.
+    /// Extracted from `renderTwoLineSlot` so the `colorMode × isPeak` matrix
+    /// can be pinned by unit tests without driving the live `PeakSchedule`
+    /// clock. Off-peak slots return the caller's `resolvedColor` and a nil
+    /// background (no pill drawn).
+    ///
+    /// `internal` (not `private`) so `MenuBarIconRendererTests` can cover
+    /// all four combinations via `@testable import`. Tests assert against
+    /// the public `NSColor.menuBarPeakBg*` / `menuBarWarning` tokens
+    /// rather than `Self.warningColor` (which is `private`).
+    ///
+    /// - Parameters:
+    ///   - colorMode: The user's selected `ColorMode` (`.color` or `.monochrome`).
+    ///   - isPeak: Whether the slot is currently in DeepSeek peak window.
+    ///     The caller has already filtered on `provider == .deepseek`, so
+    ///     this is just the upstream `PeakSchedule.isPeak() == .peak` result.
+    ///   - resolvedColor: The threshold-derived text color the caller would
+    ///     use off-peak. Returned as `textColor` when `isPeak == false`.
+    /// - Returns: A tuple — `textColor` is always set; `peakBgColor` is
+    ///   non-nil only when an overlay pill should be drawn behind the text.
+    static func peakOverlayStyle(
+        colorMode: ColorMode,
+        isPeak: Bool,
+        resolvedColor: NSColor
+    ) -> (textColor: NSColor, peakBgColor: NSColor?) {
+        guard isPeak else { return (resolvedColor, nil) }
+        switch colorMode {
+        case .color:
+            return (NSColor.menuBarWarning, NSColor.menuBarPeakBg)
+        case .monochrome:
+            return (.white, NSColor.menuBarPeakBgMonochrome)
+        }
+    }
+
     /// Plain-text two-line slot for fresh (non-stale) data. Optional
     /// breathing shadow is applied around the text renders when active
     /// (caller passes 0/0 to disable).
     ///
     /// DeepSeek peak overlay: when this slot's provider is DeepSeek and the
     /// current moment is in peak (per `PeakSchedule.isPeak()`), fill a
-    /// rounded-rect background behind the slot and render the text in the
-    /// WARN palette (yellow on yellow = the user's "inverted" requirement).
+    /// rounded-rect background behind the slot and re-style the text. The
+    /// styling branches on `colorMode` (see `peakOverlayStyle` above):
+    ///   • `color`      → amber bg (`menuBarPeakBg`) + yellow text — the
+    ///     original "inverted" pill (yellow on yellow).
+    ///   • `monochrome` → 75% black bg (`menuBarPeakBgMonochrome`) + white
+    ///     text — keeps the peak hint inside the black/white palette so
+    ///     it does not break the monochrome visual contract.
     /// Off-peak slots fall through to the unmodified rendering path. The
     /// `MenuBarController` ticks a 60 s timer that calls `onNeedsDisplay`
     /// so this overlay flips at the BJT window boundaries without caching
@@ -522,15 +562,25 @@ final class MenuBarIconRenderer {
         width: CGFloat,
         data: SlotViewData,
         color: NSColor,
+        colorMode: ColorMode,
         in context: CGContext,
         shadowBlurRadius: CGFloat = 0,
         shadowOpacity: CGFloat = 0
     ) {
         let isDeepSeek = data.provider == Provider.deepseek.rawValue
         let inPeak = isDeepSeek && PeakSchedule.isPeak() == .peak
-        let textColor = inPeak ? Self.warningColor : color
 
-        if inPeak {
+        // Peak overlay styling — branched on colorMode so the monochrome
+        // variant stays inside the black/white palette instead of breaking
+        // the monochrome visual contract with amber + yellow. Off-peak
+        // slots fall through with the caller's resolved color.
+        let (textColor, peakBgColor) = Self.peakOverlayStyle(
+            colorMode: colorMode,
+            isPeak: inPeak,
+            resolvedColor: color
+        )
+
+        if let peakBgColor = peakBgColor {
             // Rounded-rect background drawn before the shadow state is
             // pushed — we don't want the shadow under the bg fill, only
             // around the text that sits on top of it.
@@ -543,7 +593,7 @@ final class MenuBarIconRenderer {
                 height: Self.slotHeight
             )
             let path = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
-            NSColor.menuBarPeakBg.setFill()
+            peakBgColor.setFill()
             path.fill()
         }
 

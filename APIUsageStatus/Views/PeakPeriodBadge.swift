@@ -3,9 +3,11 @@ import SwiftUI
 // MARK: - PeakPeriodBadge
 //
 // Small English pill rendered next to the "≈ ¥X.XX today" line on a DeepSeek
-// card. Reuses the existing `Color.warningYellow` token so it visually matches
-// the menu-bar peak overlay (yellow text + soft yellow capsule). Reads cleanly
-// on the opaque popup surface in both Light and Dark appearance.
+// card. Two-tone: Peak uses `Color.warningYellow` (caution / higher rate);
+// Off-Peak uses `Color.trackingOn` (green / lower rate). Each period pairs
+// its tone with a matching 25% capsule fill so both states read as a clean
+// monochromatic pill at 9pt on the opaque popup surface (Light and Dark
+// appearance).
 //
 // `UsageCardView.balanceContent` wraps this in `TimelineView(.periodic(by: 60))`
 // so the label flips automatically at the BJT window boundaries — no AppState
@@ -15,7 +17,8 @@ import SwiftUI
 // (see `UsageCardViewTests` / `InstanceCardViewTests` /
 // `EmptyStateGuideViewTests` file headers), `NSHostingController`-based
 // snapshot tests fail in the current XCTest bundle because no `NSApplication`
-// event loop is attached. The styling decision — yellow capsule, 9pt
+// event loop is attached. The styling decision — period-keyed tone (yellow
+// for peak, green for off-peak) with matching 25% capsule fill, 9pt
 // semibold — is intentionally fixed; the underlying label string is covered
 // by `PeakPeriodTests.testLabelsAreEnglish`. If/when SwiftUI runtime tests
 // are revived, add a snapshot test alongside the existing pattern.
@@ -30,14 +33,21 @@ struct PeakPeriodBadge: View {
     /// provider). Updating the value here updates both call sites.
     static let totalVerticalPadding: CGFloat = 4
 
+    /// Tones: peak → `warningYellow` (higher rate, caution), off-peak →
+    /// `trackingOn` (lower rate, "good"). Paired with a matching 25%
+    /// capsule fill in `body`.
+    private var tone: Color {
+        period == .peak ? Color.warningYellow : Color.trackingOn
+    }
+
     var body: some View {
         Text(PeakSchedule.label(for: period))
             .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(Color.warningYellow)
+            .foregroundStyle(tone)
             .padding(.horizontal, 4)
             .padding(.vertical, 2)
             .background(
-                Capsule().fill(Color.warningYellow.opacity(0.25))
+                Capsule().fill(tone.opacity(0.25))
             )
     }
 }

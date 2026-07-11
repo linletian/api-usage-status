@@ -394,6 +394,145 @@ final class MenuBarIconRendererTests: XCTestCase {
                               "Two slots should produce wider output than one slot")
     }
 
+    // MARK: - Peak Overlay Style (colorMode × isPeak matrix)
+    //
+    // These tests pin the styling decision extracted into
+    // `MenuBarIconRenderer.peakOverlayStyle(colorMode:isPeak:resolvedColor:)`.
+    // The function is `internal static` so it's reachable via
+    // `@testable import`. We assert on the public `NSColor.menuBar*`
+    // tokens and the white/black constants — never on the private
+    // `Self.warningColor` — so the test stays decoupled from internal
+    // renames.
+
+    /// Pass-through: when the slot is off-peak the helper returns the
+    /// caller's resolved color and a nil background (no pill drawn).
+    /// Covers both color modes since off-peak shouldn't branch on colorMode.
+    func testPeakOverlayStyleOffPeakPassesThroughResolvedColor() {
+        let custom = NSColor(srgbRed: 0.5, green: 0.3, blue: 0.1, alpha: 1.0)
+
+        let colorModeOff = MenuBarIconRenderer.peakOverlayStyle(
+            colorMode: .color, isPeak: false, resolvedColor: custom
+        )
+        XCTAssertNil(colorModeOff.peakBgColor,
+                     "Off-peak slot must not draw any peak overlay pill")
+        XCTAssertEqual(colorModeOff.textColor, custom,
+                       "Off-peak text color must be the caller's resolved color")
+
+        let monoOff = MenuBarIconRenderer.peakOverlayStyle(
+            colorMode: .monochrome, isPeak: false, resolvedColor: custom
+        )
+        XCTAssertNil(monoOff.peakBgColor,
+                     "Off-peak monochrome slot must also pass through (no pill)")
+        XCTAssertEqual(monoOff.textColor, custom,
+                       "Off-peak monochrome text color must be the caller's resolved color")
+    }
+
+    /// Color-mode + peak: amber background (`menuBarPeakBg` = #FFE082)
+    /// behind yellow warning text (`menuBarWarning` = #FFC107). This is
+    /// the original "yellow on yellow" inverted pill that shipped with
+    /// the first peak-window feature.
+    func testPeakOverlayStyleColorModeInPeak() {
+        let resolved = NSColor(srgbRed: 0.1, green: 0.2, blue: 0.3, alpha: 1.0)
+        let (textColor, peakBgColor) = MenuBarIconRenderer.peakOverlayStyle(
+            colorMode: .color, isPeak: true, resolvedColor: resolved
+        )
+
+        // Background: amber #FFE082.
+        guard let bg = peakBgColor else {
+            XCTFail("Color-mode peak overlay must set a background")
+            return
+        }
+        assertSRGB(bg, expectedRGB: (255, 224, 130),
+                   message: "Color-mode peak bg must be the amber #FFE082 token")
+
+        // Text: warning yellow #FFC107 (NOT the caller's resolved color).
+        assertSRGB(textColor, expectedRGB: (255, 193, 7),
+                   message: "Color-mode peak text must be the warning-yellow #FFC107 token")
+    }
+
+    /// Monochrome-mode + peak: 75% alpha black background
+    /// (`menuBarPeakBgMonochrome`) behind white text. Keeps the peak
+    /// hint inside the black/white palette so it doesn't break the
+    /// monochrome visual contract that `colorForSlot` already enforces.
+    func testPeakOverlayStyleMonochromeModeInPeak() {
+        let resolved = NSColor(srgbRed: 0.1, green: 0.2, blue: 0.3, alpha: 1.0)
+        let (textColor, peakBgColor) = MenuBarIconRenderer.peakOverlayStyle(
+            colorMode: .monochrome, isPeak: true, resolvedColor: resolved
+        )
+
+        // Background: black with 75% alpha.
+        guard let bg = peakBgColor else {
+            XCTFail("Monochrome-mode peak overlay must set a background")
+            return
+        }
+        assertSRGB(bg, expectedRGB: (0, 0, 0),
+                   message: "Monochrome-mode peak bg must be black")
+        XCTAssertEqual(bg.alphaComponent, 0.75, accuracy: 0.01,
+                       "Monochrome-mode peak bg alpha must be 75%")
+
+        // Text: pure white (NOT the caller's resolved color).
+        assertSRGB(textColor, expectedRGB: (255, 255, 255),
+                   message: "Monochrome-mode peak text must be white")
+    }
+
+    /// The two peak-mode variants must return DIFFERENT background colors.
+    /// Pinning this prevents a future refactor from accidentally collapsing
+    /// the color-mode branch (e.g., using `menuBarPeakBg` for both).
+    func testPeakOverlayStyleDistinguishesColorModesInPeak() {
+        let resolved = NSColor(srgbRed: 0.4, green: 0.4, blue: 0.4, alpha: 1.0)
+        let colorPeak = MenuBarIconRenderer.peakOverlayStyle(
+            colorMode: .color, isPeak: true, resolvedColor: resolved
+        )
+        let monoPeak = MenuBarIconRenderer.peakOverlayStyle(
+            colorMode: .monochrome, isPeak: true, resolvedColor: resolved
+        )
+
+        guard let colorBg = colorPeak.peakBgColor,
+              let monoBg = monoPeak.peakBgColor else {
+            XCTFail("Both peak variants must set a background")
+            return
+        }
+        // Compare R, G, B independently — Swift's type checker refuses
+        // tuple arguments in XCTAssertNotEqual. The contract is "visually
+        // distinct", so differing on any single channel is enough proof.
+        let colorSRGB = colorBg.usingColorSpace(.sRGB) ?? colorBg
+        let monoSRGB = monoBg.usingColorSpace(.sRGB) ?? monoBg
+        let colorRGB = (
+            Int((colorSRGB.redComponent * 255).rounded()),
+            Int((colorSRGB.greenComponent * 255).rounded()),
+            Int((colorSRGB.blueComponent * 255).rounded())
+        )
+        let monoRGB = (
+            Int((monoSRGB.redComponent * 255).rounded()),
+            Int((monoSRGB.greenComponent * 255).rounded()),
+            Int((monoSRGB.blueComponent * 255).rounded())
+        )
+        let allChannelsMatch = colorRGB.0 == monoRGB.0
+                            && colorRGB.1 == monoRGB.1
+                            && colorRGB.2 == monoRGB.2
+        XCTAssertFalse(allChannelsMatch,
+                       "Color-mode and monochrome-mode peak backgrounds must differ — got identical RGB \(colorRGB)")
+    }
+
+    /// Convert an NSColor to sRGB and assert its RGB triple matches the
+    /// expected values within ±2 (covers NSColor quantization). Falls back
+    /// to the original color if sRGB conversion is unavailable.
+    private func assertSRGB(
+        _ color: NSColor,
+        expectedRGB: (r: Int, g: Int, b: Int),
+        message: String,
+        file: StaticString = #file,
+        line: UInt = #line
+    ) {
+        let srgb = color.usingColorSpace(.sRGB) ?? color
+        XCTAssertEqual(Int((srgb.redComponent * 255).rounded()), expectedRGB.r,
+                       accuracy: 2, "\(message) — R mismatch", file: file, line: line)
+        XCTAssertEqual(Int((srgb.greenComponent * 255).rounded()), expectedRGB.g,
+                       accuracy: 2, "\(message) — G mismatch", file: file, line: line)
+        XCTAssertEqual(Int((srgb.blueComponent * 255).rounded()), expectedRGB.b,
+                       accuracy: 2, "\(message) — B mismatch", file: file, line: line)
+    }
+
     // MARK: - Snapshot Tests
 
     func testSnapshotNormalNoBreathingColor() {

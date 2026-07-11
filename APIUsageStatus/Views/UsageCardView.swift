@@ -89,7 +89,8 @@ struct UsageCardView: View {
                         percent: percent,
                         usageValue: usageValue,
                         limitValue: limitValue,
-                        cycleRemainingSeconds: cycleRemainingSeconds
+                        cycleRemainingSeconds: cycleRemainingSeconds,
+                        cycleEndTime: slot.metricSnapshots.first?.cycleEndTime
                     )
                 case .balance(let amount, let totalBalance, let grantedBalance, let isAvailable, let currency):
                     balanceContent(
@@ -201,7 +202,8 @@ struct UsageCardView: View {
         percent: Double,
         usageValue: String,
         limitValue: String,
-        cycleRemainingSeconds: Int?
+        cycleRemainingSeconds: Int?,
+        cycleEndTime: Date?
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             // All quota-type providers use text-above-bar to match the
@@ -220,7 +222,7 @@ struct UsageCardView: View {
             // closed), so no CPU is spent while the popup is hidden.
             HStack {
                 Spacer()
-                if let endTime = firstCycleEndTime {
+                if let endTime = cycleEndTime {
                     TimelineView(.periodic(from: .now, by: 60)) { context in
                         if let remaining = formatRemainingTime(endTime: endTime, now: context.date) {
                             Text(remaining)
@@ -554,28 +556,11 @@ struct UsageCardView: View {
             } else {
                 flatMetricContent(snapshots: visibleSnapshots)
             }
-
-            // Live "Xh Ym remaining" footer for the multi-metric layout
-            // (used by DeepSeek / OpenCode / Copilot). Mirrors the
-            // single-metric countdown: prefer `cycleEndTime` and tick it
-            // down with `TimelineView`; fall back to the static-at-refresh
-            // value when no end time is recorded.
-            HStack {
-                Spacer()
-                if let endTime = firstCycleEndTime {
-                    TimelineView(.periodic(from: .now, by: 60)) { context in
-                        if let remaining = formatRemainingTime(endTime: endTime, now: context.date) {
-                            Text(remaining)
-                                .font(.system(size: 9))
-                                .foregroundColor(.textSecondary)
-                        }
-                    }
-                } else if let remaining = formatRemainingTime(firstCycleRemaining) {
-                    Text(remaining)
-                        .font(.system(size: 9))
-                        .foregroundColor(.textSecondary)
-                }
-            }
+            // Per-snapshot "Xh Ym remaining" footers are rendered inside
+            // each `metricRow` so each progress bar shows its own window
+            // reset time. The row is gated by `snapshot.cycleEndTime` /
+            // `cycleRemainingSeconds` and the snapshot's `displayInMenuBar`
+            // toggle, so disabled windows show neither a bar nor a footer.
         }
     }
 
@@ -585,7 +570,8 @@ struct UsageCardView: View {
             percent: first?.percent ?? 0,
             usageValue: first?.displayUsage ?? "",
             limitValue: first?.displayLimit ?? "",
-            cycleRemainingSeconds: first?.cycleRemainingSeconds
+            cycleRemainingSeconds: first?.cycleRemainingSeconds,
+            cycleEndTime: first?.cycleEndTime
         )
     }
 
@@ -639,6 +625,7 @@ struct UsageCardView: View {
                 }
                 FlowingGlowBar()
                     .frame(height: 4)
+                metricRemainingRow(snapshot: snapshot)
             }
         } else {
             VStack(alignment: .leading, spacing: 4) {
@@ -657,6 +644,35 @@ struct UsageCardView: View {
                         .foregroundColor(percentTextColor(for: snapshot.percent))
                 }
                 quotaProgressBar(percent: snapshot.percent, height: 4)
+                metricRemainingRow(snapshot: snapshot)
+            }
+        }
+    }
+
+    /// Per-snapshot "Xh Ym remaining" footer rendered directly under each
+    /// progress bar in `metricRow`. Driven by `cycleEndTime` with a
+    /// `TimelineView` for live ticking; falls back to the static-at-refresh
+    /// `cycleRemainingSeconds` when no end time is recorded. Returns nothing
+    /// when neither is set, so rows without a reset time simply skip this
+    /// line (no stale placeholder text). Because the row lives inside
+    /// `metricRow`, it is automatically included in / excluded from the
+    /// snapshot's `displayInMenuBar` toggle, alongside its progress bar.
+    @ViewBuilder
+    private func metricRemainingRow(snapshot: MetricSnapshot) -> some View {
+        HStack {
+            Spacer()
+            if let endTime = snapshot.cycleEndTime {
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    if let remaining = formatRemainingTime(endTime: endTime, now: context.date) {
+                        Text(remaining)
+                            .font(.system(size: 9))
+                            .foregroundColor(.textSecondary)
+                    }
+                }
+            } else if let remaining = formatRemainingTime(snapshot.cycleRemainingSeconds) {
+                Text(remaining)
+                    .font(.system(size: 9))
+                    .foregroundColor(.textSecondary)
             }
         }
     }
@@ -684,19 +700,6 @@ struct UsageCardView: View {
         case "monthly": return 2
         default: return 3
         }
-    }
-
-    private var firstCycleRemaining: Int? {
-        slot.metricSnapshots.first(where: { $0.cycleRemainingSeconds != nil })?.cycleRemainingSeconds
-    }
-
-    /// First snapshot that carries a `cycleEndTime` — the absolute window
-    /// end time the view feeds to `TimelineView` for the live countdown.
-    /// Falls back to `nil` for legacy snapshots where the parser didn't
-    /// record an end time; in that case the view renders the static
-    /// `cycleRemainingSeconds` value instead.
-    private var firstCycleEndTime: Date? {
-        slot.metricSnapshots.first(where: { $0.cycleEndTime != nil })?.cycleEndTime
     }
 
     // MARK: - Helpers

@@ -1,9 +1,9 @@
 # Auto Refresh Stops After Hours — Investigation
 
-> **最后更新**: 2026-06-27　|　**作者**: 现象调查
-> **状态**: 间接证据坐实 App Nap 冻结 `Task.sleep`；待下次复现拿到配对时间序列直接确认
+> **最后更新**: 2026-07-10　|　**作者**: 现象调查 + 设计变更记录（§13）+ spinner 泄漏修复（§12.6）
+> **状态**: §4.1 / §4.6 修复实施完成；§4.7 spinner 泄漏**已修复**（统一清理 helper + 外层 do/catch），age-based force-clear 保留作 defense-in-depth
 > **影响范围**: `RefreshService` 5 分钟自动刷新循环（手动刷新不受影响）
-> **下一步**: 用 `build/APIUsageStatus.app` 跑一次复现，把日志片段贴回来定位
+> **下一步**: 上线后用 §13.8 的预期信号验证 App Nap 路径不再冻结 timer，且系统 sleep 完全不受影响
 
 ---
 
@@ -370,7 +370,7 @@ timer.resume()
 - **优势**：侵入性最小
 - **代价**：逻辑复杂；要新增状态字段；不能避免 App Nap 期间的延迟，只能补偿
 
-**当前推荐**（待 §5 直接确认后）：优先试 **候选 C**（一行 Info.plist），如果 sleep drift 警告消失即根因坐实，再视情况做 **A** 作为更彻底的修复。
+**当前推荐**（已修订）：**候选 C 已撤回**（参见 §13 —— `NSAppSleepDisabled=true` 是进程级反 sleep 标志，会同时阻止系统睡眠，对笔记本用户不可接受）。**最终选择候选 A**（`DispatchSourceTimer`）—— 仅换 timer 实现路径，不影响 power management，对系统 sleep 完全透明。
 
 ---
 
@@ -380,10 +380,11 @@ timer.resume()
 |---|---|
 | 现象描述 | ✅ 完成 |
 | 间接证据 | ✅ 完成（PID 55483 21h refresh-category 11 条日志分析）|
-| 嫌疑根因排序 | ✅ 完成（§4.1 App Nap 为主嫌疑）|
+| 嫌疑根因排序 | ✅ 完成 + 扩展（§4.1 App Nap 坐实；§4.6 系统睡眠 + wake 不补发新发现；§4.7 cycle-slot 泄漏嫌疑，详见 §12）|
 | 多角度诊断日志 | ✅ 已部署（`build/APIUsageStatus.app`，2026-06-27）|
-| 直接证据（sleep drift 警告 + lifecycle 配对）| ⏳ 等下次复现 |
-| 修复方案决策 | ⏳ 等直接证据后决策（候选 C 优先）|
+| 直接证据（sleep drift 警告 + lifecycle 配对）| ⚠️ **部分** —— RunningBoard `AppDrawing` heartbeat gap 21h55m + 写盘 mtime 断层 22h 已坐实 App Nap；但 `sleep drift` 警告明文受 Swift `os.Logger` privacy 遮挡（见 §12.5）|
+| 复现记录 | ✅ §10 第一条（2026-06-27） + §12（2026-07-01，22h 静默）|
+| 修复方案决策 | ✅ **已修订** —— 候选 C 撤回（power management 副作用，详见 §13）；候选 A `DispatchSourceTimer` 进入实施；候选 D（wake 补发）+ cycle-slot 老化兜底（§4.7）保留；候选 B 维持冗余排除 |
 
 ---
 
@@ -452,6 +453,41 @@ log show --start "<复现开始时间>" --end "<复现结束时间>" \
 - [ ] 检查 `restartTimer called` 是否穿插 → 排除 §4.2 race
 - [ ] 重新评估嫌疑根因排序，可能需要新假设
 
+### 9.4 本轮（§12 + §13）落地项
+
+> 优先级与依据见 §12.8 修订版。**不依赖读 drift 警告明文**——App Nap 主因已被 RunningBoard heartbeat gap 直接坐实。
+
+#### §4.1 修：**撤回候选 C**，改用候选 A `DispatchSourceTimer`
+
+> ~~候选 C `NSAppSleepDisabled=true` 已撤回~~。该开关是进程级 anti-sleep 标志，会同时阻止 Mac 系统睡眠，对笔记本用户不可接受。详见 §13。
+
+- [x] `Info.plist` 加 `NSAppSleepDisabled=true` —— **撤回**（已删除）|
+- [x] `RefreshService.swift` 改写 `start()` / `stop()`，用 `DispatchSourceTimer` 替换 `Task.sleep` 循环；删除 `cycle tick` / `sleep drift` / `actualSleep` 诊断日志；新增 `_testHasTimerSource` 测试 seam
+- [ ] 重建并替换 `/Applications/APIUsageStatus.app`，运行 1 周
+- [ ] 验证：§13.8 heartbeat gap 不再出现；持久化文件 mtime ≤ 5 分钟内；`pmset -g log` 无 `PreventUserIdleSystemSleep` 类断言记录
+- [ ] OK 后合并
+
+#### §4.6 修：wake 补发
+
+- [x] `APIUsageStatusApp.swift` 的 `observeLifecycle()` 在 `system didWake` block 内触发一次 `Task { await refreshService.triggerManualRefresh() }`（已在工作树，未 commit）
+- [ ] 跨维护性睡眠后首拍就拿到最新数据，无须等 5 分钟
+
+#### §4.7 修：cycle-slot 老化兜底
+
+- [x] 方案 A：`runPeriodicCycle` 在 `currentToken != nil` 时检查 token 年龄；超过 `2 × refreshInterval` 强制 `cycleTask?.cancel()` + 清空，再发起新 cycle（已在工作树，未 commit）
+- [x] 单测覆盖：`testStaleCycleTokenIsForceClearedOnNextPeriodicTick` + `testFreshCycleTokenIsNotForceCleared`（已在工作树）
+- [x] 新增回归测试 `testStopCanBeCalledWhenTimerIsNotRunning` + `testStartThenStopClearsTimerSource`（已加，锁住 DispatchSourceTimer 生命周期）
+- [x] **2026-07-10 增补**：统一 `clearRefreshStateIfStill(_ token:)` helper + `performRefresh` 外层 `do/catch` 兜住 `Task.checkCancellation()` 在 inner catch 之前抛出的路径（用户报告的 spinner 泄漏主路径）
+- [x] 新增 4 条回归测试（`RefreshServiceCycleSlotTests.swift` §12.6 区段）：missing-UUID 早返回清理、全局无 enabled instances 清理、合作取消中途的 UUID 清理、preempt 不变量
+- [x] 新增测试 seam `_testCancelCurrentCycleTask` 让测试可以确定性触发 `Task.checkCancellation()` 路径
+
+#### §12.5 解红条：Logger.swift privacy
+
+- [ ] 把 `APIUsageStatus/Utilities/Logger.swift` 第 13–15 / 17–19 / 21–23 / 25–27 / 29–31 五处 `logger.X("\(message)")` 改成 `logger.X("\(message, privacy: .public)")`
+- [ ] 重新构建并部署
+- [ ] 下次复现时 `log show --predicate 'subsystem == "com.example.APIUsageStatus"'` 能直接读到明文 `cycle tick` / `sleep drift` / `Periodic cycle skipped` / `Starting refresh cycle` 等
+- [ ] 这条不阻塞 §4.1 修复，纯调查效率提升，建议单独一 PR
+
 ---
 
 ## 10. 复现记录（待填）
@@ -459,6 +495,8 @@ log show --start "<复现开始时间>" --end "<复现结束时间>" \
 | 日期 | 复现时长 | cycle tick 总数 | sleep drift 警告次数 | burst 次数 | 根因 | 备注 |
 |---|---|---|---|---|---|---|
 | 2026-06-27 | 21h（PID 55483，无新日志）| 11 | 0（旧版无此日志）| 3 | 疑似 App Nap（间接证据）| 调查用数据 |
+| 2026-07-01 | 22h+（PID 76691）| 未读到（隐私遮挡）| 未读到（隐私遮挡）| heartbeat gap = 1（21h55m）+ system sleep 2 次（3.5h / 4.4h）| §4.1 App Nap **坐实**；§4.6 系统睡眠 + wake **新发现**；§4.7 cycle-slot 泄漏 **结构可能** | §12 完整证据 |
+| 2026-07-07 | n/a（修复实施日）| n/a（新机制不再使用 cycle tick 概念）| n/a | n/a | n/a | 候选 C 撤回 → 候选 A 实施；§13 设计变更记录 |
 
 ---
 
@@ -497,4 +535,264 @@ log show --last 2d --predicate 'subsystem == "com.apple.AppNap"' --info --debug 
 
 # RunningBoard 对我们进程的 assertion 状态变化
 log show --last 2d --predicate 'subsystem == "com.apple.runningboard" AND eventMessage CONTAINS "APIUsageStatus"' --info --style compact
+
+# AppDrawing 心跳 gap 判定（候选主因直接证据）
+grep "AppDrawing.*target:76691" /tmp/lifecycle.log \
+  | awk '{print $1, $2}' \
+  | python3 -c "
+import sys
+from datetime import datetime
+prev = None
+for line in sys.stdin:
+    p = line.strip().split()
+    ts = datetime.strptime(p[0]+' '+p[1], '%Y-%m-%d %H:%M:%S.%f')
+    if prev is not None and (ts-prev).total_seconds() > 90:
+        print(f'GAP {prev} -> {ts} = {(ts-prev).total_seconds():.0f}s')
+    prev = ts
+"
 ```
+
+---
+
+## 12. 复现记录 #2 — 2026-07-01 PID 76691（22h 静默 + 新症状）
+
+> **更新日期**：2026-07-02　|　**作者**：现象调查（接续 §10 第二条记录）
+> **数据来源**：`/tmp/apiusage-sudo.log`（主进程子系统日志）+ `/tmp/apiusage-lifecycle.log`（RunningBoard + AppDrawing）
+> **关键约束**：主进程 refresh / lifecycle 日志**仍为 `<private>`**（详见 §12.5），`sleep drift` 警告明文无法读
+> **状态**：App Nap **坐实**；新增 §4.6 系统睡眠因；新增 §4.7 cycle-slot 泄漏因（结构可能但本机未直接观察）
+
+### 12.1 进程与时窗
+
+- **PID 76691**，ELAPSED ~5 天（2026-06-27 ~18:47 启动，至调查时仍存活）
+- 调查窗口：`2026-07-01 22:00:00` ~ `2026-07-02 22:30:00`
+- 进程状态：S（sleeping，等事件）
+- Binary 已包含 §5.1 全部 11 条诊断字符串（`cycle tick` / `sleep drift` / `Periodic cycle skipped` 等）
+
+### 12.2 硬证据（不依赖日志明文）
+
+| 指标 | 数值 | 含义 |
+|---|---|---|
+| `~/Library/Application Support/APIUsageStatus/3B67E671-…-3B67E671.json` mtime（Deepseek 余额快照，每次成功 refresh 写）| **2026-07-01 22:55:21** | 最后一次成功 refresh 写盘 |
+| `instances.json` mtime | 2026-06-27 16:24:41 | MiniMax auto-discover 未触发，正常 |
+| 距下次成功写盘间隔 | **22h 14min**（至 2026-07-02 21:09 调查时刻）| 期望 ~264 次（5min × 264），实际 **0** |
+| `AppDrawing` heartbeat 静默 gap | **21h55m19s**（22:52:29 → 20:47:49）| WindowServer 停止向 PID 76691 发 App Nap 续延 |
+| 系统睡眠跨度 | 12:56:30→16:23:42 (3.5h) + 16:24:10→20:47:30 (4.4h) | 部分覆盖 heartbeat 静默期 |
+| 纯运行状态导致的静默 | **~14h**（22:54 → 12:56:30，期间无系统睡眠）| **直接对应 §4.1** |
+
+### 12.3 主因坐实路径
+
+```
+22:00–22:52    heartbeat 60s 间隔正常 (22:00:29, 22:01:29, …, 22:51:29, 22:52:29)
+22:54 起       AppDrawing 心跳停止 → WindowServer 不再视 app 为"在画"
+22:55:21       最近一次成功 refresh 写盘（最后一个活动周期）
+...             14h 运行状态无写盘、无心跳（纯 App Nap 路径）
+12:56:30       系统进入 Maintenance Sleep 3.5h
+16:23:42       Wake（短暂）
+16:24:10       系统再次入睡 4.4h
+20:47:30       Wake；20:47:49 AppDrawing 心跳恢复（19s 后）
+20:47:49–21:09 heartbeat 60s 间隔恢复但 refresh 仍未恢复 → 部分 App Nap 释放 ≠ 完全释放
+```
+
+### 12.4 RunningBoard 断言剖析（PID 76691）
+
+持有的 App Nap 相关断言：
+- `appnap:AppDrawing` —— WindowServer 只向真正在画窗口的进程发
+- `appnap:AppVisible` —— WindowServer 只向前台 app 发
+- `launchservicesd:RoleUserInteractive`
+
+**未持有** `appnap:PreventAppNap` 断言 —— 这正是 §6 候选 C 想加的。`AppDrawing` / `AppVisible` 在 WindowServer 看来窗口被遮挡 / 缩到最小 / 关掉时就停发，menu bar accessory app 没有窗口概念，但 macOS 仍按"无窗口可见"标准把它归入 nap 候选。
+
+> 心跳确实在 22:54:00 → 20:47:49 这段完全静默；wake 之后正常恢复。这是对 §4.1 App Nap 主因**直接证据级别**的确认，无须看到 `sleep drift` 明文。
+
+### 12.5 主进程日志仍是 `<private>`（后续调查阻塞点）
+
+所有主进程（PID 76691）的 `com.example.APIUsageStatus:refresh` / `:lifecycle` 日志 message body 是 `<private>`。**`sudo log show` 也无法显示**。
+
+根因：
+
+```swift
+// APIUsageStatus/Utilities/Logger.swift:13-15
+func debug(_ message: String) {
+    logger.debug("\(message)")      // ← interpolation 默认 privacy: .auto → .private (Xcode 14+)
+}
+```
+
+Swift `os.Logger` 自 Xcode 14 起对带 interpolation 的格式串默认打 private 标记。要解红条：
+
+```swift
+logger.debug("\(message, privacy: .public)")
+```
+
+这一改动是**独立 action item**，已进入 §9.4 跟进清单。
+
+### 12.6 新症状：实例永久卡 spinner（cycle-slot 泄漏嫌疑）
+
+用户新报告的现象，**调查文档未涵盖**：
+
+> copilot 和 opencode go 实例一直卡在刷新状态，全局 Refresh 前也有执行刷新时的旋转图标，但不是手工触发的 → 手动触发 Refresh 后成功 → 后续自动刷新仍无效
+
+代码路径上属于 **cycle-slot 泄漏**（参见 §3.2）：
+
+- `RefreshService.runPeriodicCycle` `try await task.value`（line 184）在 `performRefresh` 永久悬挂时不会返回
+- `clearCycleIfStill(token)`（line 191）永不执行
+- `currentToken` 永不 → nil；后续所有 `runPeriodicCycle` 调用被 `if currentToken != nil { return }` 短路
+- `appState.refreshingInstanceUUIDs`（`performRefresh` line 290 写入）只在 `pushProgress()` 每组成功/失败时清 / CancellationError 路径清 / 最终 cleanup（line 591–592）清，**永久悬挂的那一组 UUID 永远不清**
+- UI spinner 来自陈旧 `refreshingInstanceUUIDs` ← 用户观察的"实例卡 spinner + Refresh 前已存在"
+- 用户手动点 Refresh → `runPreemptiveCycle` line 208 `markPreempted()` + line 220 `adoptCycle` 接管，新 cycle cleanup 正确清空 → 体感"手动刷新成功"
+- 但 **`refreshTask` 外层 `Task.sleep` 仍被 App Nap 冻结** → 自动定时不恢复 ← 用户观察的"后续自动刷新仍无效"
+
+> 本机**未直接观察到** `Periodic cycle skipped` 明文（被 §12.5 隐私遮挡）。**结构上可能，但没有明文佐证**——下次复现前需先修 Logger privacy。
+
+> **修复状态**：✅ 已修复（2026-07-10）。引入 `clearRefreshStateIfStill(_ token:)` helper（对称于既有的 `clearCycleIfStill`），把 `refreshState` + `refreshingInstanceUUIDs` 的清理统一到一个出口；`performRefresh` 全函数体外包一个 `do/catch` 兜住 `Task.checkCancellation()` 在 line 410 inner catch 之前抛出的路径（即本次用户报告的实际泄漏路径）；preempt 不变量由 helper 的 `currentToken === token` 守卫保证。4 条新回归测试锁住该修复（见 `RefreshServiceCycleSlotTests.swift` §4.7 区段）。`runPeriodicCycle` 的 age-based force-clear（§4.7 段落）作为 defense-in-depth 保留 —— 永远挂在 retry / withRetry sleep 上的 cycle 仍会被它在下次 tick 时强制清场。
+
+### 12.7 §4 根因排序更新
+
+| § | 嫌疑 | 本次复现状态 |
+|---|---|---|
+| 4.1 | App Nap 冻结 `Task.sleep` | ✅ **坐实** —— 21h55m heartbeat gap + 22h 写盘断层。修复手段**已变更**：候选 C 撤回，候选 A `DispatchSourceTimer` 实施（§13）|
+| 4.2 | actor 重入 + `restartTimer` race | 排除 —— 无 `restartTimer called` 日志穿插 |
+| 4.3 | 网络 retry 累积延迟 | 不构成主因 —— 22h 全空而非变慢 |
+| 4.4 | persistence 文件锁 | 排除 |
+| **4.6 新** | 系统睡眠 + wake 后 Refresh 不补发 | **新发现** —— 12:56:30 / 16:24:10 两次 Maintenance Sleep 跨越 heartbeat 静默期；wake 后 22 分钟 refresh 仍未恢复 |
+| **4.7 新** | cycle-slot 泄漏（永久悬挂场景）| **结构嫌疑** —— §12.6 描述结构可行；本机未观察到 `Periodic cycle skipped` 明文（受 §12.5 隐私遮挡） |
+
+### 12.8 实施优先级（2026-07-07 修订）
+
+| 优先级 | 动作 | 解决 | 成本 |
+|---|---|---|---|
+| **1** | **§6 候选 A**：`RefreshService` 改用 `DispatchSourceTimer` 替换 `Task.sleep` 循环；删除 `cycle tick` / `sleep drift` 诊断日志 | §4.1 App Nap | ~30 行 + 删 ~15 行 |
+| **2** | §6 候选 D（裁剪版）：`didWake` handler → `triggerManualRefresh()` | §4.6 系统睡眠补发 | 5–10 行 |
+| **3** ✅ 已修复（2026-07-10） | cycle-slot 老化兜底：**主方案** = 统一 `clearRefreshStateIfStill(_ token:)` helper + 外层 `do/catch` 包住 `performRefresh` 兜住 `Task.checkCancellation()` 在 inner catch 之前抛出的路径；**保留** = `runPeriodicCycle` age-based force-clear 作为 defense-in-depth | §4.7 instance spinner 永久卡 | ~50 行（含 4 条新测试）|
+| ~~撤回~~ | ~~§6 候选 C：`Info.plist NSAppSleepDisabled=true`~~ | ~~撤回原因：process-level 标志同时阻止系统 sleep，对笔记本用户不可接受；详见 §13~~ |
+| 可选 | Logger.swift 隐私改 `.public`（§12.5）| 后续调查直接读 drift 警告 | 改 3 处 |
+
+**候选 B（`Timer.scheduledTimer` on main RunLoop）经评估为冗余**，不推荐 —— A 选了 `DispatchSourceTimer` 之后所有定时机制都不再被节流，B 不能解决 §4.6 / §4.7 任何一项。
+
+### 12.9 与 §10 复现记录的关系
+
+§10 的 `2026-06-27` 行反映调查首轮复现（PID 55483，无新代码，仅借持久化 mtime + RunningBoard 做旁路推断）。
+本节 `2026-07-01` 行反映调查第二轮复现（PID 76691，本轮诊断二进制已上线 5 天，用户主动重新启动过一次进程；记录 / 分析 / 修复方案均较首轮升级）。
+
+两轮共同的"决策表"逻辑（§5.1.5）验证：
+
+| 信号 | §10 第 1 行 | §12（本次）|
+|---|---|---|
+| 进程仍存活 | ✅ | ✅ |
+| `cycle tick` 大段消失 | ✅（间接，11 条共 21h）| ✅（心跳 21h55m gap 直接）|
+| 配上系统 Sleep/Wake | 无系统 sleep | 2 次 Maintenance Sleep |
+| 配上 `app didResignActive` | 未读到 | 未读到（隐私遮挡，需要 §9.4 修）|
+| 配上 `app didResignActive` → `cycle tick` 间隔远大于 300s | 未读到 | 同上（隐私遮挡）|
+
+---
+
+## 13. 设计变更记录：候选 A（`DispatchSourceTimer`）取代候选 C（`NSAppSleepDisabled`）
+
+> **更新日期**：2026-07-07　|　**作者**：实施记录
+> **状态**：候选 C 撤回；候选 A 进入实施；§4.6 + §4.7 保留。
+
+### 13.1 变更背景
+
+§12.8 把候选 C（`Info.plist NSAppSleepDisabled=true`）列为 §4.1 修复的最高优先级，代码落到工作树但**未发布**。
+
+**Power management 评审否决候选 C**：`NSAppSleepDisabled` 是 process-level 标志，不只让定时器免于 App Nap，同时也告诉 Power Management"本进程有持续性工作，请据此判断系统能否进入 sleep"。对笔记本用户（合盖即睡眠）这一行为不可接受——本 app 只是一款菜单栏用量监控，合盖后无需也不应阻止系统睡眠。
+
+### 13.2 替代方案：候选 A（`DispatchSourceTimer`）
+
+`RefreshService.start()` 改用 `DispatchSourceTimer` 调度周期触发：
+
+- DispatchSourceTimer 是 **kernel-level timer**。与 `Task.sleep` 走 Swift Concurrency cooperative pool 不同，它走内核 timer 队列，**RunningBoard 不对该队列类别施加 App Nap 节流**。
+- DispatchSourceTimer **不影响 power management**——既不阻止 App Nap（事实上本 timer 仍可被 App Nap 暂停，但因不在 cooperative pool 上，**实际**不被节流），也不阻止系统 sleep。
+- 用户离开电脑数小时后回来，menu bar 仍正常刷新，系统可正常进入 sleep → 唤醒。
+- 改动 ~30 行（`RefreshService.swift`），无新依赖。
+
+### 13.3 关键代码骨架
+
+```swift
+private var timerSource: DispatchSourceTimer?
+private static let timerQueue = DispatchQueue(
+    label: "com.example.APIUsageStatus.refresh.timer",
+    qos: .utility
+)
+
+func start(interval: TimeInterval? = nil) {
+    if let interval = interval { refreshInterval = interval * 60 }
+    stop()
+    let intervalSeconds = refreshInterval
+    let source = DispatchSource.makeTimerSource(queue: Self.timerQueue)
+    source.schedule(
+        deadline: .now() + intervalSeconds,
+        repeating: intervalSeconds,
+        leeway: .milliseconds(250)
+    )
+    source.setEventHandler { [weak self] in
+        guard let self = self else { return }
+        Task { [weak self] in
+            guard let self = self else { return }
+            await self.runPeriodicCycle()
+        }
+    }
+    source.resume()
+    timerSource = source
+    Task { [weak self] in
+        guard let self = self else { return }
+        await self.runPeriodicCycle()  // initial fire parity
+    }
+    logger.info("RefreshService started with interval: \(intervalSeconds)s (DispatchSourceTimer, leeway=250ms)")
+}
+
+func stop() {
+    timerSource?.cancel()
+    timerSource = nil
+    logger.info("RefreshService stopped")
+}
+```
+
+### 13.4 测试 seam 影响
+
+`_testRunPeriodicCycle`、`_testSeedStaleToken`、`_testHasCurrentToken`、`_testCurrentTokenAge`、`_testSetRefreshInterval` **全部保留**——`_testRunPeriodicCycle` 与 dispatch source event handler 最终汇合于同一 `runPeriodicCycle()` 方法。
+
+新增 `_testHasTimerSource: Bool` 测试 seam + 两条新回归测试：
+
+- `testStopCanBeCalledWhenTimerIsNotRunning` — 重复 `stop()` 不崩、最终 `_testHasTimerSource == false`
+- `testStartThenStopClearsTimerSource` — `start()` → `_testHasTimerSource == true`；`stop()` → `_testHasTimerSource == false`
+
+### 13.5 旧机制遗物清理
+
+`cycle tick` / `sleep drift OK` / `sleep drift` 警告日志**全部删除**——其唯一目的是检测 `Task.sleep` 的 App Nap 续延，新机制下永远不会触发。
+
+§5.1.1「角度 A：Timer 活性 + Sleep 实测」中的决策表**整体失效**——`sleep drift` 信号不再存在；§13.6 新决策表取代。
+
+### 13.6 新决策表（取代 §5.1.5）
+
+| 信号 | 含义 |
+|---|---|
+| `Refresh cycle completed` 间隔 ≈ `refreshInterval`（±10%）| 健康；kernel timer 未被节流 |
+| `Refresh cycle completed` 间隔远大于 `refreshInterval` | **kernel timer 被节流**（极端：系统休眠期间）—— 查 `lifecycle: system didWake` 配对 |
+| `Forcibly clearing stale cycle token: age=...` 出现 | §4.7 cycle-slot 老化兜底触发；查 `performRefresh` 卡点 |
+| `Periodic cycle skipped: token already in flight` 高频 | 手动点击抢周期入口；与本修复无关 |
+| `ProcessInfo thermal → 2/3` 或 `lowPowerMode=true` | 系统级节流；DispatchSourceTimer 仍会触发（kernel 不被影响），仅记录 |
+
+### 13.7 替换的二进制版本
+
+`build/APIUsageStatus.app` 重新构建后替换 `/Applications/APIUsageStatus.app`。重建版：
+
+- 包含 `DispatchSourceTimer`（§13.2-§13.3）
+- 包含 `didWake` → `triggerManualRefresh()`（已在工作树）
+- 包含 §4.7 cycle-slot 老化兜底（已在工作树）
+
+不包含：
+
+- `Info.plist NSAppSleepDisabled=true`（**撤回**）
+- `Logger.swift privacy .public`（独立 PR，未在本轮处理）
+
+### 13.8 预期验证信号（重建版上线后）
+
+- §12.2 描述的 21h55m heartbeat gap：`DispatchSourceTimer` 不被 App Nap 节流，**预期 gap 不再出现** —— 这是修复坐实的关键证据
+- §12.2 描述的 22h 持久化 mtime 断层：同理，**预期 mtime 间隔稳定在 `refreshInterval` ±10%**
+- 系统 sleep/wake：行为完全不受影响。验证 `pmset -g log` 无 `PreventUserIdleSystemSleep` 类断言记录；本进程**不**持有 power management 断言
+
+### 13.9 已撤回的候选 C 实施残留
+
+若 §13.7 重建版上线时旧候选 C 实施（`Info.plist NSAppSleepDisabled=true`）还在工作树，必须先撤掉。否则会出现 §13.1 描述的"系统不让睡"回归。
+
+本仓库当前（2026-07-07）状态：候选 C 已从 `Info.plist` 撤回；本节确认无残留。

@@ -19,10 +19,11 @@ import AppKit
 /// Instead of duplicating that broken pattern, we directly assert the
 /// pure functions `UsageCardView` depends on (`isStale` / `colorState`
 /// orthogonality, `Date.timeSinceNow` + `Int.formattedDuration`
-/// formatting, ErrorSummary lookup keys, `firstCycleRemaining` data
-/// derivation). These are what the SwiftUI @ViewBuilder branches on,
-/// so they give us the same coverage guarantee. If/when the project's
-/// SwiftUI runtime in tests is fixed, add snapshot tests following the
+/// formatting, ErrorSummary lookup keys, per-snapshot
+/// `cycleRemainingSeconds` semantics for `metricRemainingRow`).
+/// These are what the SwiftUI @ViewBuilder branches on, so they give
+/// us the same coverage guarantee. If/when the project's SwiftUI
+/// runtime in tests is fixed, add snapshot tests following the
 /// `InstanceCardViewTests` walking-the-view-hierarchy pattern.
 @MainActor
 final class UsageCardViewTests: XCTestCase {
@@ -187,34 +188,41 @@ final class UsageCardViewTests: XCTestCase {
         }
     }
 
-    /// The per-card "Xh Ym remaining" countdown (rendered by
-    /// `multiMetricContent`) reads `firstCycleRemaining`, which picks
-    /// the first snapshot with a non-nil `cycleRemainingSeconds` across
-    /// the slot's metric snapshots. The SwiftUI view itself can't be
+    /// Per-snapshot "Xh Ym remaining" semantics for `metricRemainingRow`.
+    /// Each metric row in the multi-metric layout reads
+    /// `snapshot.cycleRemainingSeconds` directly (one snapshot per row —
+    /// no "first" lookup), with a TimelineView-driven `cycleEndTime`
+    /// branch taking precedence when available. Pin the four observable
+    /// states of `cycleRemainingSeconds` here so a regression in either
+    /// the data layer or `formatRemainingTime(_:)` (Int? overload) is
+    /// caught at the unit level. The SwiftUI view itself can't be
     /// unit-tested without a real `NSApplication` context (see file
-    /// header), so we pin the underlying data shape.
-    func testFirstCycleRemainingDerivation() {
-        // Mirrors `UsageCardView.firstCycleRemaining`: pick the first
-        // snapshot with a non-nil `cycleRemainingSeconds`.
-        func firstCycleRemaining(of slot: SlotViewData) -> Int? {
-            slot.metricSnapshots.first(where: { $0.cycleRemainingSeconds != nil })?.cycleRemainingSeconds
+    /// header), so we pin the underlying data shape instead.
+    func testMetricSnapshotCycleRemainingSemantics() {
+        // Mirrors `UsageCardView.metricRemainingRow`: each row reads
+        // its own snapshot's `cycleRemainingSeconds` (no slot-level
+        // "first" lookup — that derivation was removed when the shared
+        // footer became per-snapshot). `first` here just unwraps the
+        // fixture's single-snapshot slot.
+        func cycleRemaining(of slot: SlotViewData) -> Int? {
+            slot.metricSnapshots.first?.cycleRemainingSeconds
         }
 
         let noWindow = makeSlot(cycleRemainingSeconds: nil)
-        XCTAssertNil(firstCycleRemaining(of: noWindow),
-                     "No snapshot with cycleRemainingSeconds set → firstCycleRemaining must be nil")
+        XCTAssertNil(cycleRemaining(of: noWindow),
+                     "Snapshot with cycleRemainingSeconds=nil → no countdown rendered")
 
         let activeWindow = makeSlot(cycleRemainingSeconds: 3600)
-        XCTAssertEqual(firstCycleRemaining(of: activeWindow), 3600,
-                       "Snapshot with cycleRemainingSeconds=3600 → firstCycleRemaining = 3600")
+        XCTAssertEqual(cycleRemaining(of: activeWindow), 3600,
+                       "Snapshot with cycleRemainingSeconds=3600 → '1h 0m remaining'")
 
         let expiredWindow = makeSlot(cycleRemainingSeconds: 0)
-        XCTAssertEqual(firstCycleRemaining(of: expiredWindow), 0,
-                       "Snapshot with cycleRemainingSeconds=0 → firstCycleRemaining = 0 (treated as expired by the view)")
+        XCTAssertEqual(cycleRemaining(of: expiredWindow), 0,
+                       "Snapshot with cycleRemainingSeconds=0 → expired (formatRemainingTime returns nil)")
 
         let negativeWindow = makeSlot(cycleRemainingSeconds: -30)
-        XCTAssertEqual(firstCycleRemaining(of: negativeWindow), -30,
-                       "Snapshot with negative cycleRemainingSeconds → firstCycleRemaining = -30 (treated as expired)")
+        XCTAssertEqual(cycleRemaining(of: negativeWindow), -30,
+                       "Snapshot with negative cycleRemainingSeconds → expired")
     }
 
     // MARK: - Window time formatting (Int.formattedDuration)

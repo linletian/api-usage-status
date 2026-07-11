@@ -19,6 +19,7 @@ settings:
   configs:
     Debug:
       ENABLE_TESTABILITY: YES
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
 
 targets:
   APIUsageStatus:

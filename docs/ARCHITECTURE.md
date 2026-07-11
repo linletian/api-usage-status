@@ -160,7 +160,7 @@
 **职责**：按实例展示用量卡片的 UI。
 
 - `UsagePanelView`：承载可滚动的卡片列表 + 错误摘要栏 + 刷新按钮 + 设置入口（窗口内）
-- `UsageCardView`：单实例卡片 —— 配额型显示进度条 + 下次刷新剩余时间（分钟数），自然天/周配额型额外显示周期剩余天数；余额型显示余额 + 每日统计。卡片底部 footer 区域左侧显示「See details」按钮（仅当 provider 有对应 Web 控制台 URL 时可见），点击通过 `NSWorkspace.shared.open(_:)` 在默认浏览器打开用量详情页。URL 映射逻辑集中在 `UsageCardView.providerURL`（按 `Provider` enum 派发）：DeepSeek / MiniMax / GitHub Copilot 直接返回硬编码 URL；OpenCode 调用 `OpenCodeWorkspaceResolver.cachedWorkspaceID()`（零 IO 同步读 UserDefaults），缓存未命中时兜底到 `https://opencode.ai/zh/go`。日志扫描在 App 启动时由 `OpenCodeWorkspaceResolver.prewarm()` 后台完成（详见 §2.15）；右侧显示最近一次刷新时间
+- `UsageCardView`：单实例卡片 —— 配额型显示进度条 + **每条 MetricSnapshot 自带的周期剩余倒计时**（`Xh Ym remaining`，由 `TimelineView(.periodic(by: 60))` 每分钟重算），权威源为 `MetricSnapshot.cycleEndTime`（缺失则回退 `cycleRemainingSeconds`，皆无则该行隐藏）；多指标实例（如 OpenCode 5h/Weekly/Monthly、MiniMax 多能力桶）下**每行独立显示一份**，与 progress bar / `displayInMenuBar` 联动；余额型显示余额 + 每日统计。卡片底部 footer 区域左侧显示「See details」按钮（仅当 provider 有对应 Web 控制台 URL 时可见），点击通过 `NSWorkspace.shared.open(_:)` 在默认浏览器打开用量详情页。URL 映射逻辑集中在 `UsageCardView.providerURL`（按 `Provider` enum 派发）：DeepSeek / MiniMax / GitHub Copilot 直接返回硬编码 URL；OpenCode 调用 `OpenCodeWorkspaceResolver.cachedWorkspaceID()`（零 IO 同步读 UserDefaults），缓存未命中时兜底到 `https://opencode.ai/zh/go`。日志扫描在 App 启动时由 `OpenCodeWorkspaceResolver.prewarm()` 后台完成（详见 §2.15）；右侧显示最近一次刷新时间
 - `InstanceDetailPanel`：点击通知后弹出的独立 `NSPanel`，展示单个实例的完整用量详情（与 UsageCardView 展示相同信息，但以独立窗口形式呈现，失活时自动关闭）
 - 以上均为观察 `AppStateProxy` 的 SwiftUI 视图
 
@@ -425,10 +425,20 @@ RefreshService.performRefresh(targetUUID: String?)
           ├──▶ 对每个配额型实例，解析响应时算出 `cycleEndTime`（基于 `<model>:end_time`
           │     毫秒时间戳转 `Date`）并存入 `MetricSnapshot`，同时派生
           │     `cycleRemainingSeconds`（`cycleEndTime - now`，向下取整到 0）以兼容
-          │     `InstanceType.quota` 与测试 fixture。UI 层用 `TimelineView(.periodic(by: 60))`
-          │     包装渲染：popover 打开时 `cycleEndTime - context.date` 每分钟重算一次，
-          │     格式化为 `Xh Ym` / `Xm` / `Xd remaining`；popover 关闭时 timeline 自动停止
-          │     （视图卸载）。Copilot 的 `<model>:end_time` 来自 `quota_reset_date_utc` 解析（支持毫秒精度 ISO 8601），缺失时回退到 `nextMonthlyResetMs()`（下月首日 UTC 零点），保证倒计时始终有值。其余供应商字段缺失则该行隐藏
+          │     `InstanceType.quota` 与测试 fixture。**UI 层每条 `MetricSnapshot`
+          │     独立驱动一个 `TimelineView(.periodic(by: 60))`**——单指标实例
+          │     仅一行（`quotaContent` 内的 `cycleEndTime` 时间线），多指标实例
+          │     的每个 metric row 各持一份（`metricRemainingRow` 内），每分钟把
+          │     `cycleEndTime - context.date` 重算为 `Xh Ym` / `Xm` / `Xd remaining`；
+          │     popover 关闭时随视图卸载自动停止（无需手动 cleanup，参见 commit
+          │     `c47626d` 对 spinner-leak 的同源修复）。这样设计的原因：slot
+          │     内的多窗口（如 OpenCode 5h / Weekly / Monthly）reset 时间互不相同，
+          │     共享一个倒计时会丢失信息；per-row 还顺便让倒计时天然继承
+          │     `displayInMenuBar` 开关，关闭的窗口进度条与倒计时一并隐藏，
+          │     行为更内聚。Copilot 的 `<model>:end_time` 来自 `quota_reset_date_utc`
+          │     解析（支持毫秒精度 ISO 8601），缺失时回退到 `nextMonthlyResetMs()`
+          │     （下月首日 UTC 零点），保证倒计时始终有值。其余供应商字段缺失
+          │     则该行隐藏
           │
           ├──▶ [targetUUID == nil 时] MiniMax auto-discover：把响应中
           │     新发现的 model_name 加为 5h + weekly 两个 MetricConfig，
@@ -588,8 +598,8 @@ struct MetricSnapshot: Equatable {
     let displayUsage: String         // 预格式化的用量字符串（如 "369"、"$15.00"、"¥42.50"）
     let displayLimit: String         // 预格式化的上限字符串（可为空）
     let overageUSD: Double           // OpenCode Go 超额消费的美元金额（无超额时为 0）
-    let cycleEndTime: Date?          // 当前重置周期的绝对结束时间（UI 用 TimelineView 实时倒计时的权威源）
-    let cycleRemainingSeconds: Int?  // 同次刷新时刻的剩余秒数快照（cycleEndTime - now，向下取整到 0），供 InstanceType.quota 等无 Date() 的调用方使用
+    let cycleEndTime: Date?          // 当前重置周期的绝对结束时间（per-row TimelineView 实时倒计时的权威源；每个 MetricSnapshot 独立驱动一条时间线）
+    let cycleRemainingSeconds: Int?  // 同次刷新时刻的剩余秒数快照（cycleEndTime - now，向下取整到 0），供 `cycleEndTime == nil` 的 snapshot 使用；也供 `InstanceType.quota` 等无 Date() 的调用方使用
     let colorState: ColorState
     let configIndex: Int             // 1-based 位置，用于稳定排序
     let displayInMenuBar: Bool
@@ -649,7 +659,7 @@ struct SlotViewData {
 
     enum InstanceType {
         case quota(percent: Double, usageValue: String, limitValue: String,
-                   cycleRemainingSeconds: Int?)   // 周期剩余秒数（基于 <metric>:end_time 算出）；缺失则 UI 倒计时行隐藏
+                   cycleRemainingSeconds: Int?)   // 周期剩余秒数（基于 <metric>:end_time 算出）；缺失则 UI 倒计时行隐藏。**多指标 slot 不再共享一条倒计时**：旧版会取 `metricSnapshots.first(where:)` 的首个非空值代表整个 slot，已废弃；多指标场景下每行独立读取自己 snapshot 的 `cycleEndTime` 或 `cycleRemainingSeconds`
         case balance(amount: String, totalBalance: String, grantedBalance: String,
                    isAvailable: Bool, currency: String?)
     }

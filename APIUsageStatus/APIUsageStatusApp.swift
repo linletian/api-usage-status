@@ -197,7 +197,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (center, name, label) in workspaceEvents + appEvents {
             let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 AppLogger.lifecycle.info("\(label) at \(Date())")
-                _ = self
+                if label == "system didWake" {
+                    Task { [weak self] in
+                        guard let proxy = self?.appStateProxy else { return }
+                        await proxy.triggerManualRefresh()
+                    }
+                }
             }
             lifecycleObservers.append((token, center))
         }

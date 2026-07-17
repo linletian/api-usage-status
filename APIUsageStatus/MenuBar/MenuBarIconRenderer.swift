@@ -63,6 +63,14 @@ final class MenuBarIconRenderer {
 
     private var defaultAnimationTimer: Timer?
 
+    /// 60 s ticker that fires `onNeedsDisplay` whenever a DeepSeek slot is
+    /// rendered, so the peak overlay flips at the BJT window boundaries
+    /// without waiting for the next refresh cycle (which is typically every
+    /// 5+ minutes — too coarse for an hourly boundary hint). Started /
+    /// stopped by `MenuBarController` based on whether any DeepSeek slot is
+    /// currently visible.
+    private var peakTimer: Timer?
+
     func advanceDefaultAnimationCycle() {
         defaultAnimationCycleIndex = (defaultAnimationCycleIndex + 1) % Self.defaultAnimationTexts.count
         onNeedsDisplay?()
@@ -161,6 +169,7 @@ final class MenuBarIconRenderer {
                 width: slotWidth,
                 data: slot,
                 color: renderColor,
+                colorMode: colorMode,
                 in: context,
                 shadowBlurRadius: shadowBlur,
                 shadowOpacity: shadowOp
@@ -220,6 +229,61 @@ final class MenuBarIconRenderer {
     func stopDefaultAnimation() {
         defaultAnimationTimer?.invalidate()
         defaultAnimationTimer = nil
+    }
+
+    // MARK: - Peak Timer Lifecycle
+    //
+    // 60 s tick that drives `onNeedsDisplay` so the DeepSeek slot's peak
+    // overlay (or lack thereof) is recomputed and redrawn at the BJT
+    // window boundaries. `PeakSchedule.isPeak()` is read fresh on every
+    // redraw inside `render(...)`, so no cached state needs invalidation
+    // here — the timer is purely a wake-up mechanism.
+    //
+    // Differs from `breathingTimer` (0.5 s) and `defaultAnimationTimer` (1 s):
+    // those fire frequently enough that user interaction constantly re-arms
+    // the run loop. A 60 s timer that only matters near hourly boundaries
+    // is far more exposed to App Nap throttling, so this one is registered
+    // on the `.common` run-loop mode to keep it alive through modal loops
+    // and reduce idle coalescing. This is the lightest-weight mitigation
+    // — full NSActivity assertions are not needed for a hint-grade label.
+    //
+    // **Verification status**: the `.common` mode + 60 s cadence was
+    // chosen as a pragmatic balance. It has not been empirically validated
+    // against App Nap throttling under prolonged idle (the project is
+    // currently investigating App Nap elsewhere — see
+    // commit `4bfb5a7 chore(diagnostics): instrument refresh cycle +
+    // lifecycle for App Nap investigation`). If the overlay stops
+    // flipping during a BJT boundary transition in a long-idle session,
+    // wrap `startPeakTimer`'s `Timer` body with a short-lived
+    // `ProcessInfo.processInfo.beginActivity(options: .userInitiated, ...)`
+    // assertion. See `docs/provider-interfaces/deepseek.md` §11.4.
+    //
+    // **Dual `isPeak()` evaluation is intentional**: this 60 s timer
+    // wakes *this* render path; `UsageCardView.balanceContent` evaluates
+    // `PeakSchedule.isPeak()` independently inside
+    // `TimelineView(.periodic(by: 60))`. Each path renders on its own
+    // cadence without sharing state — sharing a published `@Published`
+    // would couple the menu-bar's freshness model to the SwiftUI view
+    // tree's lifetime, and is not worth that coupling for a hint.
+
+    func startPeakTimer() {
+        guard peakTimer == nil else { return }
+        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
+            self?.onNeedsDisplay?()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        peakTimer = timer
+    }
+
+    func stopPeakTimer() {
+        // `Timer.invalidate()` removes the timer from every run loop it was
+        // added to, so no explicit `RunLoop.main.remove` is needed.
+        peakTimer?.invalidate()
+        peakTimer = nil
+    }
+
+    func isPeakTimerRunning() -> Bool {
+        return peakTimer != nil
     }
 
     // MARK: - Private: measurement
@@ -442,18 +506,97 @@ final class MenuBarIconRenderer {
 
     // MARK: - Private: two-line slot rendering (fresh)
 
+    /// Decide the text color and optional peak-overlay background for a slot.
+    /// Extracted from `renderTwoLineSlot` so the `colorMode × isPeak` matrix
+    /// can be pinned by unit tests without driving the live `PeakSchedule`
+    /// clock. Off-peak slots return the caller's `resolvedColor` and a nil
+    /// background (no pill drawn).
+    ///
+    /// `internal` (not `private`) so `MenuBarIconRendererTests` can cover
+    /// all four combinations via `@testable import`. Tests assert against
+    /// the public `NSColor.menuBarPeakBg*` / `menuBarWarning` tokens
+    /// rather than `Self.warningColor` (which is `private`).
+    ///
+    /// - Parameters:
+    ///   - colorMode: The user's selected `ColorMode` (`.color` or `.monochrome`).
+    ///   - isPeak: Whether the slot is currently in DeepSeek peak window.
+    ///     The caller has already filtered on `provider == .deepseek`, so
+    ///     this is just the upstream `PeakSchedule.isPeak() == .peak` result.
+    ///   - resolvedColor: The threshold-derived text color the caller would
+    ///     use off-peak. Returned as `textColor` when `isPeak == false`.
+    /// - Returns: A tuple — `textColor` is always set; `peakBgColor` is
+    ///   non-nil only when an overlay pill should be drawn behind the text.
+    static func peakOverlayStyle(
+        colorMode: ColorMode,
+        isPeak: Bool,
+        resolvedColor: NSColor
+    ) -> (textColor: NSColor, peakBgColor: NSColor?) {
+        guard isPeak else { return (resolvedColor, nil) }
+        switch colorMode {
+        case .color:
+            return (NSColor.menuBarWarning, NSColor.menuBarPeakBg)
+        case .monochrome:
+            return (.white, NSColor.menuBarPeakBgMonochrome)
+        }
+    }
+
     /// Plain-text two-line slot for fresh (non-stale) data. Optional
     /// breathing shadow is applied around the text renders when active
     /// (caller passes 0/0 to disable).
+    ///
+    /// DeepSeek peak overlay: when this slot's provider is DeepSeek and the
+    /// current moment is in peak (per `PeakSchedule.isPeak()`), fill a
+    /// rounded-rect background behind the slot and re-style the text. The
+    /// styling branches on `colorMode` (see `peakOverlayStyle` above):
+    ///   • `color`      → amber bg (`menuBarPeakBg`) + yellow text — the
+    ///     original "inverted" pill (yellow on yellow).
+    ///   • `monochrome` → 75% black bg (`menuBarPeakBgMonochrome`) + white
+    ///     text — keeps the peak hint inside the black/white palette so
+    ///     it does not break the monochrome visual contract.
+    /// Off-peak slots fall through to the unmodified rendering path. The
+    /// `MenuBarController` ticks a 60 s timer that calls `onNeedsDisplay`
+    /// so this overlay flips at the BJT window boundaries without caching
+    /// any state in the renderer.
     private func renderTwoLineSlot(
         atX originX: CGFloat,
         width: CGFloat,
         data: SlotViewData,
         color: NSColor,
+        colorMode: ColorMode,
         in context: CGContext,
         shadowBlurRadius: CGFloat = 0,
         shadowOpacity: CGFloat = 0
     ) {
+        let isDeepSeek = data.provider == Provider.deepseek.rawValue
+        let inPeak = isDeepSeek && PeakSchedule.isPeak() == .peak
+
+        // Peak overlay styling — branched on colorMode so the monochrome
+        // variant stays inside the black/white palette instead of breaking
+        // the monochrome visual contract with amber + yellow. Off-peak
+        // slots fall through with the caller's resolved color.
+        let (textColor, peakBgColor) = Self.peakOverlayStyle(
+            colorMode: colorMode,
+            isPeak: inPeak,
+            resolvedColor: color
+        )
+
+        if let peakBgColor = peakBgColor {
+            // Rounded-rect background drawn before the shadow state is
+            // pushed — we don't want the shadow under the bg fill, only
+            // around the text that sits on top of it.
+            let padX: CGFloat = 3
+            let cornerRadius: CGFloat = 3
+            let rect = CGRect(
+                x: originX - padX,
+                y: 0,
+                width: width + padX * 2,
+                height: Self.slotHeight
+            )
+            let path = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
+            peakBgColor.setFill()
+            path.fill()
+        }
+
         let shortName = String(data.shortName.uppercased().prefix(3))
         let (topBaseline, bottomBaseline) = twoLineBaselines
 
@@ -462,13 +605,13 @@ final class MenuBarIconRenderer {
             context.setShadow(
                 offset: CGSize.zero,
                 blur: shadowBlurRadius,
-                color: color.withAlphaComponent(shadowOpacity).cgColor
+                color: textColor.withAlphaComponent(shadowOpacity).cgColor
             )
         }
 
         let nameWidth = textWidth(shortName, font: Self.font)
         let nameX = originX + (width - nameWidth) / 2
-        renderText(shortName, at: CGPoint(x: nameX, y: topBaseline), color: color, font: Self.font, in: context)
+        renderText(shortName, at: CGPoint(x: nameX, y: topBaseline), color: textColor, font: Self.font, in: context)
 
         let valueText: String
         let valueFont: NSFont
@@ -486,7 +629,7 @@ final class MenuBarIconRenderer {
 
         let valueWidth = textWidth(valueText, font: valueFont)
         let valueX = originX + (width - valueWidth) / 2
-        renderText(valueText, at: CGPoint(x: valueX, y: bottomBaseline), color: color, font: valueFont, in: context)
+        renderText(valueText, at: CGPoint(x: valueX, y: bottomBaseline), color: textColor, font: valueFont, in: context)
 
         if shadowBlurRadius > 0 && shadowOpacity > 0 {
             context.restoreGState()
@@ -496,5 +639,6 @@ final class MenuBarIconRenderer {
     deinit {
         breathingTimer?.invalidate()
         defaultAnimationTimer?.invalidate()
+        peakTimer?.invalidate()
     }
 }

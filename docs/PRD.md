@@ -57,7 +57,9 @@
   - **周期配额型实例**：
     - 当前周期用量（用量 / 上限）。当 Copilot 或 OpenCode Go 用量超过 100%（开启套餐外余额消费）时，右侧百分比显示为 `100% + (超出百分比)%`（Copilot）或 `100% + $超出金额`（OpenCode Go）；进度条切换为按比例的两段式：前段红色实心代表 100% 配额，后段红色斑马纹代表超出部分
     - 用量进度条（百分比 + 数值）
-    - 下次刷新剩余时间：距下次定时刷新的分钟数。自然天/周配额型额外显示：周期剩余天数
+    - **周期剩余倒计时**（`Xh Ym remaining` / `Xm remaining` / `Xd remaining`，每分钟由 `TimelineView(.periodic(by: 60))` 重算）：
+      - 单指标实例：进度条下方显示一行，权威源为 `MetricSnapshot.cycleEndTime`，缺失时回退到 `cycleRemainingSeconds`（刷新时刻的静态值），两者皆无则该行隐藏
+      - **多指标实例**（OpenCode 5h/Weekly/Monthly、MiniMax 多能力桶）：**每个 metric row 自带独立倒计时**，直接挂在该 progress bar 下方，与该行 `displayInMenuBar` 开关联动（关闭的窗口连同进度条一起隐去，倒计时也一并消失）。这避免了旧版"用首个 snapshot 的剩余时间代表整个 slot"的语义失真——多窗口的 reset 时间各不相同，每行必须显示自己的
   - **余额型实例**：
     - 当前剩余余额（金额）
     - 当日用量（本地统计值，标注「约」）

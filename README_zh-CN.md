@@ -24,9 +24,15 @@
 | 供应商 | 监控维度 | 数据来源 |
 |--------|---------|---------|
 | MiniMax | 每个 `model_name`（如 `general` 文本、`video` 非文本）的 5h 窗口与周窗口剩余百分比 | `www.minimaxi.com/v1/token_plan/remains` |
-| DeepSeek | 充值金额、赠送金额、总余额、货币单位 | `api.deepseek.com/user/balance` |
+| DeepSeek | 充值金额、赠送金额、总余额、货币单位；峰/谷时段提示（北京时间 09:00–12:00 与 14:00–18:00） | `api.deepseek.com/user/balance` |
 | GitHub Copilot | 月度 `premium_interactions` 剩余百分比（Free / Pro / Pro+ / Business / Enterprise 全覆盖） | `api.github.com/copilot_internal/user` |
 | OpenCode Go | 5h / 每周 / 每月窗口的美元用量（上限 $12 / $30 / $60） | 本地 SQLite，通过 `opencode db` CLI 读取 |
+
+> **说明**：上表中的 DeepSeek 峰/谷时段提示**固定锚定在「北京时间（UTC+8）」**，
+> 反映 2026 年 6 月 DeepSeek 官方公告中的计费策略（`policyVersion "2026-06"`）。
+> 窗口边界判定的粒度为 60 秒，菜单栏 overlay 与弹窗内的 "Peak / Off-Peak"
+> 药丸在时段切换时最多延迟一分钟翻牌。完整时段表、时区锚点原因与维护契约见
+> `docs/provider-interfaces/deepseek.md` §11。
 
 ### 凭据配置
 
@@ -114,7 +120,11 @@ xcodebuild -project APIUsageStatus.xcodeproj \
 
 或在 Xcode 中按 Cmd+U。
 
-测试目标覆盖各供应商响应解析（MiniMax / DeepSeek / Copilot / OpenCode）、刷新与持久化服务、余额计算、菜单栏渲染、SwiftUI 视图，以及基于快照的像素级校验。原 `PixelFontEngineTests`（58 个用例）保留在 `#if false` 内仅供历史参考，不参与运行。
+测试目标覆盖各供应商响应解析（MiniMax / DeepSeek / Copilot / OpenCode）、刷新与持久化服务、
+余额计算、菜单栏渲染（包含 DeepSeek 峰段 overlay）、DeepSeek 峰/谷窗口分类
+（`PeakPeriodTests`，以北京时间为锚的 15 个边界用例）、SwiftUI 视图，
+以及基于快照的像素级校验。原 `PixelFontEngineTests`（58 个用例）保留在 `#if false` 内
+仅供历史参考，不参与运行。
 
 ## 部署到 /Applications
 

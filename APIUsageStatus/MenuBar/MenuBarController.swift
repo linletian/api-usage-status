@@ -164,6 +164,19 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
             }
         }
 
+        // Peak overlay ticker: 60 s wake-up so the DeepSeek slot's peak
+        // overlay (or lack thereof) flips at the BJT window boundaries
+        // without waiting for the next refresh cycle. Only needed when at
+        // least one DeepSeek slot is visible — otherwise the timer is idle.
+        let hasDeepSeek = slotDataList.contains { $0.provider == Provider.deepseek.rawValue }
+        if let renderer = iconRenderer {
+            if hasDeepSeek, !renderer.isPeakTimerRunning() {
+                renderer.startPeakTimer()
+            } else if !hasDeepSeek, renderer.isPeakTimerRunning() {
+                renderer.stopPeakTimer()
+            }
+        }
+
         renderIcon()
         updateWindowSize()
     }
@@ -245,6 +258,16 @@ final class MenuBarController: NSObject, ObservableObject, NSWindowDelegate {
             var contentHeight: CGFloat = 20
             if let today = slot.todayUsage, !today.isEmpty {
                 contentHeight += 14
+                // DeepSeek cards render an inline Peak/Off-Peak pill next
+                // to the today-usage text. The pill adds vertical padding
+                // (`PeakPeriodBadge.totalVerticalPadding`); add the same
+                // amount here so the popup's initial size includes the
+                // badge before SwiftUI's fittingSize takes over. The
+                // shared constant keeps this estimate in sync with the
+                // view's actual layout.
+                if slot.provider == Provider.deepseek.rawValue {
+                    contentHeight += PeakPeriodBadge.totalVerticalPadding
+                }
             }
             if let averages = slot.dailyAverages, !averages.isEmpty {
                 contentHeight += 14

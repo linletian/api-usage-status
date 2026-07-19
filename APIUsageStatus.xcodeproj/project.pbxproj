@@ -43,6 +43,9 @@
 		5E2A208690912C14DF6AC33B /* SupplierRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73A7A208048CE06C739A89AF /* SupplierRegistry.swift */; };
 		5FBC0BF256E1BA4C8D651BB9 /* CopilotResponseParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D42C4226FA11167ACF09A438 /* CopilotResponseParser.swift */; };
 		63E92BE9CFBBEFE55E5D62B6 /* CopilotResponseParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0161F72C904A640F8D2F18 /* CopilotResponseParserTests.swift */; };
+		CA7F00D51A2B3C4D5E6F7002 /* KimiSupplier.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7F00D51A2B3C4D5E6F7001 /* KimiSupplier.swift */; };
+		CA7F00D51A2B3C4D5E6F7004 /* KimiResponseParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7F00D51A2B3C4D5E6F7003 /* KimiResponseParser.swift */; };
+		CA7F00D51A2B3C4D5E6F7006 /* KimiResponseParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7F00D51A2B3C4D5E6F7005 /* KimiResponseParserTests.swift */; };
 		655BDF82E3AEC05A4784FEB3 /* RefreshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5459B64D32CEAB687E0A4D10 /* RefreshService.swift */; };
 		6602C70CD29D4EE4EFBA04A4 /* AppLaunchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043E36E17FBBED80C5E98AB9 /* AppLaunchService.swift */; };
 		663745C64FC9AC87AAD6E56F /* Color+Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40C62BB21479E0CA1ADBDABF /* Color+Theme.swift */; };
@@ -148,6 +151,9 @@
 		37FB67C814A9EED39AF26D7B /* WeeklyQuotaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyQuotaTests.swift; sourceTree = "<group>"; };
 		39673FA7C9DBE3BF96F870D9 /* APIUsageStatus.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = APIUsageStatus.entitlements; sourceTree = "<group>"; };
 		3A0161F72C904A640F8D2F18 /* CopilotResponseParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotResponseParserTests.swift; sourceTree = "<group>"; };
+		CA7F00D51A2B3C4D5E6F7001 /* KimiSupplier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimiSupplier.swift; sourceTree = "<group>"; };
+		CA7F00D51A2B3C4D5E6F7003 /* KimiResponseParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimiResponseParser.swift; sourceTree = "<group>"; };
+		CA7F00D51A2B3C4D5E6F7005 /* KimiResponseParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimiResponseParserTests.swift; sourceTree = "<group>"; };
 		3CC185733B8A8CE785827092 /* SettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
 		3F3EA4EFEC787A0A0A140701 /* EmptyStateGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateGuideView.swift; sourceTree = "<group>"; };
 		40C62BB21479E0CA1ADBDABF /* Color+Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Theme.swift"; sourceTree = "<group>"; };
@@ -328,6 +334,8 @@
 				2EF3DEA046F2F4FD906379EF /* CopilotSupplier.swift */,
 				8541D133C9E59DAC203B2420 /* DeepSeekResponseParser.swift */,
 				16CA73AE724FE3F2A1E292D0 /* DeepSeekSupplier.swift */,
+				CA7F00D51A2B3C4D5E6F7003 /* KimiResponseParser.swift */,
+				CA7F00D51A2B3C4D5E6F7001 /* KimiSupplier.swift */,
 				20CC79379A5CEC0A1BFCC6E2 /* MiniMaxResponseParser.swift */,
 				433FA8715F2BFF9C522388D1 /* MiniMaxSupplier.swift */,
 				B1BF1F07D60E2B7A0201E07E /* OpenCodeGoLimits.swift */,
@@ -376,6 +384,7 @@
 				C5E1319092BAD9B4DA448DEB /* BalanceCalculatorTests.swift */,
 				B1A2F4DE7927D40C412E3131 /* BreathingMathTests.swift */,
 				3A0161F72C904A640F8D2F18 /* CopilotResponseParserTests.swift */,
+				CA7F00D51A2B3C4D5E6F7005 /* KimiResponseParserTests.swift */,
 				2CF683BAB233440D650E0642 /* DeepSeekResponseParserTests.swift */,
 				B8802674223BA10EA5E537F6 /* EmptyStateGuideViewTests.swift */,
 				0BEB57C3EF79F2722ABC4501 /* FlowingGlowBarTests.swift */,
@@ -635,6 +644,8 @@
 				5CCC0413F2DE80A543509653 /* MetricSnapshot.swift in Sources */,
 				C5D25734AD3B2C8F77B4BC2F /* MiniMaxResponseParser.swift in Sources */,
 				F1DABF702F62874847249FD5 /* MiniMaxSupplier.swift in Sources */,
+				CA7F00D51A2B3C4D5E6F7002 /* KimiSupplier.swift in Sources */,
+				CA7F00D51A2B3C4D5E6F7004 /* KimiResponseParser.swift in Sources */,
 				4E1FB678BAF07C9F48F2B804 /* NetworkClient.swift in Sources */,
 				D39926FD9D46E664FA6CC79C /* NotificationManager.swift in Sources */,
 				4A659D89DC0108129C681CE8 /* OpenCodeGoLimits.swift in Sources */,
@@ -678,6 +689,7 @@
 				E151C0B79689A158AD80C756 /* BalanceCalculatorTests.swift in Sources */,
 				BF9F801A979A7AE6169DC54D /* BreathingMathTests.swift in Sources */,
 				63E92BE9CFBBEFE55E5D62B6 /* CopilotResponseParserTests.swift in Sources */,
+				CA7F00D51A2B3C4D5E6F7006 /* KimiResponseParserTests.swift in Sources */,
 				A59F71AB0AD3673AD43D9F6A /* DeepSeekResponseParserTests.swift in Sources */,
 				8AFAFFE170579091CE469EF5 /* EmptyStateGuideViewTests.swift in Sources */,
 				A4C643560715E0B697C2DED2 /* FlowingGlowBarTests.swift in Sources */,

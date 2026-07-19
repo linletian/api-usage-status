@@ -13,12 +13,14 @@ extension Provider {
     /// - `deepseek` → `"dollarsign.circle"` — paid balance tracking
     /// - `githubCopilot` → `"hammer"` — developer tool
     /// - `opencode` → `"terminal"` — local CLI-driven workflow
+    /// - `kimi` → `"moon.stars"` — Moonshot membership quota
     var sfSymbolName: String {
         switch self {
         case .minimax: return "cpu"
         case .deepseek: return "dollarsign.circle"
         case .githubCopilot: return "hammer"
         case .opencode: return "terminal"
+        case .kimi: return "moon.stars"
         }
     }
 }

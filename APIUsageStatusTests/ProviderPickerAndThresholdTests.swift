@@ -35,7 +35,7 @@ final class ProviderPickerTests: XCTestCase {
     }
 
     func testProviderAllCasesContainsAllValues() {
-        let expected: Set<Provider> = [.minimax, .deepseek, .githubCopilot, .opencode]
+        let expected: Set<Provider> = [.minimax, .deepseek, .githubCopilot, .opencode, .kimi]
         let actual = Set(Provider.allCases)
         XCTAssertEqual(expected, actual)
     }
@@ -46,6 +46,7 @@ final class ProviderPickerTests: XCTestCase {
             (.deepseek, "dollarsign.circle", "DeepSeek"),
             (.githubCopilot, "hammer", "GitHub Copilot"),
             (.opencode, "terminal", "OpenCode Go"),
+            (.kimi, "moon.stars", "Kimi"),
         ]
         for (provider, symbol, name) in mapping {
             XCTAssertEqual(provider.sfSymbolName, symbol)

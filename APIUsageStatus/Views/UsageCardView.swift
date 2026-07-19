@@ -53,6 +53,8 @@ struct UsageCardView: View {
             return URL(string: "https://platform.minimaxi.com/user-center/payment/token-plan")
         case .githubCopilot:
             return URL(string: "https://github.com/settings/billing/ai_usage")
+        case .kimi:
+            return URL(string: "https://www.kimi.com/code/console")
         case .opencode:
             // Read the cache only — log scanning happens off-thread at app
             // launch via `OpenCodeWorkspaceResolver.prewarm()`. On a cold

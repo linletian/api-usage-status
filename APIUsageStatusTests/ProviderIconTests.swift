@@ -32,6 +32,7 @@ final class ProviderIconTests: XCTestCase {
         XCTAssertEqual(Provider.deepseek.sfSymbolName, "dollarsign.circle")
         XCTAssertEqual(Provider.githubCopilot.sfSymbolName, "hammer")
         XCTAssertEqual(Provider.opencode.sfSymbolName, "terminal")
+        XCTAssertEqual(Provider.kimi.sfSymbolName, "moon.stars")
     }
 
     // MARK: - Hygiene

@@ -13,6 +13,14 @@ import Foundation
 ///
 /// JSON keys use snake_case to match the rest of `instances.json`
 /// (e.g. `display_in_menu_bar`, `refresh_interval_minutes`).
+///
+/// Codable contract (pinned by `MetricConfigCodableTests`):
+/// - Decoding is lenient: only `key` is required. Missing `group` / `window` /
+///   `short_name` decode as nil and a missing `display_in_menu_bar` defaults
+///   to `true`, so entries written by older builds can never fail the whole
+///   `instances.json` load with `keyNotFound`.
+/// - Encoding always writes `key` / `group` / `window` / `display_in_menu_bar`
+///   (nil optionals as explicit `null`) and writes `short_name` only when set.
 struct MetricConfig: Codable, Equatable {
     /// Stable lookup key. Format: `"{provider}.{group}.{window}"` for quota
     /// metrics, or `"{provider}.balance"` for balance metrics.
@@ -56,5 +64,30 @@ struct MetricConfig: Codable, Equatable {
         self.window = window
         self.displayInMenuBar = displayInMenuBar
         self.shortName = shortName
+    }
+
+    /// Lenient decoding: everything except `key` falls back to its default
+    /// when absent, mirroring `Instance.init(from:)`. A metric entry written
+    /// before a field existed must not fail the whole container decode
+    /// (`PersistenceService.getInstances` swallows a throw as "no instances").
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        key = try container.decode(String.self, forKey: .key)
+        group = try container.decodeIfPresent(String.self, forKey: .group)
+        window = try container.decodeIfPresent(String.self, forKey: .window)
+        displayInMenuBar = try container.decodeIfPresent(Bool.self, forKey: .displayInMenuBar) ?? true
+        shortName = try container.decodeIfPresent(String.self, forKey: .shortName)
+    }
+
+    /// Stable on-disk shape: the core `(key, group, window)` triple and
+    /// `display_in_menu_bar` are always present (nil optionals as explicit
+    /// `null`); `short_name` is written only when customized.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(key, forKey: .key)
+        try container.encode(group, forKey: .group)
+        try container.encode(window, forKey: .window)
+        try container.encode(displayInMenuBar, forKey: .displayInMenuBar)
+        try container.encodeIfPresent(shortName, forKey: .shortName)
     }
 }

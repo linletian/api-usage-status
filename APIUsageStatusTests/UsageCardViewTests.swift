@@ -12,9 +12,13 @@ import AppKit
 /// `NSApplication` with an attached event loop to load a view. In the
 /// XCTest bundle the application context is missing, so
 /// `NSHostingController(rootView:).loadView()` throws
-/// `NSInternalInconsistencyException`. The same failure mode is shared
-/// by `InstanceCardViewTests` and `EmptyStateGuideViewTests` — those
-/// tests have been failing for this reason throughout this work.
+/// `NSInternalInconsistencyException`. `NSHostingView` instantiates
+/// without the event loop, but on current macOS SwiftUI no longer
+/// materializes AppKit subviews for `Text` / `Button`, so walking the
+/// rendered hierarchy finds nothing (spike-verified 2026-07-19).
+/// `InstanceCardViewTests` and `EmptyStateGuideViewTests` — which
+/// originally relied on that hierarchy-walking pattern — were converted
+/// to the same logic-assertion style on that date.
 ///
 /// Instead of duplicating that broken pattern, we directly assert the
 /// pure functions `UsageCardView` depends on (`isStale` / `colorState`
@@ -22,9 +26,7 @@ import AppKit
 /// formatting, ErrorSummary lookup keys, per-snapshot
 /// `cycleRemainingSeconds` semantics for `metricRemainingRow`).
 /// These are what the SwiftUI @ViewBuilder branches on, so they give
-/// us the same coverage guarantee. If/when the project's SwiftUI
-/// runtime in tests is fixed, add snapshot tests following the
-/// `InstanceCardViewTests` walking-the-view-hierarchy pattern.
+/// us the same coverage guarantee.
 @MainActor
 final class UsageCardViewTests: XCTestCase {
 

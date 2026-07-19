@@ -70,7 +70,6 @@
 		A12E9356DEA403F17F3F0514 /* CharMapLetters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6894F5799DCE069F9D8CD28F /* CharMapLetters.swift */; };
 		A4C643560715E0B697C2DED2 /* FlowingGlowBarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BEB57C3EF79F2722ABC4501 /* FlowingGlowBarTests.swift */; };
 		A59F71AB0AD3673AD43D9F6A /* DeepSeekResponseParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CF683BAB233440D650E0642 /* DeepSeekResponseParserTests.swift */; };
-		A5A88C3AF55D1F4F733A3474 /* AppIcon.svg in Resources */ = {isa = PBXBuildFile; fileRef = 78BCF2749ED89823C4ACEF9E /* AppIcon.svg */; };
 		A81B06B98888BBAEAE4B1A01 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = F5CFD56AEC8BF420DCA4361A /* README.md */; };
 		A9B5EA8EE4158FF344004D99 /* Instance.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC5B105EDE59DCD49A65E149 /* Instance.swift */; };
 		AB6F8EE43459DFD6C83F8F31 /* DeepSeekSupplier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16CA73AE724FE3F2A1E292D0 /* DeepSeekSupplier.swift */; };
@@ -175,7 +174,6 @@
 		69879B60D9B0E7643EE31851 /* Provider+Icon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Provider+Icon.swift"; sourceTree = "<group>"; };
 		6FB44E9B9B4B2DE264237AB1 /* PeakPeriod.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PeakPeriod.swift; path = APIUsageStatus/Models/PeakPeriod.swift; sourceTree = SOURCE_ROOT; };
 		73A7A208048CE06C739A89AF /* SupplierRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupplierRegistry.swift; sourceTree = "<group>"; };
-		78BCF2749ED89823C4ACEF9E /* AppIcon.svg */ = {isa = PBXFileReference; path = AppIcon.svg; sourceTree = "<group>"; };
 		78EDB5135D835F0132FDAF65 /* RefreshServiceMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshServiceMappingTests.swift; sourceTree = "<group>"; };
 		7A0D28926D185AD816B65370 /* warning_breathing_inhale.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = warning_breathing_inhale.png; sourceTree = "<group>"; };
 		7A9D4FCF0188D247F28ACD1C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -312,7 +310,6 @@
 		778552EF2583674797F6D5EB /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				78BCF2749ED89823C4ACEF9E /* AppIcon.svg */,
 				7A9D4FCF0188D247F28ACD1C /* Info.plist */,
 			);
 			path = Resources;
@@ -583,7 +580,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A5A88C3AF55D1F4F733A3474 /* AppIcon.svg in Resources */,
 				1E19F704C23B7EA6F05F9294 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

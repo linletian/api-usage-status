@@ -7,6 +7,12 @@ import SwiftUI
 /// single call-to-action that drives the user toward adding their first
 /// instance via the supplied `onAddInstance` closure.
 struct EmptyStateGuideView: View {
+    /// Product copy pinned by `EmptyStateGuideViewTests`. Changing these
+    /// strings is a product-level change, not a refactor.
+    static let titleText = "No Instances Configured"
+    static let subtitleText = "Add your first API instance to start monitoring usage"
+    static let ctaButtonLabel = "Add Your First Instance"
+
     /// Invoked when the user taps the primary CTA button. The host is
     /// expected to navigate the user toward the instance creation flow
     /// (typically by opening the Settings window).
@@ -20,18 +26,18 @@ struct EmptyStateGuideView: View {
                 .font(.system(size: 36))
                 .foregroundStyle(Color.accentBlue)
 
-            Text("No Instances Configured")
+            Text(Self.titleText)
                 .font(.title3)
                 .foregroundStyle(Color.textPrimary)
                 .multilineTextAlignment(.center)
 
-            Text("Add your first API instance to start monitoring usage")
+            Text(Self.subtitleText)
                 .font(.subheadline)
                 .foregroundStyle(Color.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 280)
 
-            Button("Add Your First Instance", action: onAddInstance)
+            Button(Self.ctaButtonLabel, action: onAddInstance)
                 .buttonStyle(.borderedProminent)
                 .tint(Color.accentBlue)
                 .controlSize(.regular)

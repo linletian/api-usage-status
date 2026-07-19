@@ -58,10 +58,7 @@ struct InstanceCardView: View {
                 )
 
             // 4. Tracking toggle
-            Toggle("", isOn: Binding(
-                get: { instance.trackingEnabled },
-                set: { _ in onToggleTracking() }
-            ))
+            Toggle("", isOn: trackingBinding)
             .toggleStyle(.switch)
             .controlSize(.small)
 
@@ -85,15 +82,29 @@ struct InstanceCardView: View {
 
     // MARK: - Computed
 
-    private var displayName: String {
+    // Internal (not private) so `InstanceCardViewTests` can pin these
+    // contracts without rendering the view — the XCTest bundle cannot host
+    // SwiftUI view hierarchies (see the test file's header).
+
+    var displayName: String {
         instance.displayName.isEmpty ? "Untitled" : instance.displayName
     }
 
-    private var subtitle: String {
+    var subtitle: String {
         "\(providerDisplayName(instance.provider)) · \(instance.dimension)"
     }
 
-    private func providerDisplayName(_ raw: String) -> String {
+    func providerDisplayName(_ raw: String) -> String {
         Provider(rawValue: raw)?.displayName ?? raw.capitalized
+    }
+
+    /// Toggle binding for the tracking switch: get mirrors
+    /// `instance.trackingEnabled`; any set forwards to `onToggleTracking`
+    /// (the actual toggle decision belongs to the view model).
+    var trackingBinding: Binding<Bool> {
+        Binding(
+            get: { instance.trackingEnabled },
+            set: { _ in onToggleTracking() }
+        )
     }
 }

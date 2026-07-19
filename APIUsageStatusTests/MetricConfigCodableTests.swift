@@ -53,7 +53,11 @@ final class MetricConfigCodableTests: XCTestCase {
         )
         XCTAssertEqual(jsonObject["key"] as? String, "deepseek.balance")
         XCTAssertEqual(jsonObject["group"] as? String, "deepseek")
-        XCTAssertNil(jsonObject["window"])
+        // `window` must be present as explicit JSON null (stable key set
+        // contract). JSONSerialization represents null as NSNull, so assert
+        // that directly — XCTAssertNil(jsonObject["window"]) can never hold
+        // while the key is required to exist.
+        XCTAssertTrue(jsonObject["window"] is NSNull)
         XCTAssertEqual(jsonObject["display_in_menu_bar"] as? Bool, true)
     }
 

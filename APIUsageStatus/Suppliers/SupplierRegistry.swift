@@ -16,6 +16,8 @@ enum SupplierRegistry {
             return CopilotSupplier()
         case .opencode:
             return OpenCodeSupplier()
+        case .kimi:
+            return KimiSupplier()
         }
     }
 

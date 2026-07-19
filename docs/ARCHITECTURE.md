@@ -160,7 +160,7 @@
 **职责**：按实例展示用量卡片的 UI。
 
 - `UsagePanelView`：承载可滚动的卡片列表 + 错误摘要栏 + 刷新按钮 + 设置入口（窗口内）
-- `UsageCardView`：单实例卡片 —— 配额型显示进度条 + **每条 MetricSnapshot 自带的周期剩余倒计时**（`Xh Ym remaining`，由 `TimelineView(.periodic(by: 60))` 每分钟重算），权威源为 `MetricSnapshot.cycleEndTime`（缺失则回退 `cycleRemainingSeconds`，皆无则该行隐藏）；多指标实例（如 OpenCode 5h/Weekly/Monthly、MiniMax 多能力桶）下**每行独立显示一份**，与 progress bar / `displayInMenuBar` 联动；余额型显示余额 + 每日统计。卡片底部 footer 区域左侧显示「See details」按钮（仅当 provider 有对应 Web 控制台 URL 时可见），点击通过 `NSWorkspace.shared.open(_:)` 在默认浏览器打开用量详情页。URL 映射逻辑集中在 `UsageCardView.providerURL`（按 `Provider` enum 派发）：DeepSeek / MiniMax / GitHub Copilot 直接返回硬编码 URL；OpenCode 调用 `OpenCodeWorkspaceResolver.cachedWorkspaceID()`（零 IO 同步读 UserDefaults），缓存未命中时兜底到 `https://opencode.ai/zh/go`。日志扫描在 App 启动时由 `OpenCodeWorkspaceResolver.prewarm()` 后台完成（详见 §2.15）；右侧显示最近一次刷新时间
+- `UsageCardView`：单实例卡片 —— 配额型显示进度条 + **每条 MetricSnapshot 自带的周期剩余倒计时**（`Xh Ym remaining`，由 `TimelineView(.periodic(by: 60))` 每分钟重算），权威源为 `MetricSnapshot.cycleEndTime`（缺失则回退 `cycleRemainingSeconds`，皆无则该行隐藏）；多指标实例（如 OpenCode 5h/Weekly/Monthly、MiniMax 多能力桶）下**每行独立显示一份**，与 progress bar / `displayInMenuBar` 联动；余额型显示余额 + 每日统计。卡片底部 footer 区域左侧显示「See details」按钮（仅当 provider 有对应 Web 控制台 URL 时可见），点击通过 `NSWorkspace.shared.open(_:)` 在默认浏览器打开用量详情页。URL 映射逻辑集中在 `UsageCardView.providerURL`（按 `Provider` enum 派发）：DeepSeek / MiniMax / GitHub Copilot / Kimi 直接返回硬编码 URL；OpenCode 调用 `OpenCodeWorkspaceResolver.cachedWorkspaceID()`（零 IO 同步读 UserDefaults），缓存未命中时兜底到 `https://opencode.ai/zh/go`。日志扫描在 App 启动时由 `OpenCodeWorkspaceResolver.prewarm()` 后台完成（详见 §2.15）；右侧显示最近一次刷新时间
 - `InstanceDetailPanel`：点击通知后弹出的独立 `NSPanel`，展示单个实例的完整用量详情（与 UsageCardView 展示相同信息，但以独立窗口形式呈现，失活时自动关闭）
 - 以上均为观察 `AppStateProxy` 的 SwiftUI 视图
 
@@ -251,6 +251,7 @@ struct SupplierResponse {
 
 - `MiniMaxSupplier`：实现 `Supplier`。一次 HTTP 调用 `GET /v1/token_plan/remains` 返回 Token Plan 用量数据。响应格式见 PRD 附录 B。`MiniMaxResponseParser` 作为适配层，将 API 响应字段映射为内部维度标识符（每个 `model_name` 作为独立维度）。
 - `DeepSeekSupplier`：实现 `Supplier`。一次 HTTP 调用 `GET /user/balance` 返回余额信息。响应格式已在 PRD 附录 A 中明确定义。
+- `KimiSupplier`：实现 `Supplier`。一次 HTTP 调用 `GET https://api.kimi.com/coding/v1/usages`（Kimi Code Console API Key，Bearer）返回会员套餐用量。`KimiResponseParser` 将响应映射为固定 group `kimi` 的双窗口 rawData（5h 滚动限流窗口 + 周订阅配额），键契约与 MiniMax 对齐，`RefreshService` / UI 零改动复用。该端点未在公开 API 文档中列出，数据契约与风险详见 `docs/provider-interfaces/kimi.md`。
 
 ### 2.9 持久化服务（`PersistenceService.swift`）
 
@@ -1539,8 +1540,10 @@ APIUsageStatus/
 │   │   ├── SupplierRegistry.swift        # 可用供应商注册表
 │   │   ├── MiniMaxSupplier.swift         # MiniMax /v1/token_plan/remains
 │   │   ├── DeepSeekSupplier.swift        # DeepSeek /user/balance
+│   │   ├── KimiSupplier.swift            # Kimi /coding/v1/usages（会员套餐用量）
 │   │   ├── MiniMaxResponseParser.swift   # API 响应 → 内部维度标识符映射（每个 model_name 独立维度）
-│   │   └── DeepSeekResponseParser.swift  # 解析原始 JSON → 余额信息
+│   │   ├── DeepSeekResponseParser.swift  # 解析原始 JSON → 余额信息
+│   │   └── KimiResponseParser.swift      # 双窗口（5h 滚动 + 周配额）→ 固定 group `kimi` rawData
 │   │
 │   ├── Balance/
 │   │   ├── BalanceCalculator.swift       # 日用量计算、平均值、历史

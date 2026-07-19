@@ -180,6 +180,8 @@ struct InstanceEditorView: View {
             miniMaxMetricsCards
         case .opencode:
             openCodeMetricsList
+        case .kimi:
+            kimiMetricsList
         case .deepseek, .githubCopilot:
             singleMetricCard
         }
@@ -297,6 +299,81 @@ struct InstanceEditorView: View {
                         Spacer()
 
                         openCodeShortNameField(window: window)
+                            .frame(width: 48)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color.cardBg)
+                .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.cardBorder, lineWidth: 1)
+                )
+            }
+        }
+    }
+
+    // MARK: - Kimi Metrics
+
+    /// Kimi For Coding exposes exactly two fixed windows — a 5-hour rolling
+    /// rate window and the weekly subscription quota — both under the single
+    /// group "kimi". Mirrors the OpenCode toggle list, but the metric keys
+    /// differ from the window labels (they follow the parser's rawData
+    /// contract), so the options carry explicit keys.
+    private var kimiMetricOptions: [MetricConfig] {
+        [
+            MetricConfig(key: "kimi", group: "kimi", window: "5h", displayInMenuBar: true),
+            MetricConfig(key: "kimi:weekly_percent", group: "kimi", window: "weekly", displayInMenuBar: true)
+        ]
+    }
+
+    private func kimiMetricIsSelected(_ window: String) -> Bool {
+        selectedMetrics.contains { $0.window == window }
+    }
+
+    private func toggleKimiMetric(_ window: String) {
+        if let idx = selectedMetrics.firstIndex(where: { $0.window == window }) {
+            selectedMetrics.remove(at: idx)
+        } else if let option = kimiMetricOptions.first(where: { $0.window == window }) {
+            selectedMetrics.append(option)
+        }
+    }
+
+    private func kimiWindowDisplayName(_ window: String) -> String {
+        switch window {
+        case "5h": return "5-Hour Window"
+        case "weekly": return "Weekly Window"
+        default: return window
+        }
+    }
+
+    @ViewBuilder
+    private var kimiMetricsList: some View {
+        VStack(spacing: 6) {
+            ForEach(kimiMetricOptions, id: \.key) { metric in
+                let window = metric.window ?? ""
+                let isSelected = kimiMetricIsSelected(window)
+
+                HStack(spacing: 8) {
+                    Button {
+                        toggleKimiMetric(window)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                .foregroundColor(isSelected ? .accentBlue : .textSecondary)
+                                .font(.system(size: 14))
+                            Text(kimiWindowDisplayName(window))
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.textPrimary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    if isSelected {
+                        Spacer()
+
+                        metricShortNameField(modelName: "kimi", window: window)
                             .frame(width: 48)
                     }
                 }
@@ -626,6 +703,7 @@ struct InstanceEditorView: View {
         switch provider {
         case .githubCopilot: return "GitHub PAT (classic, needs copilot scope)"
         case .deepseek, .minimax: return "API Key"
+        case .kimi: return "Kimi Code Console API Key"
         case .opencode: return "(no API key — uses local opencode CLI)"
         }
     }
@@ -657,6 +735,8 @@ struct InstanceEditorView: View {
             selectedMetrics = []
         case .opencode:
             selectedMetrics = openCodeMetricOptions
+        case .kimi:
+            selectedMetrics = kimiMetricOptions
         case .deepseek:
             selectedMetrics = [MetricConfig(key: "deepseek.balance", group: nil, window: nil)]
         case .githubCopilot:

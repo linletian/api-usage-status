@@ -7,6 +7,7 @@ enum Provider: String, Codable, CaseIterable {
     case deepseek
     case githubCopilot
     case opencode
+    case kimi
 
     var displayName: String {
         switch self {
@@ -14,6 +15,7 @@ enum Provider: String, Codable, CaseIterable {
         case .deepseek: return "DeepSeek"
         case .githubCopilot: return "GitHub Copilot"
         case .opencode: return "OpenCode Go"
+        case .kimi: return "Kimi"
         }
     }
 }

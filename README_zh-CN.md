@@ -2,7 +2,7 @@
 
 > **语言：** [English](README.md) | 简体中文
 
-一个专为 macOS 13 设计的纯菜单栏 macOS 应用，实时监控 MiniMax / DeepSeek / GitHub Copilot / OpenCode Go 的 API 用量与余额。
+一个专为 macOS 13 设计的纯菜单栏 macOS 应用，实时监控 MiniMax / DeepSeek / GitHub Copilot / OpenCode Go / Kimi 的 API 用量与余额。
 **因主流同类应用不再兼容 macOS 13，故本项目仅为自用脚手架项目。**
 
 ## 功能概览
@@ -27,6 +27,7 @@
 | DeepSeek | 充值金额、赠送金额、总余额、货币单位；峰/谷时段提示（北京时间 09:00–12:00 与 14:00–18:00） | `api.deepseek.com/user/balance` |
 | GitHub Copilot | 月度 `premium_interactions` 剩余百分比（Free / Pro / Pro+ / Business / Enterprise 全覆盖） | `api.github.com/copilot_internal/user` |
 | OpenCode Go | 5h / 每周 / 每月窗口的美元用量（上限 $12 / $30 / $60） | 本地 SQLite，通过 `opencode db` CLI 读取 |
+| Kimi | 5 小时滚动限流窗口 + 每周订阅配额的用量百分比（会员套餐） | `api.kimi.com/coding/v1/usages` |
 
 > **说明**：上表中的 DeepSeek 峰/谷时段提示**固定锚定在「北京时间（UTC+8）」**，
 > 反映 2026 年 6 月 DeepSeek 官方公告中的计费策略（`policyVersion "2026-06"`）。
@@ -56,6 +57,7 @@
   - 可随时在 https://github.com/settings/tokens 撤销
 
 - **OpenCode Go** — 无需 API Key。供应商通过 shell 调用本地 `opencode` CLI（需安装在 `~/.opencode/bin/opencode`、`/usr/local/bin/opencode` 或 `/opt/homebrew/bin/opencode`），直接读取 OpenCode SQLite 数据库（`~/.local/share/opencode/opencode.db`）中的用量数据。数据层详见 `docs/provider-interfaces/opencode_go.md`；为「See details」深链提供 workspace ID 的离线恢复机制详见 `docs/provider-interfaces/opencode_workspace_resolver.md`。
+- **Kimi** — 粘贴在 Kimi Code Console（https://www.kimi.com/code/console → **Create API Key**）创建的 API Key。需要已开通 Kimi 会员的 Kimi Code 权益，该 Key 与会员套餐共享同一配额。端点与数据契约详见 `docs/provider-interfaces/kimi.md`。
 
 ## 系统要求
 

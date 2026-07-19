@@ -2,7 +2,7 @@
 
 > **Languages:** English | [简体中文](README_zh-CN.md)
 
-A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek / GitHub Copilot / OpenCode Go API usage and balance in real time.
+A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek / GitHub Copilot / OpenCode Go / Kimi API usage and balance in real time.
 **Since mainstream alternatives no longer support macOS 13, this project is a self-use scaffold only.**
 
 ## Features
@@ -27,6 +27,7 @@ A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek
 | DeepSeek | Topped-up amount, gifted amount, total balance, currency unit; peak/off-peak indicator (09:00–12:00 and 14:00–18:00 Beijing Time) | `api.deepseek.com/user/balance` |
 | GitHub Copilot | Monthly `premium_interactions` remaining percentage (Free / Pro / Pro+ / Business / Enterprise) | `api.github.com/copilot_internal/user` |
 | OpenCode Go | Dollar usage of the 5h / weekly / monthly windows ($12 / $30 / $60 limits) | Local SQLite via `opencode db` CLI |
+| Kimi | 5-hour rolling rate window + weekly subscription quota usage percentage (membership plans) | `api.kimi.com/coding/v1/usages` |
 
 > **Note**: The DeepSeek peak/off-peak indicator above is fixed to **Beijing Time (UTC+8)**
 > and reflects the official pricing policy as of June 2026 (`policyVersion "2026-06"`).
@@ -57,6 +58,7 @@ Each provider has a different authentication model. All credentials are stored i
   - You can revoke the token at any time at https://github.com/settings/tokens.
 
 - **OpenCode Go** — No API key required. The supplier shells out to the local `opencode` CLI (must be installed at `~/.opencode/bin/opencode`, `/usr/local/bin/opencode`, or `/opt/homebrew/bin/opencode`) and reads the usage data directly from the OpenCode SQLite database (`~/.local/share/opencode/opencode.db`). See `docs/provider-interfaces/opencode_go.md` for the data layer and `docs/provider-interfaces/opencode_workspace_resolver.md` for how the workspace ID powering the "See details" deep link is recovered.
+- **Kimi** — Paste an API Key created in the Kimi Code Console (https://www.kimi.com/code/console → **Create API Key**). Requires an active Kimi membership with Kimi Code benefits; the key shares the membership quota. See `docs/provider-interfaces/kimi.md` for the endpoint and data contract.
 
 ## System Requirements
 

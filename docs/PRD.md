@@ -70,6 +70,7 @@
       - DeepSeek → `https://platform.deepseek.com/usage`
       - MiniMax → `https://platform.minimaxi.com/user-center/payment/token-plan`
       - GitHub Copilot → `https://github.com/settings/billing/ai_usage`
+      - Kimi → `https://www.kimi.com/code/console`
       - OpenCode Go → 从 UserDefaults 缓存读 workspace ID，链接到 `https://opencode.ai/workspace/<id>/go`；缓存为空时兜底到 `https://opencode.ai/zh/go`（该页带登录入口）
     - URL 映射逻辑集中在 `UsageCardView.providerURL`（按 `Provider.X.rawValue` 派发）；OpenCode 的 workspace ID 在 App 启动时由 `OpenCodeWorkspaceResolver.prewarm()` 后台扫描 `~/.local/share/opencode/log/*.log` 后写入 UserDefaults，view 层只读缓存、不阻塞 UI（详见 `docs/provider-interfaces/opencode_workspace_resolver.md`）
     - 使用无边框按钮样式，9pt 次级颜色，保持卡片视觉简洁
@@ -111,8 +112,11 @@
 | 供应商 | 统计维度 | 类型 | 数据接口 | Period / 窗口 |
 |--------|----------|------|----------|---------------|
 | OpenCode Go | 5h / Weekly / Monthly 多窗口额度（$12 / $30 / $60 上限） | 周期配额型 | 本地 SQLite（`opencode db` CLI） | 5 小时 / 自然周 / 自然月 |
+| Kimi | 5h 滚动限流窗口 + 每周订阅配额（会员套餐，固定单 group 双指标） | 周期配额型 | `GET https://api.kimi.com/coding/v1/usages` | 5 小时滚动窗口 + 订阅周（每 7 天重置） |
 
 > **说明**：OpenCode Go 不提供公开 REST API，通过本地 `opencode db` CLI 读取 `~/.local/share/opencode/opencode.db`。此供应商需要 App Sandbox 关闭（因为需要 `Process.run()`），详见 §3.6 安全说明。
+>
+> **Kimi 说明**：`/coding/v1/usages` 是 Kimi Code CLI `/usage` 面板的后端端点，未在公开 API 文档中列出，存在改版风险。使用 Kimi Code Console（https://www.kimi.com/code/console）创建的 API Key（Bearer 认证），与会员套餐共享配额。周配额 `limit ≤ 0` 或 `usage` 块缺失时按无限套餐处理（flowing glow bar，与 MiniMax 周配额未激活一致）。该供应商为纯 HTTPS 调用，无需沙箱例外。数据契约与风险详见 `docs/provider-interfaces/kimi.md`。
 
 ### 3.4 数据刷新
 
@@ -156,7 +160,7 @@
 - 应用首次启动且无配置时，菜单栏显示两行动画图标 —— 首行固定 "AI"（品牌标识），底行循环 `%` → `%%` → `%%%`（1 秒间隔）；左键点击始终打开用量面板，面板内展示空状态（Empty State），包含「添加第一个服务」按钮，点击后进入设置窗口
 
 **服务实例管理**
-- 添加实例：选择供应商。MiniMax 实例自动发现 API 返回的所有能力桶（`model_name`），用户可勾选需要跟踪的能力桶及对应窗口（5h / weekly）；OpenCode Go 实例可选择跟踪的窗口（5h / weekly / monthly）；其他供应商自动配置默认指标
+- 添加实例：选择供应商。MiniMax 实例自动发现 API 返回的所有能力桶（`model_name`），用户可勾选需要跟踪的能力桶及对应窗口（5h / weekly）；OpenCode Go 实例可选择跟踪的窗口（5h / weekly / monthly）；Kimi 实例可勾选固定的双窗口（5h 滚动限流 / weekly 周配额）；其他供应商自动配置默认指标
 - 每个实例可配置：
   - **显示名**：自定义名称（如「MiniMax-文字」「DS-主号」），**默认空**
   - **显示名简称**：2 个英文字母，用于菜单栏槽位，**默认空**

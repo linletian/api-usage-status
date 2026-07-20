@@ -29,6 +29,7 @@ targets:
       - path: APIUsageStatus
         excludes:
           - "**/*.xcodeproj"
+          - "Resources/AppIcon/**"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.APIUsageStatus

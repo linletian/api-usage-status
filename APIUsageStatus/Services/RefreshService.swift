@@ -334,6 +334,28 @@ actor RefreshService {
             let instances = await appState.getInstances()
             let enabledInstances = instances.filter { $0.enabled }
 
+            // Counters that enforce the snapshot-before-pushProgress
+            // invariant for rollover detection (see `pushProgress`
+            // closure below and the assertion before `evaluateRollover`).
+            // `pushProgressInvocations` is captured by the nested closure
+            // and incremented on every call; `snapshotPushProgressCount`
+            // records what the counter was at the moment we captured
+            // `previousSlots`. If a future refactor moves the snapshot
+            // line below the per-group loop, the captured value will be
+            // > 0 and the assertion fires.
+            var pushProgressInvocations = 0
+
+            // Snapshot the slot list BEFORE the per-group loop starts
+            // mutating it via `pushProgress`. The rollover evaluator
+            // compares this against the freshly-built `allSlotData` to
+            // spot (instance, metric) pairs whose `cycleRemainingSeconds`
+            // jumped forward — i.e. a cycle just rolled over. Calling
+            // `getSlotViewDataList()` on the AppState actor here (rather
+            // than later in the function) is what guarantees we capture
+            // the previous cycle's state, not the in-progress one.
+            let previousSlots = await appState.getSlotViewDataList()
+            let snapshotPushProgressCount = pushProgressInvocations
+
             // 2. Resolve targets — full cycle (targetUUID == nil) or single
             //    instance (targetUUID set). For per-instance, if the target is
             //    missing or disabled, we silently bail without touching any
@@ -387,6 +409,7 @@ actor RefreshService {
             /// from clobbering the new owner's state.
             func pushProgress() async {
                 guard !token.isPreempted else { return }
+                pushProgressInvocations += 1
                 await appState.setRefreshingInstanceUUIDs(remainingRefreshing)
                 if targetUUID == nil {
                     await appState.setErrorSummaries(errorSummaries)
@@ -623,6 +646,28 @@ actor RefreshService {
             await notificationManager?.evaluateThresholds(
                 instances: await appState.getInstances(),
                 slotData: allSlotData,
+                settings: globalSettings
+            )
+
+            // Detect limit-cycle rollovers (5h / weekly / monthly windows
+            // that just crossed into a new period) and emit one macOS
+            // notification per affected instance. Pure function; the
+            // previousSlots snapshot at the top of performRefresh is
+            // what gives this signal a reference point.
+            //
+            // Defensive assertion: `previousSlots` MUST have been captured
+            // before any `pushProgress` call. If a future refactor moves
+            // the snapshot line below the per-group loop, the captured
+            // counter would be > 0 and this fires (debug + tests; silent
+            // no-op in release). See the comment at the snapshot site.
+            assert(
+                snapshotPushProgressCount == 0,
+                "previousSlots was captured AFTER the first pushProgress call — rollover detection will silently compare new vs new and never fire"
+            )
+            await notificationManager?.evaluateRollover(
+                oldSlots: previousSlots,
+                newSlots: allSlotData,
+                instances: await appState.getInstances(),
                 settings: globalSettings
             )
 

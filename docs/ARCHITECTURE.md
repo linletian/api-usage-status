@@ -296,6 +296,27 @@ struct SupplierResponse {
 - 通知负载包含实例名称、当前值、阈值信息
 - 点击通知打开 `InstanceDetailPanel`（独立 `NSPanel`，展示该实例完整用量详情，失活时自动关闭）
 
+#### 2.12.1 阈值评估（`evaluateThresholds`）
+
+- 超过 `Thresholds.quota.criticalPercent` 或 `Thresholds.balance.critical` 时触发通知
+- 多指标实例按每个 `MetricSnapshot` 独立评估，避免「5h 已用满但 weekly 安全」被 weekly 拉低
+- 标题：`⚠️ <displayName> Usage Critical` / `⚠️ <displayName> Balance Low`
+- 正文：`Current <value>, critical line <threshold>`
+
+#### 2.12.2 限额周期切换评估（`evaluateRollover`，新增）
+
+- 检测相邻两次刷新之间某个 `(instanceUUID, metricKey)` 的 `cycleRemainingSeconds` 突增——表示该 metric 的限额周期（5h 滚动、weekly、monthly 等）刚刚跨入新窗口
+- 检测函数是纯函数 `LimitRolloverDetector.detect`，独立可测；`evaluateRollover` 只负责编排（门禁 + 去重 + 调度）
+- 同一 instance 多个 metric 同时切换合并为一条通知，body 用 ` / ` 拼接各 metric 的窗口名 + 新百分比
+- 门禁：复用 `GlobalSettings.notificationsEnabled` 总开关与 `isPermissionGranted`，不新增独立开关
+- 去重：内存字典 `lastFiredCycleEndTime[<uuid>:<metricKey>] = lastFiredEndTime`；仅当新 `cycleEndTime` 严格大于上次记录才推，defer 内同步更新。app 重启后丢失去重历史是无害的，因为首次刷新没有旧状态可对比
+- 标题：`🔄 <displayName> Limit Refreshed`
+- 正文：`<window>: <percent>% used`（多 metric 用 ` / ` 拼接）
+
+**已知取舍**（去重 + add() 失败的交互）：defer 在 `add()` 回调完成前就更新了 dedupe 表——若 `UNUserNotificationCenter.add` 因系统限流失败，本周期通知会永久丢失，下一周期不会重试。理由：UN add 几乎从不在生产中失败；用「同周期重试」会导致「限流 → 重试 → 限流 → 重试」自激。如果未来丢失率变高，把 dedupe 更新移到 success 回调、加 1 次重试预算即可。
+
+**已知取舍**（阈值与刷新间隔的关系）：检测阈值 = `max(60, refreshIntervalSeconds + 30)`——必须严格大于刷新间隔，否则一次迟到的 refresh tick 会被误判为 rollover。`refreshIntervalSeconds` 由 `GlobalSettings.refreshIntervalMinutes * 60` 派生，未来若默认刷新间隔下调到 60s 以下，阈值会自动跟进。
+
 ### 2.13 余额计算器（`BalanceCalculator.swift`）
 
 **职责**：余额型实例日用量计算的纯逻辑模块。
@@ -478,6 +499,17 @@ RefreshService.performRefresh(targetUUID: String?)
     ├──▶ NotificationManager.evaluateThresholds(instances, data)
     │         │
     │         └──▶ 若超过严重阈值则触发通知
+    │
+    ├──▶ NotificationManager.evaluateRollover(previousSlots, allSlotData, instances, settings)
+    │         │
+    │         │   previousSlots 是在 performRefresh 开头、pushProgress 之前
+    │         │   快照的 AppState 旧 slot 列表。检测算法
+    │         │   （LimitRolloverDetector）对比相邻两次刷新间
+    │         │   (instance, metric) 的 cycleRemainingSeconds 突增——
+    │         │   表示某个限额周期（5h/weekly/monthly）刚跨入新窗口。
+    │         │
+    │         └──▶ 若检测到切换则触发系统通知
+    │              （同 instance 多 metric 合并为一条）
     │
     ├──▶ AppState.setRefreshState(.idle)
     │     AppState.setLastRefreshAt(Date())

@@ -300,8 +300,13 @@ struct SupplierResponse {
 
 - 超过 `Thresholds.quota.criticalPercent` 或 `Thresholds.balance.critical` 时触发通知
 - 多指标实例按每个 `MetricSnapshot` 独立评估，避免「5h 已用满但 weekly 安全」被 weekly 拉低
+- **去重（rising-edge + 值变化）**：仅在两种情况下发——(1) 上升沿：上次非临界 → 本次临界；(2) 值变化：上次临界时显示的值与本次不同（同值不重发，杜绝 v1 每个刷新周期都弹的骚扰）。内存双字典 `lastCriticalState[<key>]`（latch）+ `lastCriticalValue[<key>]`（上次发送时的显示值），recovery 时同时清零。dedup key：quota 多指标为 `<uuid>:<metricKey>`，balance / 单指标 quota 为 `<uuid>`
 - 标题：`⚠️ <displayName> Usage Critical` / `⚠️ <displayName> Balance Low`
 - 正文：`Current <value>, critical line <threshold>`
+
+**已知取舍**（threshold 路径目前不带 balance unavailable 状态的 latch 清零）：balance 路径在 `isAvailable == false` 时跳过 shouldFireCritical 调用，latch 与 value cache 都保持上一次的临界状态。这是 v1 的有意选择——「中间不可用」和「持续临界」对用户而言没有区别；如果未来要让「消失一段时间后再次出现临界」也重发，可在 unavailable 分支显式调用 `shouldFireCritical(key, isCriticalNow: false)` 清零。
+
+**已知取舍**（displayed value 的精度与去重粒度）：value 用与正文一致的 `%.1f` 字符串作为比对基准——意味着 96.04 与 96.049 都被视为「96.0」（不重发），96.04 与 96.06 视为不同（重发）。粒度按用户能在通知正文里看到的最细精度取齐：通知里看不见的小数变化就不发。
 
 #### 2.12.2 限额周期切换评估（`evaluateRollover`，新增）
 

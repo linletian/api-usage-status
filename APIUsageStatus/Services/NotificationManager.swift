@@ -56,6 +56,29 @@ final class NotificationManager: NSObject {
     /// against, so it never fires anyway.
     private var lastFiredCycleEndTime: [String: Date] = [:]
 
+    /// Tracks the last-observed critical state per dedup key (`"<uuid>:<metricKey>"`
+    /// for quota metrics, `"<uuid>"` for balance / legacy single-metric
+    /// quota). A notification fires when:
+    ///   1. **Rising edge** — instance was non-critical and is now critical, OR
+    ///   2. **Value change while sustained** — instance is still critical but
+    ///      the displayed value differs from the last fired value.
+    /// Same critical value across refreshes does NOT refire — that's what
+    /// prevents the v1 spam (a 5h quota stuck above the critical line used
+    /// to fire one notification every refresh interval). A user-visible
+    /// value change (e.g. 96.0% → 96.5%) still fires so they're kept
+    /// informed that the situation is getting worse (or recovering while
+    /// still under the line, which we report as soon as they cross back
+    /// up).
+    ///
+    /// Recovery (was-critical → not-critical) clears both fields so a
+    /// later re-crossing fires again.
+    ///
+    /// v1 keeps this in memory only. Losing it across app restarts means
+    /// the first critical reading after launch re-fires — acceptable
+    /// since the user just opened the app and the alert is informative.
+    private var lastCriticalState: [String: Bool] = [:]
+    private var lastCriticalValue: [String: String] = [:]
+
     /// - Parameter openDetailPanel: Closure invoked when the user clicks a notification.
     /// - Parameter scheduler: Sink for `UNNotificationRequest`s. Defaults to the
     ///   system `UNUserNotificationCenter`; tests inject a stub to observe
@@ -122,32 +145,68 @@ final class NotificationManager: NSObject {
             guard let instance = instances.first(where: { $0.uuid == slot.uuid }) else { continue }
             guard instance.enabled else { continue }
 
-            // For multi-metric quota instances, evaluate each metric snapshot
-            // independently so a critical weekly window triggers a notification
-            // even when the 5h window is below threshold.
-            if instance.isQuotaType, !slot.metricSnapshots.isEmpty {
+            if instance.isQuotaType {
+                // Quota path — always evaluate per-metric. `SlotViewData.init`
+                // synthesizes a fallback `MetricSnapshot` (key = dimension)
+                // whenever the caller passes an empty `metricSnapshots`, so
+                // by the time we get here the array is never empty. If a
+                // future code path bypasses that contract, we log and skip
+                // rather than routing through a single-metric fallback that
+                // would use a different dedup key shape and risk duplicate
+                // notifications across snapshots-populated vs empty frames.
+                if slot.metricSnapshots.isEmpty {
+                    let name = instance.displayName.isEmpty ? instance.shortName : instance.displayName
+                    logger.warning("Quota instance \(instance.uuid) (\(name)) has empty metricSnapshots — skipping threshold evaluation for this refresh")
+                    continue
+                }
                 for snapshot in slot.metricSnapshots {
-                    evaluateQuota(instance: instance, percent: snapshot.percent)
+                    evaluateQuota(instance: instance, percent: snapshot.percent, metricKey: snapshot.key)
                 }
-            } else {
-                switch slot.instanceType {
-                case .quota(let percent, _, _, _):
-                    evaluateQuota(instance: instance, percent: percent)
-                case .balance(let amount, _, _, let isAvailable, _):
-                    evaluateBalance(instance: instance, amount: amount, isAvailable: isAvailable)
-                }
+            } else if case .balance(let amount, _, _, let isAvailable, _) = slot.instanceType {
+                evaluateBalance(instance: instance, amount: amount, isAvailable: isAvailable)
             }
         }
     }
 
-    private func evaluateQuota(instance: Instance, percent: Double) {
+    /// Edge + value-change fire gate. Returns `true` on the rising edge
+    /// (not-critical → critical) OR when sustained-critical but the
+    /// `currentValue` differs from the last fired value. Updates the
+    /// latch state accordingly.
+    private func shouldFireCritical(key: String, isCriticalNow: Bool, currentValue: String) -> Bool {
+        let wasCritical = lastCriticalState[key] ?? false
+        if isCriticalNow {
+            if !wasCritical {
+                // Rising edge — first time entering critical.
+                lastCriticalState[key] = true
+                lastCriticalValue[key] = currentValue
+                return true
+            }
+            // Sustained — fire only if the displayed value changed since
+            // the last notification. Same value across refreshes is the
+            // spam case; user already knows the situation.
+            if currentValue != lastCriticalValue[key] {
+                lastCriticalValue[key] = currentValue
+                return true
+            }
+            return false
+        }
+        // Recovery: clear both latches so the next rising edge fires again.
+        lastCriticalState[key] = false
+        lastCriticalValue[key] = nil
+        return false
+    }
+
+    private func evaluateQuota(instance: Instance, percent: Double, metricKey: String?) {
         guard case .quota(_, let criticalPercent) = instance.thresholds else { return }
-        guard percent >= Double(criticalPercent) else { return }
+        let isCritical = percent >= Double(criticalPercent)
+        let dedupKey = metricKey.map { "\(instance.uuid):\($0)" } ?? instance.uuid
+        let displayedValue = String(format: "%.1f", percent)
+        guard shouldFireCritical(key: dedupKey, isCriticalNow: isCritical, currentValue: displayedValue) else { return }
 
         let displayName = instance.displayName.isEmpty ? instance.shortName : instance.displayName
         let content = makeNotificationContent(
             title: "⚠️ \(displayName) Usage Critical",
-            body: "Current \(String(format: "%.1f", percent))%, critical line \(criticalPercent)%",
+            body: "Current \(displayedValue)%, critical line \(criticalPercent)%",
             uuid: instance.uuid
         )
         scheduleNotification(content: content)
@@ -156,7 +215,14 @@ final class NotificationManager: NSObject {
     private func evaluateBalance(instance: Instance, amount: String, isAvailable: Bool) {
         guard isAvailable else { return }
         guard case .balance(_, let critical, _, _) = instance.thresholds else { return }
-        guard let balanceDecimal = Decimal(string: amount), balanceDecimal <= critical else { return }
+        // A non-numeric amount string (e.g. supplier returned "—" or an
+        // HTML error page) is an indeterminate reading — same shape as
+        // `isAvailable == false`. Skip without touching the latch so a
+        // later good reading at the same critical value doesn't get
+        // re-fired as a "rising edge" purely because the parse glitched.
+        guard let balanceDecimal = Decimal(string: amount) else { return }
+        let isCritical = balanceDecimal <= critical
+        guard shouldFireCritical(key: instance.uuid, isCriticalNow: isCritical, currentValue: amount) else { return }
 
         let displayName = instance.displayName.isEmpty ? instance.shortName : instance.displayName
         let symbol = instance.currency?.currencySymbol ?? "¥"

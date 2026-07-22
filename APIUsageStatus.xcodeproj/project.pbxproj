@@ -18,6 +18,7 @@
 		1676FA3A856AF5444D77A1E2 /* AppStateMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1511AD99B701CC8222C5605D /* AppStateMergeTests.swift */; };
 		17EAB28C7F6AD40431966A2A /* PixelFontEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE990C87099D3307658BA5DF /* PixelFontEngineTests.swift */; };
 		181631A38F2C40A3A9694278 /* NotificationManagerRolloverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14CBD84CD099FA940129BE0B /* NotificationManagerRolloverTests.swift */; };
+		f451367e3e86477d823fe5c1 /* NotificationManagerThresholdDedupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86ea90ad71cf4e0aaa163dad /* NotificationManagerThresholdDedupTests.swift */; };
 		19767C30858AE92B41527006 /* UsageCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A3B76ED15429C57FF92148 /* UsageCardView.swift */; };
 		1E19F704C23B7EA6F05F9294 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 06FC0EBE9236D46E15514660 /* Assets.xcassets */; };
 		1E2AB85E3B75DBAA380883A7 /* LimitRolloverDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0025BE373F61D2ABB20F41 /* LimitRolloverDetector.swift */; };
@@ -140,6 +141,7 @@
 		12A61FB47DBC4BDE45125A40 /* PeakPeriod.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeakPeriod.swift; sourceTree = "<group>"; };
 		137C5BE021708BC293F08038 /* StatusDotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusDotView.swift; sourceTree = "<group>"; };
 		14CBD84CD099FA940129BE0B /* NotificationManagerRolloverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManagerRolloverTests.swift; sourceTree = "<group>"; };
+		86ea90ad71cf4e0aaa163dad /* NotificationManagerThresholdDedupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManagerThresholdDedupTests.swift; sourceTree = "<group>"; };
 		1511AD99B701CC8222C5605D /* AppStateMergeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateMergeTests.swift; sourceTree = "<group>"; };
 		16CA73AE724FE3F2A1E292D0 /* DeepSeekSupplier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekSupplier.swift; sourceTree = "<group>"; };
 		1F1E3CFBD369E7D58B3486BC /* LimitRolloverDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitRolloverDetectorTests.swift; sourceTree = "<group>"; };
@@ -406,6 +408,7 @@
 				E579BF96EE109EAF0D663C7A /* MetricConfigCodableTests.swift */,
 				FC5D83D4218C5C4635B415E8 /* MiniMaxResponseParserTests.swift */,
 				14CBD84CD099FA940129BE0B /* NotificationManagerRolloverTests.swift */,
+				86ea90ad71cf4e0aaa163dad /* NotificationManagerThresholdDedupTests.swift */,
 				54E0FF0096226D1B5582C23B /* OpenCodeResponseParserTests.swift */,
 				66015CA597040B97B1E9EF2A /* OpenCodeWorkspaceResolverTests.swift */,
 				852DDFA1451A6825463B0FCC /* PeakPeriodTests.swift */,
@@ -712,6 +715,7 @@
 				C0C5B498FB0510184D279BA0 /* MetricConfigCodableTests.swift in Sources */,
 				2B1CC113637594900496DAD2 /* MiniMaxResponseParserTests.swift in Sources */,
 				181631A38F2C40A3A9694278 /* NotificationManagerRolloverTests.swift in Sources */,
+				f451367e3e86477d823fe5c1 /* NotificationManagerThresholdDedupTests.swift in Sources */,
 				75CAC32EA2305241E6226B0D /* OpenCodeResponseParserTests.swift in Sources */,
 				A757DFF263702D228DEC3B16 /* OpenCodeWorkspaceResolverTests.swift in Sources */,
 				E64B8B3AEB8581EB6D6823BC /* PeakPeriodTests.swift in Sources */,

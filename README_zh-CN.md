@@ -94,6 +94,12 @@ xcodebuild -project APIUsageStatus.xcodeproj \
   build
 ```
 
+> **系统通知要求应用必须已签名。** macOS 只为已签名的应用投递 `UNUserNotificationCenter` 通知——ad-hoc 签名即可，但**未签名**的应用将完全收不到通知，即使"系统设置 → 通知"里仍显示该应用已允许（该条目按 bundle ID 留存自之前已签名的版本）。请勿用 `CODE_SIGNING_ALLOWED=NO` 构建你实际安装运行的包。如果已安装的包未签名，可就地补签后重启应用：
+>
+> ```bash
+> codesign --force --deep --sign - /Applications/APIUsageStatus.app
+> ```
+
 ### 3. Xcode 中运行
 
 ```bash

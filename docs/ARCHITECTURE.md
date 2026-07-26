@@ -315,7 +315,7 @@ struct SupplierResponse {
 - 同一 instance 多个 metric 同时切换合并为一条通知，body 用 ` / ` 拼接各 metric 的窗口名 + 新百分比
 - 门禁：复用 `GlobalSettings.notificationsEnabled` 总开关与 `isPermissionGranted`，不新增独立开关
 - 去重：内存字典 `lastFiredCycleEndTime[<uuid>:<metricKey>] = lastFiredEndTime`；仅当新 `cycleEndTime` 严格大于上次记录才推，defer 内同步更新。app 重启后丢失去重历史是无害的，因为首次刷新没有旧状态可对比
-- 标题：`🔄 <displayName> Limit Refreshed`
+- 标题：`✅ <displayName> Limit Refreshed`
 - 正文：`<window>: <percent>% used`（多 metric 用 ` / ` 拼接）
 
 **已知取舍**（去重 + add() 失败的交互）：defer 在 `add()` 回调完成前就更新了 dedupe 表——若 `UNUserNotificationCenter.add` 因系统限流失败，本周期通知会永久丢失，下一周期不会重试。理由：UN add 几乎从不在生产中失败；用「同周期重试」会导致「限流 → 重试 → 限流 → 重试」自激。如果未来丢失率变高，把 dedupe 更新移到 success 回调、加 1 次重试预算即可。

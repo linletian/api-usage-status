@@ -313,7 +313,7 @@ final class NotificationManager: NSObject {
                 return "\(label): \(pct)% used"
             }
             let content = makeNotificationContent(
-                title: "🔄 \(displayName) Limit Refreshed",
+                title: "✅ \(displayName) Limit Refreshed",
                 body: bodyParts.joined(separator: " / "),
                 uuid: info.instanceUUID
             )

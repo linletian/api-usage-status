@@ -225,6 +225,12 @@
 - `targetUUID != nil`：仅刷新该实例。`targetInstances` 数组只包含目标实例，`Dictionary(grouping:)` 按 `api_key_ref` 分组后**只对目标所在的组发请求**（supplier 调用仍按整组拉，但 `mapInstanceToSlotData` 只为组内目标生成 `SlotViewData`，兄弟实例的 slot 保留上次缓存）。MiniMax auto-discover 在 `targetUUID != nil` 时跳过——避免副作用污染兄弟实例的 metrics
 - 入口处 `setRefreshingInstanceUUIDs(targetUUIDs)` 显示全部目标的菊花 → 每组完成后 `remainingRefreshing` 减去该组 UUID，逐步缩窄 → 末尾 `setRefreshingInstanceUUIDs([])` 确保所有菊花停止。每个 error catch 分支也调用 `pushProgress()` 将该组的错误状态立刻推送到 UI
 
+**Cycle-start previous slot 注入**：在 `performRefresh` 顶部、紧接 `setRefreshState(.refreshing)` 与目标解析之前，调用 `appState.getSlotViewDataList()` 取得当前 slot 列表快照，建索引 `[UUID: SlotViewData]`。该快照在 cycle 内保持不变，用于：
+
+- `mapInstanceToSlotData` 的 `previousSlot` 参数：响应缺失/无策略时不参与；声明 `.retainPreviousIfResponseMissing` 且旧时间未过期时仅继承 end time 字段。
+- `evaluateRollover` 的 `oldSlots` 参数：与新建的 `allSlotData` 比较 `cycleRemainingSeconds` 突增，触发系统通知。
+- 抢占时的快照来源：`runPreemptiveCycle` 启动新 cycle 时，前一 token 的 cycle 持有的 slot 写入路径走 `pushProgress` 中的 token 身份检查；新 cycle 的 cycle-start snapshot 由它自己重新捕获，避免读到本轮部分结果。
+
 **取消协作（详见 §6.3）**
 
 `Task.cancel()` 必须能传达到网络层和 Shell 层：
@@ -245,13 +251,33 @@ protocol Supplier {
 }
 
 struct SupplierResponse {
-    let rawData: [String: String]  // dimension → value 映射
+    let rawData: [String: String]                          // dimension → value 映射
+    let metricCycleEndPolicies: [String: MetricCycleEndPolicy]  // 可选的 per-metric 周期 fallback
+}
+
+enum MetricCycleEndPolicy: Equatable {
+    case useResponseOnly
+    case retainPreviousIfResponseMissing
 }
 ```
 
+`MetricCycleEndPolicy` 是供应商中立的策略枚举：parser 在响应里给单个 metric 声明意图，`RefreshService` 通用 mapper 不识别 provider，仅按 `MetricConfig.key` 执行。`.useResponseOnly` 为默认（也是其他供应商、其他 metric 的隐式行为），`.retainPreviousIfResponseMissing` 仅在响应确实无法提供新 end time 时由 parser 显式声明才生效。
+
 - `MiniMaxSupplier`：实现 `Supplier`。一次 HTTP 调用 `GET /v1/token_plan/remains` 返回 Token Plan 用量数据。响应格式见 PRD 附录 B。`MiniMaxResponseParser` 作为适配层，将 API 响应字段映射为内部维度标识符（每个 `model_name` 作为独立维度）。
 - `DeepSeekSupplier`：实现 `Supplier`。一次 HTTP 调用 `GET /user/balance` 返回余额信息。响应格式已在 PRD 附录 A 中明确定义。
-- `KimiSupplier`：实现 `Supplier`。一次 HTTP 调用 `GET https://api.kimi.com/coding/v1/usages`（Kimi Code Console API Key，Bearer）返回会员套餐用量。`KimiResponseParser` 将响应映射为固定 group `kimi` 的双窗口 rawData（5h 滚动限流窗口 + 周订阅配额），键契约与 MiniMax 对齐，`RefreshService` / UI 零改动复用。该端点未在公开 API 文档中列出，数据契约与风险详见 `docs/provider-interfaces/kimi.md`。
+- `KimiSupplier`：实现 `Supplier`。一次 HTTP 调用 `GET https://api.kimi.com/coding/v1/usages`（Kimi Code Console API Key，Bearer）返回会员套餐用量。`KimiResponseParser` 将响应映射为固定 group `kimi` 的双窗口 rawData（5h 滚动限流窗口 + 周订阅配额），键契约与 MiniMax 对齐，`RefreshService` / UI 零改动复用。5h `resetTime` 缺失或不可解析时，parser 写入 `kimi:end_time = "0"` 并在 `metricCycleEndPolicies["kimi"]` 声明 `.retainPreviousIfResponseMissing`，由通用 mapper 在 cycle-start previous slot 仍有未过期结束时间时仅继承时间字段。weekly 失败/异常不会触发该策略。该端点未在公开 API 文档中列出，数据契约与风险详见 `docs/provider-interfaces/kimi.md`。
+
+**供应商特定逻辑的归属**：任何针对单个供应商的 `cycleEndTime` 回退、状态解释、字段映射都集中在 `Supplier`/`Parser` 层。`AppState` 与 `RefreshService` 通用执行路径只识别 `MetricConfig.key` 与 `MetricCycleEndPolicy` 枚举，不出现 `Provider.xxx` 字面判断。
+
+**`RefreshService.mapInstanceToSlotData` 的 fallback 行为（provider-agnostic）**：
+
+- mapper 在每个 metric 循环内按以下顺序解析 `cycleEndTime`：
+  1. 响应 `<key>:end_time` 解析为正 epoch ms → 转 `Date`；`≤0` / 非数字 / 缺失视为 nil；
+  2. 上述为 nil 且 `metricCycleEndPolicies[key] == .retainPreviousIfResponseMissing`：在 `previousSlot.metricSnapshots` 中按 `key/group/window` 三元组匹配，若同 metric 的旧 `cycleEndTime > now` 则继承；
+  3. 否则 `cycleEndTime` 为 nil，倒计时行隐藏。
+- `now` 在每次 mapper 调用内通过 `Date()` 重新读取；`performRefresh` 在每个 `api_key_ref` 组的循环体内再调一次，避免被慢 supplier 拉长过期判定窗口。
+- `previousSlot` 由 `performRefresh` 在循环开始、`pushProgress()` 之前调用 `appState.getSlotViewDataList()` 一次捕获，构建 `[UUID: SlotViewData]` 索引；普通映射与 MiniMax auto-discover 重映射共用同一索引，确保两次映射都看到一致的 cycle-start 状态。
+- 继承路径只复用 `cycleEndTime` / `cycleRemainingSeconds`；`percent`、`colorState`、`displayUsage/Limit`、`isUnlimited`、`shortName`、`overageUSD`、`configIndex` 始终来自本次响应，`lastFetchedAt` 仍使用网络返回后的 `fetchTime`。
 
 ### 2.9 持久化服务（`PersistenceService.swift`）
 
@@ -420,6 +446,11 @@ RefreshService.performRefresh(targetUUID: String?)
     │     非 nil → targetInstances = filter { $0.uuid == targetUUID && $0.enabled }
     │              找不到时 silent bail（不动其他状态）
     │
+    ├──▶ 抓取 cycle-start previousSlots：
+    │     await appState.getSlotViewDataList()（仅本周期只取一次）
+    │     previousSlotByUUID = Dictionary(uniqueKeysWithValues: previousSlots.map { ($0.uuid, $0) })
+    │     同一索引供 mapInstanceToSlotData 的 previousSlot 与 evaluateRollover 的 oldSlots 共用
+    │
     ├──▶ 按 api_key_ref 分组 targetInstances
     │     例如：实例 A、B 的 api_key_ref 均为 "minimax-token-plan"
     │           → 合并为一个 MiniMax 组
@@ -445,7 +476,10 @@ RefreshService.performRefresh(targetUUID: String?)
     │     │
     │     └──▶ 映射 SupplierResponse → 组内每 Instance 的 SlotViewData
     │              （mapInstanceToSlotData 做 1:N 映射：
-    │               遍历 instance.metrics，每个 MetricConfig 产生一个 MetricSnapshot）
+    │               遍历 instance.metrics，每个 MetricConfig 产生一个 MetricSnapshot。
+    │               end_time 字段先按响应解析；若响应缺失且声明
+    │               .retainPreviousIfResponseMissing，则在 previousSlotByUUID[uuid]
+    │               中按 key/group/window 匹配未过期旧 end time）
     │
     └──▶ 组内后处理（每组完成后立即执行，不等其他组）：
           │
@@ -464,7 +498,11 @@ RefreshService.performRefresh(targetUUID: String?)
           │     `displayInMenuBar` 开关，关闭的窗口进度条与倒计时一并隐藏，
           │     行为更内聚。Copilot 的 `<model>:end_time` 来自 `quota_reset_date_utc`
           │     解析（支持毫秒精度 ISO 8601），缺失时回退到 `nextMonthlyResetMs()`
-          │     （下月首日 UTC 零点），保证倒计时始终有值。其余供应商字段缺失
+          │     （下月首日 UTC 零点），保证倒计时始终有值。**Kimi 5h 的 end time
+          │     在 parser 写出 `"0"` 或 `limits/detail` 缺失时，mapper 还会按
+          │     声明的 `.retainPreviousIfResponseMissing` 策略继承 cycle-start
+          │     previous slot 中未过期的旧 end time**；只有 time 字段被复用，
+          │     percent / color / weekly 等仍使用本次响应。其余供应商字段缺失
           │     则该行隐藏
           │
           ├──▶ [targetUUID == nil 时] MiniMax auto-discover：把响应中
@@ -512,6 +550,8 @@ RefreshService.performRefresh(targetUUID: String?)
     │         │   （LimitRolloverDetector）对比相邻两次刷新间
     │         │   (instance, metric) 的 cycleRemainingSeconds 突增——
     │         │   表示某个限额周期（5h/weekly/monthly）刚跨入新窗口。
+    │         │   由于 parser 可能继承旧的 cycleEndTime，继承后的 5h 快照
+    │         │   不会产生突增；该算法不依赖 parser 写回的有效新 end time。
     │         │
     │         └──▶ 若检测到切换则触发系统通知
     │              （同 instance 多 metric 合并为一条）
@@ -636,7 +676,7 @@ struct MetricSnapshot: Equatable {
     let displayUsage: String         // 预格式化的用量字符串（如 "369"、"$15.00"、"¥42.50"）
     let displayLimit: String         // 预格式化的上限字符串（可为空）
     let overageUSD: Double           // OpenCode Go 超额消费的美元金额（无超额时为 0）
-    let cycleEndTime: Date?          // 当前重置周期的绝对结束时间（per-row TimelineView 实时倒计时的权威源；每个 MetricSnapshot 独立驱动一条时间线）
+    let cycleEndTime: Date?          // 当前重置周期的绝对结束时间（per-row TimelineView 实时倒计时的权威源；每个 MetricSnapshot 独立驱动一条时间线）。`RefreshService` 在响应缺失/非法 end_time 且 parser 声明 `.retainPreviousIfResponseMissing` 策略时，会从 cycle-start previous slot 继承未过期的旧 end time；其他供应商、其他 metric 永远 nil
     let cycleRemainingSeconds: Int?  // 同次刷新时刻的剩余秒数快照（cycleEndTime - now，向下取整到 0），供 `cycleEndTime == nil` 的 snapshot 使用；也供 `InstanceType.quota` 等无 Date() 的调用方使用
     let colorState: ColorState
     let configIndex: Int             // 1-based 位置，用于稳定排序

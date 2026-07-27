@@ -82,7 +82,7 @@ Authorization: Bearer <kimiCodeConsoleApiKey>
 **关键设计点**：
 - **用量百分比 = `used / limit * 100`**（API 不直接给百分比）。limit ≤ 0 视为窗口不生效：周报无限、5h 报 0%
 - **`limits[]` 按 `window.duration == 300 && timeUnit == "TIME_UNIT_MINUTE"` 定位 5h 窗口**，找不到时兜底取第一个元素（窗口形态未来可能演进），数组为空则 5h 报 0%
-- **`resetTime` 解析失败不抛错**，写 `end_time = 0`，`RefreshService` 视为"无倒计时"（与 Copilot parser 的语义一致）
+- **`resetTime` 解析失败不抛错**，写 `end_time = 0`，并在 `metricCycleEndPolicies["kimi"]` 声明 `.retainPreviousIfResponseMissing`。通用 mapper 在 cycle-start previous slot 仍有未过期 end time 时仅继承时间字段；这是 Kimi 与其他供应商、weekly 窗口、首次无缓存等场景的边界。详细 contract 见 `docs/ARCHITECTURE.md` §2.8。
 
 ---
 
@@ -138,6 +138,11 @@ RefreshService
    ↓ SupplierRegistry.getSupplier(for: .kimi) → KimiSupplier
    ↓ supplier.fetchUsage(apiKey:)  → SupplierResponse
    ↓ mapInstanceToSlotData 按 metrics 遍历（通用 quota 路径，无 provider 分支）
+        - 对每个 metric：解析响应里的 <key>:end_time
+        - 若 <key>:end_time 缺失/非法 且 SupplierResponse.metricCycleEndPolicies[<key>] == .retainPreviousIfResponseMissing
+          在 previousSlotByUUID[uuid].metricSnapshots 中按 key/group/window 三元组匹配
+          若旧 cycleEndTime > now 则继承
+        - 仅 cycleEndTime/cycleRemainingSeconds 来自旧值，percent/color/weekly 继续来自响应
    ↓ MetricSnapshot(5h, weekly) → SlotViewData
    ↓ UsageCardView.multiMetricContent → flatMetricContent（非 MiniMax 不走分组）
    ↓ MenuBarIconRenderer（每个 displayInMenuBar 的 metric 一个槽位）
@@ -148,6 +153,7 @@ RefreshService
 - `Views/InstanceEditorView.swift`：`kimiMetricsList`（OpenCode 风格的双窗口开关列表）、`apiKeyPlaceholder`、`resetMetricsForProvider` 三处分支
 - `Extensions/Provider+Icon.swift`：`moon.stars`
 - 凭据存储：复用 `KeychainService`（service = "APIUsageStatus"，apiKeyRef = UUID），与其它供应商一致
+- `mapInstanceToSlotData` 的 previous slot / now 注入：`performRefresh` 在循环开始时调用 `appState.getSlotViewDataList()` 一次，构建 `[UUID: SlotViewData]` 索引并通过 `previousSlot: previousSlotByUUID[uuid]` 传入 mapper；`now: Date()` 在每组循环体内重新读取，避免被慢 supplier 拉长过期判定窗口。详细 contract 见 `docs/ARCHITECTURE.md` §2.8。
 
 ---
 
@@ -158,22 +164,32 @@ RefreshService
 | JSON 解析失败 | `RefreshError.parsingError("Invalid JSON from Kimi API")` | UI 显示"解析失败" |
 | 窗口块存在但 `limit`/`used` 缺失或非数值 | `RefreshError.parsingError(...)` | 同上（故意严格，防止假数据触发误报） |
 | `limits` 空 / `usage` 缺失 | **不抛错**，5h 报 0%、周报无限 | 正常展示 |
-| `resetTime` 缺失/不可解析 | **不抛错**，`end_time = "0"` | 无倒计时，其余正常 |
+| `resetTime` 缺失/不可解析（5h 窗口） | **不抛错**，`kimi:end_time = "0"`，并声明 `metricCycleEndPolicies["kimi"] = .retainPreviousIfResponseMissing` | 通用 mapper 仅继承 cycle-start previous slot 中未过期的旧 `cycleEndTime`；新百分比、颜色、weekly 照常使用本次响应；旧缓存过期或不存在的行为与初次失败相同 |
 | HTTP 401（Key 无效/过期） | `NetworkClient` 抛 `httpError(statusCode: 401)` | UI 显示"鉴权失败" |
 
 ---
 
 ## 8. 测试覆盖
 
-`APIUsageStatusTests/KimiResponseParserTests.swift` — **11 个测试用例**：
+`APIUsageStatusTests/KimiResponseParserTests.swift` — 覆盖：
 
 - 实测响应正常解析（string 数字、6 位小数秒 resetTime、双窗口、membership/parallel）
 - JSON number 容错（非 string 数字）
-- `limits`/`usage` 整块缺失 → 0% + 无限语义
+- `limits`/`usage` 整块缺失 → 0% + 无限语义，并声明 5h 继承策略
 - 周 limit = 0 → 无限
 - 300 分钟窗口定位（乱序数组）与未知窗口兜底取首条
-- resetTime 无小数秒解析、不可解析写 0
+- resetTime 无小数秒解析、不可解析写 0 并声明 5h 策略；有效 5h 不声明
+- weekly 不可解析不会误声明 5h 策略
 - `limit` 非数值 / `used` 缺失 / 非法 JSON → 抛 parsingError
+
+`APIUsageStatusTests/RefreshServiceMappingTests.swift` 中额外的 provider-neutral 覆盖：
+
+- 5h 继承未过期旧时间，新 percent/color 来自响应
+- 有效新时间覆盖旧时间
+- 旧时间过期或无 previous slot 时不继承
+- 没有策略的 provider 即使有旧时间也不继承
+- 只匹配相同 metric identity（不会跨 weekly 等窗口借值）
+- `kimi:end_time` 翻译契约：`"0"`、负数、空串、非数字都映射为 `cycleEndTime == nil` / `cycleRemainingSeconds == nil`；有效 ms 字符串解码为对应 `Date`；与 Kimi parser 串起来的端到端用例验证继承路径
 
 ---
 

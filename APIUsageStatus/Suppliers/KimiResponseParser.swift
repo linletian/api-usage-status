@@ -47,6 +47,7 @@ struct KimiResponseParser {
 
         var rawData: [String: String] = [:]
         let group = Self.groupKey
+        var metricCycleEndPolicies: [String: MetricCycleEndPolicy] = [:]
 
         // --- Rolling rate window (limits[]): the 5h (300-minute) entry ---
         let limits = json["limits"] as? [[String: Any]] ?? []
@@ -63,7 +64,15 @@ struct KimiResponseParser {
             rawData[group] = formatPercent(usagePercent)
             rawData["\(group):status"] = "1"
             rawData["\(group):remaining"] = String(format: "%.1f", max(0, 100.0 - usagePercent))
-            rawData["\(group):end_time"] = String(Self.parseISO8601ToMs(detail["resetTime"] as? String) ?? 0)
+            let parsedEndTimeMs = Self.parseISO8601ToMs(detail["resetTime"] as? String) ?? 0
+            rawData["\(group):end_time"] = String(parsedEndTimeMs)
+            if parsedEndTimeMs <= 0 {
+                // API did not yield a usable reset time for the 5h window.
+                // Ask the generic mapper to inherit the previous snapshot's
+                // unexpired end time, so the live countdown keeps ticking
+                // until the next valid resetTime or until the cache expires.
+                metricCycleEndPolicies[group] = .retainPreviousIfResponseMissing
+            }
         } else {
             // No rolling window tracked for this account — report 0% rather
             // than failing the whole refresh.
@@ -71,6 +80,10 @@ struct KimiResponseParser {
             rawData["\(group):status"] = "0"
             rawData["\(group):remaining"] = "100.0"
             rawData["\(group):end_time"] = "0"
+            // Same fallback rationale as the parsed-but-invalid branch:
+            // the rolling window is genuinely missing this cycle, so keep
+            // the previous 5h countdown if it is still in the future.
+            metricCycleEndPolicies[group] = .retainPreviousIfResponseMissing
         }
 
         // --- Weekly subscription quota (usage) ---
@@ -103,7 +116,12 @@ struct KimiResponseParser {
             rawData["\(group):parallel_limit"] = "\(limit)"
         }
 
-        return SupplierResponse(rawData: rawData, currency: nil, isAvailable: true)
+        return SupplierResponse(
+            rawData: rawData,
+            currency: nil,
+            isAvailable: true,
+            metricCycleEndPolicies: metricCycleEndPolicies
+        )
     }
 
     /// Usage percent from a `used` / `limit` pair. A non-positive limit means

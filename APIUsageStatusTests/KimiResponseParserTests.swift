@@ -169,6 +169,80 @@ final class KimiResponseParserTests: XCTestCase {
         XCTAssertEqual(response.rawData["kimi:weekly_percent:end_time"], "0")
     }
 
+    func testUnparseableRollingResetTimeWritesZeroEndTime() throws {
+        let json = """
+        {
+          "limits": [
+            { "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
+              "detail": { "limit": "100", "used": "10", "resetTime": "not-a-date" } }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+
+        XCTAssertEqual(response.rawData["kimi"], "10.0")
+        XCTAssertEqual(response.rawData["kimi:end_time"], "0")
+        XCTAssertEqual(
+            response.metricCycleEndPolicies["kimi"],
+            .retainPreviousIfResponseMissing,
+            "Invalid 5h resetTime must declare the retain-previous policy"
+        )
+        XCTAssertNil(
+            response.metricCycleEndPolicies["kimi:weekly_percent"],
+            "Weekly window is unaffected by the 5h policy"
+        )
+    }
+
+    func testMissingRollingLimitDetailDeclaresRetainPolicy() throws {
+        let json = """
+        { "user": { "membership": { "level": "LEVEL_FREE" } } }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+
+        XCTAssertEqual(response.rawData["kimi"], "0.0")
+        XCTAssertEqual(response.rawData["kimi:end_time"], "0")
+        XCTAssertEqual(
+            response.metricCycleEndPolicies["kimi"],
+            .retainPreviousIfResponseMissing,
+            "Empty limits must declare the retain-previous policy for the 5h window"
+        )
+    }
+
+    func testValidRollingResetTimeDoesNotDeclarePolicy() throws {
+        let json = """
+        {
+          "limits": [
+            { "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
+              "detail": { "limit": "100", "used": "10", "resetTime": "2026-07-26T05:20:54.627714Z" } }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+
+        XCTAssertNotEqual(response.rawData["kimi:end_time"], "0")
+        XCTAssertNil(
+            response.metricCycleEndPolicies["kimi"],
+            "Valid 5h resetTime must not declare the retain-previous policy"
+        )
+    }
+
+    func testUnparseableWeeklyResetTimeDoesNotDeclareFiveHourPolicy() throws {
+        let json = """
+        { "usage": { "limit": "100", "used": "10", "resetTime": "not-a-date" } }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+
+        XCTAssertEqual(response.rawData["kimi:weekly_percent:end_time"], "0")
+        XCTAssertNil(
+            response.metricCycleEndPolicies["kimi"],
+            "Weekly invalid resetTime must not turn on the 5h fallback policy"
+        )
+    }
+
     func testNonNumericLimitThrows() {
         let json = """
         { "usage": { "limit": "abc", "used": "1" } }

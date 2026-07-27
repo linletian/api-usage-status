@@ -664,10 +664,428 @@ final class RefreshServiceMappingTests: XCTestCase {
         )
 
         XCTAssertEqual(result.metricSnapshots.count, 1)
-        XCTAssertTrue(
-            result.metricSnapshots[0].isUnlimited,
-            "Copilot weekly window without group must fall through to Copilot branch and honor :unlimited"
+    // MARK: - Metric cycle-end policy (provider-neutral inheritance)
+
+    /// A `retainPreviousIfResponseMissing` policy for a metric whose
+    /// response does not provide a positive end time must inherit the
+    /// matching previous snapshot's unexpired end time, recompute the
+    /// remaining seconds against `now`, and keep the new percent / color
+    /// from the response.
+    func testRetainPreviousIfResponseMissingInheritsUnexpiredEndTime() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
         )
-        XCTAssertEqual(result.metricSnapshots[0].window, "weekly")
+        let metrics: [MetricConfig] = [
+            MetricConfig(key: "kimi", group: "kimi", window: "5h"),
+        ]
+        let instance = Instance(
+            uuid: "kimi-1",
+            provider: Provider.kimi.rawValue,
+            dimension: "kimi",
+            metrics: metrics,
+            displayName: "Kimi",
+            shortName: "KMI",
+            apiKeyRef: "key-kimi-1",
+            enabled: true,
+            sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+
+        let oldEnd = Date().addingTimeInterval(3_600)
+        let previousSnapshot = MetricSnapshot(
+            key: "kimi", group: "kimi", window: "5h",
+            percent: 20, displayUsage: "20.0", displayLimit: "",
+            cycleRemainingSeconds: 3_600, colorState: .normal,
+            configIndex: 1, displayInMenuBar: true,
+            isUnlimited: false, shortName: nil,
+            cycleEndTime: oldEnd
+        )
+        let previousSlot = SlotViewData(
+            uuid: instance.uuid,
+            displayName: instance.displayName,
+            shortName: instance.shortName,
+            sortOrder: 0,
+            provider: instance.provider,
+            metricSnapshots: [previousSnapshot]
+        )
+
+        let response = SupplierResponse(
+            rawData: [
+                "kimi": "82.0",
+                "kimi:status": "1",
+                "kimi:remaining": "18.0",
+                "kimi:end_time": "0",
+            ],
+            currency: nil,
+            isAvailable: true,
+            metricCycleEndPolicies: ["kimi": .retainPreviousIfResponseMissing]
+        )
+
+        let now = Date()
+        let result = await service.mapInstanceToSlotData(
+            instance: instance, response: response,
+            previousSlot: previousSlot, now: now
+        )
+
+        let snapshot = try? XCTUnwrap(result.metricSnapshots.first)
+        XCTAssertEqual(snapshot?.cycleEndTime, oldEnd,
+                       "5h snapshot must inherit the previous unexpired end time")
+        XCTAssertEqual(snapshot?.percent ?? 0, 82.0, accuracy: 0.01,
+                       "New percent must come from the response, not the cache")
+        XCTAssertEqual(snapshot?.colorState, .warning,
+                       "Color state must come from the response's threshold check")
+        let remaining = snapshot?.cycleRemainingSeconds ?? 0
+        XCTAssertGreaterThan(remaining, 0)
+        XCTAssertLessThanOrEqual(remaining, 3_600)
+    }
+
+    /// A valid response end time must always win over a cached end time,
+    /// regardless of any declared policy.
+    func testValidResponseEndTimeOverridesCachedValue() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+        let metrics = [MetricConfig(key: "kimi", group: "kimi", window: "5h")]
+        let instance = Instance(
+            uuid: "kimi-2", provider: Provider.kimi.rawValue,
+            dimension: "kimi", metrics: metrics,
+            displayName: "Kimi", shortName: "KMI",
+            apiKeyRef: "k", enabled: true, sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+        let oldEnd = Date().addingTimeInterval(7_200)
+        let previousSnapshot = MetricSnapshot(
+            key: "kimi", group: "kimi", window: "5h",
+            percent: 0, displayUsage: "0", displayLimit: "",
+            cycleRemainingSeconds: 7_200, colorState: .normal,
+            configIndex: 1, displayInMenuBar: true,
+            isUnlimited: false, shortName: nil,
+            cycleEndTime: oldEnd
+        )
+        let previousSlot = SlotViewData(
+            uuid: instance.uuid, displayName: "Kimi", shortName: "KMI",
+            sortOrder: 0, provider: instance.provider,
+            metricSnapshots: [previousSnapshot]
+        )
+        let newEndMs = Int64(Date().addingTimeInterval(1_800).timeIntervalSince1970 * 1000)
+        let response = SupplierResponse(
+            rawData: ["kimi": "30.0", "kimi:status": "1", "kimi:end_time": String(newEndMs)],
+            currency: nil, isAvailable: true,
+            metricCycleEndPolicies: ["kimi": .retainPreviousIfResponseMissing]
+        )
+        let result = await service.mapInstanceToSlotData(
+            instance: instance, response: response,
+            previousSlot: previousSlot, now: Date()
+        )
+        let snapshot = try? XCTUnwrap(result.metricSnapshots.first)
+        let expectedEnd = Date(timeIntervalSince1970: TimeInterval(newEndMs) / 1000.0)
+        XCTAssertEqual(snapshot?.cycleEndTime, expectedEnd)
+    }
+
+    /// When the previous cache is already in the past, the inherited
+    /// branch must not surface a stale end time.
+    func testExpiredPreviousCacheIsNotInherited() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+        let metrics = [MetricConfig(key: "kimi", group: "kimi", window: "5h")]
+        let instance = Instance(
+            uuid: "kimi-3", provider: Provider.kimi.rawValue,
+            dimension: "kimi", metrics: metrics,
+            displayName: "Kimi", shortName: "KMI",
+            apiKeyRef: "k", enabled: true, sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+        let expiredEnd = Date().addingTimeInterval(-60)
+        let previousSnapshot = MetricSnapshot(
+            key: "kimi", group: "kimi", window: "5h",
+            percent: 0, displayUsage: "0", displayLimit: "",
+            cycleRemainingSeconds: 0, colorState: .normal,
+            configIndex: 1, displayInMenuBar: true,
+            isUnlimited: false, shortName: nil,
+            cycleEndTime: expiredEnd
+        )
+        let previousSlot = SlotViewData(
+            uuid: instance.uuid, displayName: "Kimi", shortName: "KMI",
+            sortOrder: 0, provider: instance.provider,
+            metricSnapshots: [previousSnapshot]
+        )
+        let response = SupplierResponse(
+            rawData: ["kimi": "30.0", "kimi:status": "1", "kimi:end_time": "0"],
+            currency: nil, isAvailable: true,
+            metricCycleEndPolicies: ["kimi": .retainPreviousIfResponseMissing]
+        )
+        let now = Date()
+        let result = await service.mapInstanceToSlotData(
+            instance: instance, response: response,
+            previousSlot: previousSlot, now: now
+        )
+        let snapshot = try? XCTUnwrap(result.metricSnapshots.first)
+        XCTAssertNil(snapshot?.cycleEndTime, "Expired cache must not be inherited")
+        XCTAssertNil(snapshot?.cycleRemainingSeconds)
+    }
+
+    /// Without the policy, the mapper must behave like the prior version
+    /// and never inherit the previous end time, even when the response
+    /// is missing and the cache is in the future. This protects other
+    /// providers that never opt in.
+    func testNoPolicyDoesNotInheritPreviousEndTime() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+        let metrics = [MetricConfig(key: "kimi", group: "kimi", window: "5h")]
+        let instance = Instance(
+            uuid: "kimi-4", provider: Provider.kimi.rawValue,
+            dimension: "kimi", metrics: metrics,
+            displayName: "Kimi", shortName: "KMI",
+            apiKeyRef: "k", enabled: true, sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+        let goodEnd = Date().addingTimeInterval(3_600)
+        let previousSnapshot = MetricSnapshot(
+            key: "kimi", group: "kimi", window: "5h",
+            percent: 0, displayUsage: "0", displayLimit: "",
+            cycleRemainingSeconds: 3_600, colorState: .normal,
+            configIndex: 1, displayInMenuBar: true,
+            isUnlimited: false, shortName: nil,
+            cycleEndTime: goodEnd
+        )
+        let previousSlot = SlotViewData(
+            uuid: instance.uuid, displayName: "Kimi", shortName: "KMI",
+            sortOrder: 0, provider: instance.provider,
+            metricSnapshots: [previousSnapshot]
+        )
+        let response = SupplierResponse(
+            rawData: ["kimi": "30.0", "kimi:status": "1", "kimi:end_time": "0"]
+        )
+        let result = await service.mapInstanceToSlotData(
+            instance: instance, response: response,
+            previousSlot: previousSlot, now: Date()
+        )
+        let snapshot = try? XCTUnwrap(result.metricSnapshots.first)
+        XCTAssertNil(snapshot?.cycleEndTime)
+    }
+
+    /// Inheritance matches by `key/group/window`, so a different metric
+    /// identity never reuses another metric's end time.
+    func testInheritanceOnlyMatchesIdenticalMetricIdentity() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+        let metrics: [MetricConfig] = [
+            MetricConfig(key: "kimi", group: "kimi", window: "5h"),
+            MetricConfig(key: "kimi:weekly_percent", group: "kimi", window: "weekly"),
+        ]
+        let instance = Instance(
+            uuid: "kimi-5", provider: Provider.kimi.rawValue,
+            dimension: "kimi", metrics: metrics,
+            displayName: "Kimi", shortName: "KMI",
+            apiKeyRef: "k", enabled: true, sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+        let oldFiveHour = Date().addingTimeInterval(3_600)
+        let previousSnapshots = [
+            MetricSnapshot(
+                key: "kimi", group: "kimi", window: "5h",
+                percent: 0, displayUsage: "0", displayLimit: "",
+                cycleRemainingSeconds: 3_600, colorState: .normal,
+                configIndex: 1, displayInMenuBar: true,
+                isUnlimited: false, shortName: nil,
+                cycleEndTime: oldFiveHour
+            ),
+            MetricSnapshot(
+                key: "kimi:weekly_percent", group: "kimi", window: "weekly",
+                percent: 0, displayUsage: "0", displayLimit: "",
+                cycleRemainingSeconds: 86_400, colorState: .normal,
+                configIndex: 2, displayInMenuBar: true,
+                isUnlimited: false, shortName: nil,
+                cycleEndTime: Date().addingTimeInterval(86_400)
+            ),
+        ]
+        let previousSlot = SlotViewData(
+            uuid: instance.uuid, displayName: "Kimi", shortName: "KMI",
+            sortOrder: 0, provider: instance.provider,
+            metricSnapshots: previousSnapshots
+        )
+        let response = SupplierResponse(
+            rawData: [
+                "kimi": "30.0", "kimi:status": "1", "kimi:end_time": "0",
+                "kimi:weekly_percent": "10.0", "kimi:weekly_status": "1",
+                "kimi:weekly_remaining": "90.0", "kimi:weekly_percent:end_time": "0",
+            ],
+            currency: nil, isAvailable: true,
+            metricCycleEndPolicies: ["kimi": .retainPreviousIfResponseMissing]
+        )
+        let result = await service.mapInstanceToSlotData(
+            instance: instance, response: response,
+            previousSlot: previousSlot, now: Date()
+        )
+        let fiveHour = result.metricSnapshots.first { $0.key == "kimi" }
+        let weekly = result.metricSnapshots.first { $0.key == "kimi:weekly_percent" }
+        XCTAssertEqual(fiveHour?.cycleEndTime, oldFiveHour)
+        XCTAssertNil(weekly?.cycleEndTime,
+                     "Weekly window must not borrow the 5h cached end time")
+    }
+
+    // MARK: - End-time rawData → MetricSnapshot translation
+
+    /// The mapper is the single place that converts the supplier's
+    /// `kimi:end_time` (string) into `MetricSnapshot.cycleEndTime` (Date?).
+    /// Lock in the contract for every "no usable end time" rawData shape
+    /// the Kimi parser may emit: `"0"`, negative numbers, empty strings,
+    /// and non-numeric tokens must all resolve to `nil` so the policy
+    /// branch can take over. This is the contract the AppState layer
+    /// relies on when it sees a fresh successful slot — it must never
+    /// receive a `cycleEndTime` whose value is `Date(timeIntervalSince1970: 0)`
+    /// for the Kimi 5h metric.
+    func testZeroOrInvalidEndTimeRawDataTranslatesToNilCycleEndTime() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+        let metrics: [MetricConfig] = [
+            MetricConfig(key: "kimi", group: "kimi", window: "5h"),
+            MetricConfig(key: "kimi:weekly_percent", group: "kimi", window: "weekly"),
+        ]
+        let instance = Instance(
+            uuid: "kimi-translate", provider: Provider.kimi.rawValue,
+            dimension: "kimi", metrics: metrics,
+            displayName: "Kimi", shortName: "KMI",
+            apiKeyRef: "k", enabled: true, sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+        let validWeeklyEnd = Int64(Date().addingTimeInterval(86_400).timeIntervalSince1970 * 1000)
+
+        let badEndTimeCases: [(label: String, value: String)] = [
+            ("parser-written zero", "0"),
+            ("negative epoch ms", "-1"),
+            ("empty string", ""),
+            ("non-numeric token", "not-a-date"),
+        ]
+
+        for (label, endTimeValue) in badEndTimeCases {
+            let response = SupplierResponse(
+                rawData: [
+                    "kimi": "12.0", "kimi:status": "1", "kimi:remaining": "88.0",
+                    "kimi:end_time": endTimeValue,
+                    "kimi:weekly_percent": "30.0", "kimi:weekly_status": "1",
+                    "kimi:weekly_remaining": "70.0",
+                    "kimi:weekly_percent:end_time": String(validWeeklyEnd),
+                ],
+                currency: nil, isAvailable: true
+            )
+            let result = await service.mapInstanceToSlotData(
+                instance: instance, response: response
+            )
+            let fiveHour = result.metricSnapshots.first { $0.key == "kimi" }
+            let weekly = result.metricSnapshots.first { $0.key == "kimi:weekly_percent" }
+            XCTAssertNil(fiveHour?.cycleEndTime, "5h cycleEndTime must be nil for \(label)")
+            XCTAssertNil(fiveHour?.cycleRemainingSeconds, "5h cycleRemainingSeconds must mirror nil for \(label)")
+            XCTAssertNotNil(weekly?.cycleEndTime, "Weekly cycleEndTime must be unaffected by 5h rawData shape for \(label)")
+        }
+    }
+
+    /// When the response itself can supply a positive end time the
+    /// mapper must decode the ms string into the expected `Date`, even
+    /// for non-Kimi providers. This pins the inverse direction of the
+    /// `end_time → cycleEndTime` translation that the previous test
+    /// covers for the nil side.
+    func testValidEndTimeRawDataTranslatesToMatchingDate() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+        let metrics: [MetricConfig] = [
+            MetricConfig(key: "kimi", group: "kimi", window: "5h"),
+        ]
+        let instance = Instance(
+            uuid: "kimi-valid", provider: Provider.kimi.rawValue,
+            dimension: "kimi", metrics: metrics,
+            displayName: "Kimi", shortName: "KMI",
+            apiKeyRef: "k", enabled: true, sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+        let endTimeMs = Int64(Date().addingTimeInterval(7_200).timeIntervalSince1970 * 1000)
+        let response = SupplierResponse(
+            rawData: ["kimi": "10.0", "kimi:status": "1", "kimi:end_time": String(endTimeMs)],
+            currency: nil, isAvailable: true
+        )
+        let result = await service.mapInstanceToSlotData(
+            instance: instance, response: response
+        )
+        let snapshot = result.metricSnapshots.first
+        XCTAssertEqual(snapshot?.cycleEndTime,
+                       Date(timeIntervalSince1970: TimeInterval(endTimeMs) / 1000.0),
+                       "Valid end_time ms string must decode to the matching absolute Date")
+    }
+
+    /// End-to-end: Kimi parser emits `kimi:end_time = "0"` and the
+    /// `retainPreviousIfResponseMissing` policy, the mapper must read
+    /// `"0"` as `nil`, take the inheritance path, and surface the
+    /// unexpired previous end time. This is the single contract the
+    /// AppState merge layer depends on, exercised from the rawData
+    /// emitted by the actual Kimi parser fixture (no hand-rolled policy
+    /// injection in the test).
+    func testKimiParserEndToEndInvalidResetTimeInheritsPreviousEndTime() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+        let metrics: [MetricConfig] = [
+            MetricConfig(key: "kimi", group: "kimi", window: "5h"),
+        ]
+        let instance = Instance(
+            uuid: "kimi-e2e", provider: Provider.kimi.rawValue,
+            dimension: "kimi", metrics: metrics,
+            displayName: "Kimi", shortName: "KMI",
+            apiKeyRef: "k", enabled: true, sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+        let unexpiredEnd = Date().addingTimeInterval(3_600)
+        let previousSnapshot = MetricSnapshot(
+            key: "kimi", group: "kimi", window: "5h",
+            percent: 12, displayUsage: "12.0", displayLimit: "",
+            cycleRemainingSeconds: 3_600, colorState: .normal,
+            configIndex: 1, displayInMenuBar: true,
+            isUnlimited: false, shortName: nil,
+            cycleEndTime: unexpiredEnd
+        )
+        let previousSlot = SlotViewData(
+            uuid: instance.uuid, displayName: "Kimi", shortName: "KMI",
+            sortOrder: 0, provider: instance.provider,
+            metricSnapshots: [previousSnapshot]
+        )
+
+        let rawJSON = """
+        {
+          "limits": [
+            { "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
+              "detail": { "limit": "100", "used": "12", "resetTime": "not-a-date" } }
+          ]
+        }
+        """
+        let parser = KimiResponseParser()
+        let parsed = try parser.parse(rawJSON.data(using: .utf8)!)
+        XCTAssertEqual(parsed.rawData["kimi:end_time"], "0",
+                       "Precondition: parser must publish the zero ms sentinel")
+        XCTAssertEqual(parsed.metricCycleEndPolicies["kimi"], .retainPreviousIfResponseMissing,
+                       "Precondition: parser must declare the retain policy")
+
+        let result = await service.mapInstanceToSlotData(
+            instance: instance,
+            response: parsed,
+            previousSlot: previousSlot,
+            now: Date()
+        )
+        let snapshot = result.metricSnapshots.first
+        XCTAssertEqual(snapshot?.cycleEndTime, unexpiredEnd,
+                       "End-to-end: parser's zero end_time + policy must inherit the previous unexpired end time")
+        XCTAssertEqual(snapshot?.percent ?? 0, 12.0, accuracy: 0.01,
+                       "End-to-end: new percent still comes from the parser's response")
     }
 }

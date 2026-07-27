@@ -334,6 +334,29 @@ actor RefreshService {
             let instances = await appState.getInstances()
             let enabledInstances = instances.filter { $0.enabled }
 
+            // Counters that enforce the snapshot-before-pushProgress
+            // invariant for rollover detection (see `pushProgress`
+            // closure below and the assertion before `evaluateRollover`).
+            // `pushProgressInvocations` is captured by the nested closure
+            // and incremented on every call; `snapshotPushProgressCount`
+            // records what the counter was at the moment we captured
+            // `previousSlots`. If a future refactor moves the snapshot
+            // line below the per-group loop, the captured value will be
+            // > 0 and the assertion fires.
+            var pushProgressInvocations = 0
+
+            // Snapshot the slot list BEFORE the per-group loop starts
+            // mutating it via `pushProgress`. The rollover evaluator
+            // compares this against the freshly-built `allSlotData` to
+            // spot (instance, metric) pairs whose `cycleRemainingSeconds`
+            // jumped forward — i.e. a cycle just rolled over. Calling
+            // `getSlotViewDataList()` on the AppState actor here (rather
+            // than later in the function) is what guarantees we capture
+            // the previous cycle's state, not the in-progress one.
+            let previousSlots = await appState.getSlotViewDataList()
+            let previousSlotByUUID = Dictionary(uniqueKeysWithValues: previousSlots.map { ($0.uuid, $0) })
+            let snapshotPushProgressCount = pushProgressInvocations
+
             // 2. Resolve targets — full cycle (targetUUID == nil) or single
             //    instance (targetUUID set). For per-instance, if the target is
             //    missing or disabled, we silently bail without touching any
@@ -387,6 +410,7 @@ actor RefreshService {
             /// from clobbering the new owner's state.
             func pushProgress() async {
                 guard !token.isPreempted else { return }
+                pushProgressInvocations += 1
                 await appState.setRefreshingInstanceUUIDs(remainingRefreshing)
                 if targetUUID == nil {
                     await appState.setErrorSummaries(errorSummaries)
@@ -452,7 +476,12 @@ actor RefreshService {
                 //     filtered) group. Only target instances get slot data.
                 let fetchTime = Date()
                 for instance in instancesInGroup {
-                    var slotData = mapInstanceToSlotData(instance: instance, response: response)
+                    var slotData = mapInstanceToSlotData(
+                        instance: instance,
+                        response: response,
+                        previousSlot: previousSlotByUUID[instance.uuid],
+                        now: Date()
+                    )
                     slotData.lastFetchedAt = fetchTime
                     allSlotData.append(slotData)
                 }
@@ -492,7 +521,12 @@ actor RefreshService {
                         let updatedInstances = await appState.getInstances()
                         for uuid in autoDiscoveredUUIDs {
                             guard let updated = updatedInstances.first(where: { $0.uuid == uuid }) else { continue }
-                            var newSlot = mapInstanceToSlotData(instance: updated, response: response)
+                            var newSlot = mapInstanceToSlotData(
+                                instance: updated,
+                                response: response,
+                                previousSlot: previousSlotByUUID[uuid],
+                                now: Date()
+                            )
                             newSlot.lastFetchedAt = fetchTime
                             if let idx = allSlotData.firstIndex(where: { $0.uuid == uuid }) {
                                 allSlotData[idx] = newSlot
@@ -626,6 +660,28 @@ actor RefreshService {
                 settings: globalSettings
             )
 
+            // Detect limit-cycle rollovers (5h / weekly / monthly windows
+            // that just crossed into a new period) and emit one macOS
+            // notification per affected instance. Pure function; the
+            // previousSlots snapshot at the top of performRefresh is
+            // what gives this signal a reference point.
+            //
+            // Defensive assertion: `previousSlots` MUST have been captured
+            // before any `pushProgress` call. If a future refactor moves
+            // the snapshot line below the per-group loop, the captured
+            // counter would be > 0 and this fires (debug + tests; silent
+            // no-op in release). See the comment at the snapshot site.
+            assert(
+                snapshotPushProgressCount == 0,
+                "previousSlots was captured AFTER the first pushProgress call — rollover detection will silently compare new vs new and never fire"
+            )
+            await notificationManager?.evaluateRollover(
+                oldSlots: previousSlots,
+                newSlots: allSlotData,
+                instances: await appState.getInstances(),
+                settings: globalSettings
+            )
+
             // 7. Final cleanup on the success path. Error summaries were already
             //    set progressively by pushProgress(); for global path we keep
             //    the last push's value. For per-instance the merge was also
@@ -653,7 +709,26 @@ actor RefreshService {
 
     // MARK: - Helper Methods
 
-    func mapInstanceToSlotData(instance: Instance, response: SupplierResponse) -> SlotViewData {
+    /// Build a `SlotViewData` from a supplier response.
+    ///
+    /// `previousSlot` is the cycle-start cache; it is consulted only when
+    /// the response declares `.retainPreviousIfResponseMissing` for a
+    /// metric AND the response cannot supply a positive end time AND
+    /// the previous end time is still in the future relative to `now`.
+    ///
+    /// `now` is used **only** for cache-expiry comparison
+    /// (`previousEnd > now`) and for the `cycleRemainingSeconds` recompute
+    /// against the inherited end time. It is NOT used as a generic
+    /// "freshness timestamp" — `lastFetchedAt` carries that role. Callers
+    /// in the refresh path re-read it inside the per-group loop so a slow
+    /// supplier call cannot inflate the elapsed window used to decide
+    /// whether to inherit the cache.
+    func mapInstanceToSlotData(
+        instance: Instance,
+        response: SupplierResponse,
+        previousSlot: SlotViewData? = nil,
+        now: Date = Date()
+    ) -> SlotViewData {
 #if DEBUG
         var weeklyDebug: String? = "isQuota=\(instance.isQuotaType) dim=\(instance.dimension)"
 #else
@@ -681,13 +756,41 @@ actor RefreshService {
                 // the static-at-refresh derived copy kept for callers
                 // (e.g. `SlotViewData.instanceType`) that don't have a
                 // current `Date()` to subtract against.
-                let cycleEndTime: Date? = {
+                //
+                // If the response cannot supply a positive end time AND
+                // the response declared a `retainPreviousIfResponseMissing`
+                // policy for this metric, the mapper may inherit the
+                // matching previous snapshot's unexpired end time. This
+                // inheritance only reuses the end-time fields; percent,
+                // color, and weekly data continue to come from the
+                // response. The shared mapper has no provider-specific
+                // branches.
+                let policy = response.metricCycleEndPolicies[key] ?? .useResponseOnly
+                let responseEndTime: Date? = {
                     guard let ets = response.value(forDimension: "\(key):end_time"),
                           let endTimeMs = Int64(ets), endTimeMs > 0 else { return nil }
                     return Date(timeIntervalSince1970: TimeInterval(endTimeMs) / 1000.0)
                 }()
+                let inheritedEndTime: Date? = {
+                    // The closure returns the cache's unexpired end time
+                    // when the response asked for retention; nil otherwise.
+                    // Named to make the "fall back to cache" intent
+                    // obvious at the call site.
+                    guard responseEndTime == nil,
+                          policy == .retainPreviousIfResponseMissing,
+                          let previousSlot,
+                          let previousSnapshot = previousSlot.metricSnapshots.first(where: {
+                              $0.key == key
+                                  && $0.group == metricConfig.group
+                                  && $0.window == metricConfig.window
+                          }),
+                          let previousEnd = previousSnapshot.cycleEndTime,
+                          previousEnd > now else { return nil }
+                    return previousEnd
+                }()
+                let cycleEndTime: Date? = responseEndTime ?? inheritedEndTime
                 let cycleRemainingSeconds: Int? = cycleEndTime.map {
-                    max(0, Int($0.timeIntervalSinceNow))
+                    max(0, Int($0.timeIntervalSince(now)))
                 }
 
                 // Provider-specific display values. Copilot stores absolute

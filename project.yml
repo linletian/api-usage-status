@@ -42,6 +42,9 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
     entitlements:
       path: APIUsageStatus/APIUsageStatus.entitlements
+      properties:
+        com.apple.security.network.client: true
+        com.apple.security.files.user-selected.read-only: true
 
   APIUsageStatusTests:
     type: bundle.unit-test

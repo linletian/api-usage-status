@@ -95,6 +95,12 @@ xcodebuild -project APIUsageStatus.xcodeproj \
   build
 ```
 
+> **Code signing is required for system notifications.** macOS only delivers `UNUserNotificationCenter` notifications from signed apps — an ad-hoc signature is enough, but an **unsigned** copy will show no notifications at all, even though System Settings → Notifications still lists the app as allowed (that entry is keyed by bundle ID from a previous signed build). Do not build the copy you install with `CODE_SIGNING_ALLOWED=NO`. If you end up with an unsigned app, re-sign it in place and restart:
+>
+> ```bash
+> codesign --force --deep --sign - /Applications/APIUsageStatus.app
+> ```
+
 ### 3. Run in Xcode
 
 ```bash

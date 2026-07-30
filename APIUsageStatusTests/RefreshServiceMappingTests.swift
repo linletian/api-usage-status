@@ -664,6 +664,8 @@ final class RefreshServiceMappingTests: XCTestCase {
         )
 
         XCTAssertEqual(result.metricSnapshots.count, 1)
+    }
+
     // MARK: - Metric cycle-end policy (provider-neutral inheritance)
 
     /// A `retainPreviousIfResponseMissing` policy for a metric whose
@@ -1031,7 +1033,7 @@ final class RefreshServiceMappingTests: XCTestCase {
     /// AppState merge layer depends on, exercised from the rawData
     /// emitted by the actual Kimi parser fixture (no hand-rolled policy
     /// injection in the test).
-    func testKimiParserEndToEndInvalidResetTimeInheritsPreviousEndTime() async {
+    func testKimiParserEndToEndInvalidResetTimeInheritsPreviousEndTime() async throws {
         let service = RefreshService(
             persistenceService: PersistenceService(keychainService: KeychainService()),
             appState: AppState()

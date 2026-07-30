@@ -31,20 +31,22 @@ Authorization: Bearer <classic PAT, 需要 "copilot" scope>
 Accept: application/json
 ```
 
-**响应示例**（截取）：
+**响应示例**（2026-07-30 实测，截取）：
 
 ```json
 {
-  "copilot_plan": "pro",
-  "quota_reset_date_utc": "2026-07-01T00:00:00Z",
+  "copilot_plan": "individual_pro",
+  "quota_reset_date_utc": "2026-08-01T00:00:00.000Z",
   "quota_snapshots": {
     "premium_interactions": {
-      "entitlement": 300,
-      "percent_remaining": 73.33,
-      "remaining": 220,
+      "entitlement": 7000,
+      "percent_remaining": 0.0,
+      "remaining": -1055,
       "unlimited": false,
-      "overage_count": 0,
-      "overage_permitted": false
+      "overage_count": 1000,
+      "overage_permitted": false,
+      "credits_used": 8054,
+      "quota_remaining": -1054.2
     }
   }
 }
@@ -55,10 +57,19 @@ Accept: application/json
 | 字段 | 含义 |
 |------|------|
 | `entitlement` | 月度配额上限 |
-| `remaining` | 剩余次数 |
-| `percent_remaining` | 剩余百分比（首选渲染字段） |
+| `remaining` | 剩余次数。**可为负数**（超额时表示超出量）。负值是 overage 检测的主信号之一 |
+| `percent_remaining` | 剩余百分比（首选渲染字段）。**注意**：GitHub 自 2026-07 起不再保留负精度，即使 `remaining < 0` 此字段也会被截到 `0`，因此不能单靠它推断超额 |
 | `unlimited` | true 时视为无限套餐（走项目的无限渲染分支） |
-| `overage_count` / `overage_permitted` | 超额信息，可用于超额预警 |
+| `overage_count` | 历史超额次数。仅在旧版 API 上是 overage 检测依据；**2026-07+ 仍返回但已不参与判断**（见 `overage_permitted`） |
+| `overage_permitted` | 自 2026-07 起语义已改为"是否允许用户开通按量计费"，**不再是"当前是否超额"的可靠信号**（即使已超额，GitHub 仍返回 `false`） |
+| `credits_used` | **2026-07+ 新增**：权威"已用总数"，**约等于** `entitlement + \|remaining\|`（实测差 1，可能是 GitHub 内部舍入；含超额）。用于 overage 显示百分比时计算 `credits_used / entitlement * 100`，比旧公式 `entitlement - remaining + overage_count` 更准确（后者在 `remaining<0` 时会重复计 overage_count） |
+| `quota_remaining` | 2026-07+ 新增：`remaining` 的小数精度版（可负），用于 overage 检测的额外信号 |
+
+**Overage 检测**（2026-07-30 起的新规则，见 `docs/copilot-overage-stuck-at-100-percent.md`）：
+- 任一条件满足即视为超额：`remaining < 0` / `quota_remaining < 0` / `credits_used > entitlement`
+- 旧规则 `overage_permitted && overage_count > 0` 仍保留作为 fallback，兼容更早的 API 响应
+- Overage 命中后，百分比优先算 `credits_used / entitlement * 100`，无 `credits_used` 时按 `remaining` 形状分流：`remaining < 0` 用 `entitlement - remaining`（新 API 形状），`remaining >= 0` 用 `entitlement + overageCount`（旧 API 形状，`remaining` 被夹到 0）
+- Overage 分支**不**夹紧到 `[0, 100]`（允许 `100%+n%` 显示）；fallback 分支继续 `min(100, ...)`
 
 **关键点**：
 - 需要 **Classic PAT**（fine-grained 没有 `copilot` scope）
@@ -144,6 +155,7 @@ struct CopilotSupplier: Supplier {
 **本项目 `Copilot` 形态要点**(对应实际实现):
 - 只有 monthly 一窗口,**重置时间优先取 API 响应里的 `quota_reset_date_utc` 字段**(ISO 8601 字符串,支持 `2026-07-01T00:00:00Z` 和 `2026-07-01T00:00:00.000Z` 两种格式)。`CopilotResponseParser` 在 parse 阶段把它解析为 epoch 毫秒并写入标准的 `<key>:end_time` rawData key,让 `RefreshService` 与其它供应商走同一套逻辑去算 `cycleEndTime` / `cycleRemainingSeconds`(与 `quota_reset_date_utc` 字符串 key 并存,保留供调试)。当 `quota_reset_date_utc` 缺失、为空或格式不可解析时,parser 回退到 `nextMonthlyResetMs()`(下个月第一天 UTC 零点)作为 `end_time`,确保倒计时始终有值——Copilot 配额均为自然月周期,回退值在下次 HTTP 刷新成功后自动被真实时间戳覆盖
 - 无限套餐判定:`unlimited == true` 时,parser 写入 `:unlimited = "true"` 副键并把已用百分比统一记为 0(与 MiniMaxParser 对 `weekly_status != 1` 的处理一致);**本项目 Copilot 不渲染 flowing glow bar 动画**,菜单栏和面板的 0% 状态直接走正常颜色
+- **Overage 检测与显示**(详见 §2.1 末尾的 "Overage 检测" 小节及 `docs/copilot-overage-stuck-at-100-percent.md`):新契约下用 `remaining<0` / `quota_remaining<0` / `credits_used>entitlement` 任一作为 overage 信号,`overage_permitted` 已不可信;`credits_used` 与 `quota_remaining` 都由 parser 写入 `<key>:credits_used` / `<key>:quota_remaining` 副键,`RefreshService` 优先消费 `credits_used` 计算弹窗里的 `used / entitlement` 显示,避免旧 `used = max(0, entitlement - remaining) + overage_count` 在 `remaining<0` 时重复计 overage_count
 - 凭据存储:复用现有 `KeychainService`,`service = "APIUsageStatus"`,以 `apiKeyRef`(UUID)为账号,没有 provider 专属 service 名
 
 ---
@@ -170,3 +182,4 @@ struct CopilotSupplier: Supplier {
 | `/copilot_internal/user` 端点未被官方文档正式推荐 | 端点可能改版 | 只用核心字段（`entitlement` / `remaining` / `percent_remaining`），其它字段作可选 |
 | 套餐调整（GitHub 重命名为 "AI credits"） | 文案过时 | 解析时不硬编码 "premium requests"，从响应拿 `copilot_plan` 显示 |
 | Business/Enterprise 套餐 | 返回结构可能不同 | 现阶段不做（自用 Personal 套餐） |
+| **Overage 字段语义变化**（2026-07-30 已发生） | `overage_permitted` 不再代表"当前超额",且 `percent_remaining` 不再保留负精度——若依赖这两字段,会得到永远 `100%` 的错误显示 | parser 用 `remaining<0` / `quota_remaining<0` / `credits_used>entitlement` 多源信号识别 overage,优先用 `credits_used` 计算百分比。详见 `docs/copilot-overage-stuck-at-100-percent.md` |

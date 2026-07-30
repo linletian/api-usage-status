@@ -809,9 +809,27 @@ actor RefreshService {
                     let entitlement = Int(response.value(forDimension: "\(key):entitlement") ?? "0") ?? 0
                     let remaining = Int(response.value(forDimension: "\(key):remaining") ?? "0") ?? 0
                     let overageCount = Int(response.value(forDimension: "\(key):overage_count") ?? "0") ?? 0
+                    // Authoritative total-used count from the 2026-07+ Copilot
+                    // API shape. When present it already accounts for overage,
+                    // so we must NOT also add `overageCount` (doing so
+                    // double-counts because `entitlement - remaining` in the
+                    // fallback below already embeds it once remaining goes
+                    // negative). See `docs/copilot-overage-stuck-at-100-percent.md`.
+                    //
+                    // The field name `credits_used` is Copilot-specific; the
+                    // check below is intentionally a numeric guard rather
+                    // than a `provider == githubCopilot` branch so that any
+                    // future supplier that adopts the same key (with the
+                    // same "absolute total used" semantics) would get the
+                    // same path for free. No other supplier writes this key
+                    // today.
+                    let creditsUsed = Int(response.value(forDimension: "\(key):credits_used") ?? "0") ?? 0
                     let isUnlimited = response.value(forDimension: "\(key):unlimited") == "true"
                     if isUnlimited {
                         displayUsage = "∞"
+                        displayLimit = String(entitlement)
+                    } else if creditsUsed > 0 {
+                        displayUsage = String(creditsUsed)
                         displayLimit = String(entitlement)
                     } else {
                         let used = max(0, entitlement - remaining) + overageCount

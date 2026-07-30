@@ -2,30 +2,40 @@ import Foundation
 
 /// Parses GitHub Copilot Internal API responses into the `premium_interactions` dimension.
 ///
-/// API response structure (current format):
+/// API response structure (current format, sampled 2026-07-30):
 /// ```json
 /// {
-///   "copilot_plan": "pro",
-///   "quota_reset_date_utc": "2026-07-01T00:00:00Z",
+///   "copilot_plan": "individual_pro",
+///   "quota_reset_date_utc": "2026-08-01T00:00:00.000Z",
 ///   "quota_snapshots": {
 ///     "premium_interactions": {
-///       "entitlement": 300,
-///       "percent_remaining": 73.33,
-///       "remaining": 220,
+///       "entitlement": 7000,
+///       "percent_remaining": 0.0,
+///       "remaining": -1055,
 ///       "unlimited": false,
-///       "overage_count": 0,
-///       "overage_permitted": false
+///       "overage_count": 1000,
+///       "overage_permitted": false,
+///       "credits_used": 8054,
+///       "quota_remaining": -1054.2
 ///     }
 ///   }
 /// }
 /// ```
 ///
+/// As of 2026-07-30 GitHub stopped flipping `overage_permitted` to `true`
+/// when the user is over-budget, and stopped preserving negative precision
+/// in `percent_remaining`. Both are now unreliable as overage signals —
+/// see `docs/copilot-overage-stuck-at-100-percent.md` for the full
+/// investigation. Over-budget is detected via `remaining < 0` /
+/// `quota_remaining < 0` / `credits_used > entitlement`, with `credits_used`
+/// preferred for the percentage calculation when present.
+///
 /// Core numeric fields (`entitlement` / `remaining` / `percent_remaining`)
 /// throw `RefreshError.parsingError` on missing or non-numeric values. This
 /// is intentional: silently defaulting to 0 would make `usagePercent = 100`,
 /// triggering false 100% critical alerts when the API response changes shape.
-/// Optional fields like `overage_count` (reserved for future use) degrade
-/// gracefully to 0.
+/// Optional fields like `overage_count`, `overage_permitted`, `credits_used`,
+/// `quota_remaining` degrade gracefully to defaults.
 ///
 /// `unlimited == true` plans (Pro+/Business unlimited tiers) report a usage
 /// percent of 0 — aligned with `MiniMaxResponseParser`'s handling of an inactive
@@ -51,18 +61,48 @@ struct CopilotResponseParser {
         let entitlement = try numericValue(pi, key: "entitlement")
         let remaining = try numericValue(pi, key: "remaining")
         let percentRemaining = try numericValue(pi, key: "percent_remaining")
-        // overage_count is optional (reserved for future overage warnings);
-        // missing is fine and defaults to 0.
+        // `overage_count` and `overage_permitted` are kept for backward compat
+        // with the pre-2026-07 API shape. As of 2026-07-30 GitHub stopped
+        // flipping `overage_permitted` to true when the user is over-budget,
+        // so it can no longer be trusted as the sole overage signal — see
+        // `isOverage` below, which also checks `remaining < 0` and
+        // `credits_used > entitlement` from the current contract.
         let overageCount = (try? numericValue(pi, key: "overage_count")) ?? 0
         let overagePermitted = pi["overage_permitted"] as? Bool ?? false
+        // Authoritative "total used" field added in the 2026-07 API shape.
+        // Absent on older responses; defaults to 0 and the legacy formula
+        // takes over.
+        let creditsUsed = (try? numericValue(pi, key: "credits_used")) ?? 0
+        let quotaRemaining = (try? numericValue(pi, key: "quota_remaining")) ?? 0
 
         let usagePercent: Double = {
             if unlimited { return 0 }
-            if overagePermitted && overageCount > 0 {
-                let totalUsage = entitlement - remaining + overageCount
-                return entitlement > 0 ? max(0, totalUsage / entitlement * 100) : 0
+            // Over-budget signal. The current API shape encodes overage via
+            // negative `remaining` / `quota_remaining` (with `percent_remaining`
+            // truncated to 0 so we can't trust it alone), plus `credits_used`
+            // exceeding `entitlement`. The legacy `overage_permitted` flag is
+            // retained as a fallback so older API responses keep working.
+            let isNewOverage = remaining < 0 || quotaRemaining < 0 || creditsUsed > entitlement
+            let isLegacyOverage = overagePermitted && overageCount > 0
+            guard isNewOverage || isLegacyOverage else {
+                return max(0, min(100, 100.0 - percentRemaining))
             }
-            return max(0, min(100, 100.0 - percentRemaining))
+            // Prefer `credits_used` when the API supplies it — it's the
+            // authoritative "total used" count. Otherwise fall back: in the
+            // new API shape `remaining < 0` already reflects overage, so
+            // `entitlement - remaining` is the true total; in the legacy
+            // shape `remaining` was clamped to 0 and overage lived in
+            // `overageCount`, so the two are additive.
+            if creditsUsed > 0, entitlement > 0 {
+                return creditsUsed / entitlement * 100
+            }
+            if entitlement > 0 {
+                let totalUsage = remaining < 0
+                    ? entitlement - remaining
+                    : entitlement + overageCount
+                return max(0, totalUsage / entitlement * 100)
+            }
+            return 0
         }()
 
         var rawData: [String: String] = [:]
@@ -87,6 +127,8 @@ struct CopilotResponseParser {
         rawData["\(Self.dimensionKey):plan"] = plan
         rawData["\(Self.dimensionKey):overage_count"] = String(Int(overageCount))
         rawData["\(Self.dimensionKey):overage_permitted"] = overagePermitted ? "true" : "false"
+        rawData["\(Self.dimensionKey):credits_used"] = String(Int(creditsUsed))
+        rawData["\(Self.dimensionKey):quota_remaining"] = String(format: "%.1f", quotaRemaining)
 
         return SupplierResponse(rawData: rawData, currency: nil, isAvailable: true)
     }

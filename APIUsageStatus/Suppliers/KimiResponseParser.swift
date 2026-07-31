@@ -83,6 +83,10 @@ struct KimiResponseParser {
             // Same fallback rationale as the parsed-but-invalid branch:
             // the rolling window is genuinely missing this cycle, so keep
             // the previous 5h countdown if it is still in the future.
+            // This is the conservative choice when we cannot tell whether
+            // "no rolling window" means "this account has no 5h" or
+            // "the API failed to return it" — e462fa3 explicitly chose
+            // to preserve the previous countdown in this ambiguity.
             metricCycleEndPolicies[group] = .retainPreviousIfResponseMissing
         }
 

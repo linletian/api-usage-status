@@ -229,17 +229,30 @@ final class KimiResponseParserTests: XCTestCase {
         )
     }
 
+    /// A bad weekly `resetTime` must not turn on the 5h `retainPrevious` policy.
+    /// The fixture mirrors a partial-degrade response: the 5h window is present
+    /// and valid, the weekly `usage` block has an unparseable `resetTime`. The
+    /// 5h policy decision is independent of weekly data — a corrupted weekly
+    /// reset must not pollute the 5h countdown policy.
     func testUnparseableWeeklyResetTimeDoesNotDeclareFiveHourPolicy() throws {
         let json = """
-        { "usage": { "limit": "100", "used": "10", "resetTime": "not-a-date" } }
+        {
+          "limits": [
+            { "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
+              "detail": { "limit": "100", "used": "10", "resetTime": "2026-07-26T05:20:54.627714Z" } }
+          ],
+          "usage": { "limit": "100", "used": "10", "resetTime": "not-a-date" }
+        }
         """.data(using: .utf8)!
 
         let response = try parser.parse(json)
 
+        // Weekly end_time falls back to 0 (unparseable) but that must not
+        // affect the 5h decision.
         XCTAssertEqual(response.rawData["kimi:weekly_percent:end_time"], "0")
         XCTAssertNil(
             response.metricCycleEndPolicies["kimi"],
-            "Weekly invalid resetTime must not turn on the 5h fallback policy"
+            "Bad weekly resetTime must not turn on the 5h fallback policy"
         )
     }
 

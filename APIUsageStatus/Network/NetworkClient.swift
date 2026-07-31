@@ -38,7 +38,35 @@ actor NetworkClient {
             }
 
             guard (200...299).contains(httpResponse.statusCode) else {
-                logger.error("HTTP error: statusCode=\(httpResponse.statusCode)")
+                // Diagnostic payload: the response body is logged at
+                // `privacy: .public` so `log show` / Console.app can reveal
+                // it — the default `\(value)` interpolation in `os.Logger`
+                // would render as `<private>` and make this whole branch
+                // useless for the Kimi API diagnosis (see
+                // `docs/kimi-api-failures-investigation.md`).
+                //
+                // Leak-surface note: response bodies for some suppliers
+                // (notably OpenCode, which reads local SQLite) can contain
+                // server-defined user identifiers. Marking the body
+                // `.public` is a deliberate diagnostic choice for the
+                // failure path; do not extend this to success-path logging
+                // without re-evaluating the privacy contract.
+                //
+                // Truncation: decode a 4 KB byte window first, THEN take
+                // the first 512 *characters*. Cutting 512 raw bytes can
+                // slice through a multi-byte UTF-8 sequence and yield
+                // `nil` from `String(data:encoding:)` — exactly when we
+                // most need the body.
+                let bodyData = data.prefix(4096)
+                let bodyPreview: String
+                if let s = String(data: bodyData, encoding: .utf8) {
+                    bodyPreview = String(s.prefix(512))
+                } else {
+                    bodyPreview = "<undecodable UTF-8, \(data.count) bytes>"
+                }
+                logger.publicError(
+                    "HTTP error: url=\(endpoint.url.absoluteString, privacy: .public), statusCode=\(httpResponse.statusCode, privacy: .public), body=\(bodyPreview, privacy: .public)"
+                )
                 throw RefreshError.httpError(statusCode: httpResponse.statusCode)
             }
 

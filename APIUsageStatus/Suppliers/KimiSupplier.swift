@@ -22,7 +22,7 @@ struct KimiSupplier: Supplier {
             // Diagnostic payload: Kimi response bodies are quota numbers
             // (no PII, no token echo), so logging at `privacy: .public` is
             // safe and the only way `log show` will surface anything
-            // useful — see AppLogger.publicError for the contract. URL +
+            // useful — see AppLogger.osLogger for the contract. URL +
             // provider are tagged so a 401 from a different supplier
             // running in parallel is not confused for Kimi. Truncation:
             // decode a 4 KB byte window first, then truncate by character
@@ -36,7 +36,7 @@ struct KimiSupplier: Supplier {
             } else {
                 bodyPreview = "<undecodable UTF-8, \(response.count) bytes>"
             }
-            logger.publicError(
+            logger.osLogger.error(
                 "Kimi response parse failed: provider=\(provider.rawValue, privacy: .public), url=\(endpoint.url.absoluteString, privacy: .public); error=\(error, privacy: .public); body=\(bodyPreview, privacy: .public)"
             )
             throw error

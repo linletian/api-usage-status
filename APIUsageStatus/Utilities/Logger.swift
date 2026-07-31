@@ -4,6 +4,24 @@ import os
 // MARK: - Logger
 
 struct AppLogger {
+    /// Direct access to the underlying `os.Logger`, for diagnostic call
+    /// sites that need `privacy: .public` interpolations. `os.Logger`
+    /// methods require a string-interpolation literal at the call site —
+    /// the compiler rejects a forwarded `OSLogMessage` value ("argument
+    /// must be a string interpolation") — so a `publicError(_:)` wrapper
+    /// on `AppLogger` cannot exist. Call
+    /// `logger.osLogger.error("...\(value, privacy: .public)...")`
+    /// directly instead; the literal requirement also means the privacy
+    /// annotations cannot be silently dropped.
+    ///
+    /// Use `.public` ONLY for diagnostic payloads that are safe to
+    /// surface in the system log — never for tokens, secrets, or PII.
+    /// For Kimi the body is quota numbers (no PII), so this is safe; for
+    /// the generic NetworkClient path the body could in theory carry
+    /// server-defined user identifiers — call sites must justify the
+    /// `.public` choice in a comment.
+    var osLogger: os.Logger { logger }
+
     private let logger: os.Logger
 
     init(category: String) {
@@ -28,20 +46,6 @@ struct AppLogger {
 
     func fault(_ message: String) {
         logger.fault("\(message)")
-    }
-
-    // MARK: Public-privacy overloads (diagnostic logging only)
-
-    /// Log at `.error` with string interpolation values marked
-    /// `privacy: .public`, so `log show` and Console.app reveal the
-    /// actual values instead of `<private>`. Use ONLY for diagnostic
-    /// payloads that are safe to surface in the system log — never for
-    /// tokens, secrets, or PII. For Kimi the body is quota numbers
-    /// (no PII), so this is safe; for the generic NetworkClient path
-    /// the body could in theory carry server-defined user identifiers
-    /// — call sites must justify the `.public` choice in a comment.
-    func publicError(_ message: OSLogMessage) {
-        logger.error(message)
     }
 }
 

@@ -64,7 +64,7 @@ actor NetworkClient {
                 } else {
                     bodyPreview = "<undecodable UTF-8, \(data.count) bytes>"
                 }
-                logger.publicError(
+                logger.osLogger.error(
                     "HTTP error: url=\(endpoint.url.absoluteString, privacy: .public), statusCode=\(httpResponse.statusCode, privacy: .public), body=\(bodyPreview, privacy: .public)"
                 )
                 throw RefreshError.httpError(statusCode: httpResponse.statusCode)

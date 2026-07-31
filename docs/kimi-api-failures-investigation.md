@@ -45,7 +45,7 @@
 
 **实现细节**:
 - 截断方式: 先取 `data.prefix(4096)` (4 KB 字节窗口,足以覆盖 512 个 UTF-8 字符的最坏情况),再 `String(data:encoding:.utf8)`,最后 `String(s.prefix(512))` 按字符切。**不是** `data.prefix(512)` 按字节切(那样会在多字节字符中间切断,导致 `String(data:encoding:)` 返回 nil,日志变成 `<undecodable>`)。
-- 字段值: 全部 `privacy: .public`(经 `AppLogger.publicError`),`log show` / Console.app 能看到真实值而不是 `<private>`。这是**诊断专用**的隐私豁免,不要扩展到成功路径。
+- 字段值: 全部 `privacy: .public`(调用点直接调 `logger.osLogger.error`,见 `AppLogger.osLogger` 的契约注释),`log show` / Console.app 能看到真实值而不是 `<private>`。这是**诊断专用**的隐私豁免,不要扩展到成功路径。
 - URL + provider: 多实例并发刷新时区分供应商,避免看到 401 不知道是 Kimi 还是 Copilot 撞的。
 
 ## 4. 复现步骤(用户执行)
@@ -62,7 +62,7 @@
 
 ### 4.1 实机验证(合并前必做,别跳)
 
-新加的 `AppLogger.publicError` 依赖 Swift `os.Logger` 的 `OSLogMessage` 重载。如果重载没被正确选中,所有插值还是 `.private`,`log show` 仍然会显示 `<private>`,**整个 PR 的诊断价值归零**。
+新加的诊断日志依赖插值里的 `privacy: .public` 注解。最初设想的 `AppLogger.publicError(OSLogMessage)` 包装器**不成立**:`os.Logger` 的方法要求参数是字符串插值字面量,转发 `OSLogMessage` 变量会在编译期报 "argument must be a string interpolation"(本分支实测踩到)。这反而是好事——字面量要求意味着只要编译通过,`.public` 注解就不可能丢失。因此调用点直接调 `logger.osLogger.error(...)`,契约注释放在 `AppLogger.osLogger` 上。剩下的风险只是端到端行为没真机确认过。
 
 **验证脚本**:
 ```bash
@@ -71,7 +71,7 @@
 # 2. 然后跑:
 log show --predicate 'subsystem == "com.example.APIUsageStatus" AND category == "supplier"' --last 1m --info
 # 3. 检查输出
-#    - 如果 body= 后面是 <private> → publicError 没生效,需要修
+#    - 如果 body= 后面是 <private> → privacy 注解没生效,需要修
 #    - 如果 body= 后面是真实响应内容 → 成功,可以放心合并
 ```
 
@@ -99,6 +99,7 @@ log show --predicate 'subsystem == "com.example.APIUsageStatus" AND category == 
 | 1. `fix(kimi-test): align fixture with test name` | `KimiResponseParserTests.swift` | 测试 fixture 改对(补合法 `limits` + 坏 weekly),让 `testUnparseableWeeklyResetTimeDoesNotDeclareFiveHourPolicy` 真的测它名字说的东西;**不修生产代码** |
 | 1. (同 commit) `docs(kimi): explain retain-previous policy in else branch` | `KimiResponseParser.swift` | 上一条对应的生产侧注释,说清楚 e462fa3 选了"宁可误保、不可误丢"的保守策略;**无业务行为变更** |
 | 2. `chore(kimi): surface response body on HTTP + parse failures` | `NetworkClient.swift` / `KimiSupplier.swift` / `Logger.swift` | 失败路径打响应体前 512 字符,带 URL + provider,`privacy: .public` 防止 `log show` 出 `<private>` |
+| 3. `fix(kimi): drop publicError wrapper, call os.Logger directly` | `Logger.swift` / `NetworkClient.swift` / `KimiSupplier.swift` / 本文档 | Commit 2 的 `AppLogger.publicError(OSLogMessage)` 编译不过(`os.Logger` 要求字面量插值,不接受转发的 `OSLogMessage`);改为暴露 `AppLogger.osLogger`,调用点直接 `logger.osLogger.error(...)` |
 
 **注**: 之前一版计划里写的"在 `KimiResponseParser` 的 `else` 分支用 `json["usage"] == nil` 守卫来收紧 5h 策略"被回退掉了——理由是用"周配额在不在"推断"账号是否真的有 5h 窗口"是脆弱的,会回退 e462fa3 明确要修的 partial-degrade 场景。e462fa3 选择"5h 缺失一律保留上次 5h 倒计时"是 conservative,不要没新证据就反转。
 
@@ -112,11 +113,11 @@ log show --predicate 'subsystem == "com.example.APIUsageStatus" AND category == 
 - **复现数据 ≠ 复现代码**: 第 5 节等的是**用户**拿 app 跑一次失败的 Kimi 刷新,把日志贴过来——不是由 Claude 重跑测试。xcodebuild test 在沙盒里成功跑通不能替代真实网络环境的复现。
 - **加日志对成功路径无影响**(只在 catch 块)。
 - **NetworkClient 改动对所有 supplier 都生效**: 任何 supplier 撞 non-2xx 都会多一行 body 预览。这是设计意图(同样适用于未来的"私有端点 + 特殊凭证"模式),但同时也是**扩大的 leak 面**——见 §9。
-- **不要把 `privacy: .public` 沿用到成功路径**: `AppLogger.publicError` 的注释明确写了"诊断专用,never for tokens / secrets / PII"。未来如果有人想让成功日志可见,需要单独评估。
+- **不要把 `privacy: .public` 沿用到成功路径**: `AppLogger.osLogger` 的注释明确写了"诊断专用,never for tokens / secrets / PII"。未来如果有人想让成功日志可见,需要单独评估。
 
 ## 9. Leak 面评估
 
-按 `AppLogger.publicError` 的注释,失败路径上 `privacy: .public` 的字段有:
+按 `AppLogger.osLogger` 的注释,失败路径上 `privacy: .public` 的字段有:
 
 | 字段 | 评估 |
 |------|------|

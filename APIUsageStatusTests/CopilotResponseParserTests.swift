@@ -101,6 +101,77 @@ final class CopilotResponseParserTests: XCTestCase {
         XCTAssertEqual(response.rawData["premium_interactions:overage_permitted"], "true")
     }
 
+    /// Sampled live from `https://api.github.com/copilot_internal/user` on
+    /// 2026-07-30. GitHub stopped flipping `overage_permitted` to true when
+    /// the user is over-budget and truncates `percent_remaining` to 0, so
+    /// the legacy overage branch must no longer be the only path that
+    /// produces a percent > 100. Asserts the parser falls through to the
+    /// `credits_used > entitlement` / `remaining < 0` signal and reports
+    /// 115% instead of clamping at 100.
+    func testOverageDataNewApiShape() throws {
+        let json = """
+        {
+          "copilot_plan": "individual_pro",
+          "quota_reset_date_utc": "2026-08-01T00:00:00.000Z",
+          "quota_snapshots": {
+            "premium_interactions": {
+              "entitlement": 7000,
+              "percent_remaining": 0.0,
+              "remaining": -1055,
+              "unlimited": false,
+              "overage_count": 1000,
+              "overage_permitted": false,
+              "credits_used": 8054,
+              "quota_remaining": -1054.2
+            }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+
+        // 8054 / 7000 * 100 = 115.0571... → "115.1"
+        XCTAssertEqual(response.rawData["premium_interactions"], "115.1")
+        XCTAssertEqual(response.rawData["premium_interactions:credits_used"], "8054")
+        XCTAssertEqual(response.rawData["premium_interactions:remaining"], "-1055")
+        XCTAssertEqual(response.rawData["premium_interactions:overage_permitted"], "false")
+        XCTAssertEqual(response.rawData["premium_interactions:quota_remaining"], "-1054.2")
+    }
+
+    /// Same over-budget signal but without `credits_used` (e.g. a future
+    /// API drop or a slightly different snapshot). The parser must still
+    /// detect overage via `remaining < 0` and fall back to a formula
+    /// that does not double-count `overage_count` on top of a negative
+    /// `remaining` (the new shape already embeds overage in `remaining`).
+    func testOverageDetectedWithoutCreditsUsed() throws {
+        let json = """
+        {
+          "copilot_plan": "individual_pro",
+          "quota_reset_date_utc": "2026-08-01T00:00:00.000Z",
+          "quota_snapshots": {
+            "premium_interactions": {
+              "entitlement": 100,
+              "percent_remaining": 0,
+              "remaining": -10,
+              "unlimited": false,
+              "overage_count": 10,
+              "overage_permitted": false
+            }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+
+        // `remaining < 0` ⇒ use `entitlement - remaining` (no `+ overage_count`,
+        // which would re-add the overage already in `remaining`).
+        // (100 - (-10)) / 100 * 100 = 110
+        XCTAssertEqual(response.rawData["premium_interactions"], "110.0")
+        // `quota_remaining` defaults to 0 in this fixture — make sure the
+        // parser still surfaces it for diagnostics.
+        XCTAssertEqual(response.rawData["premium_interactions:quota_remaining"], "0.0")
+    }
+
     func testMissingQuotaSnapshotsThrows() {
         let json = """
         {

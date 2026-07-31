@@ -395,7 +395,7 @@ DeepSeek 等余额型 API 仅提供剩余余额，不提供当日用量接口。
 | 风险 | 缓解措施 |
 |------|----------|
 | Copilot / MiniMax 用量接口可能变更 | 关注官方 API 变更日志，版本更新时快速适配 |
-| Copilot 使用的 `/copilot_internal/user` 为非官方文档端点 | parser 硬依赖核心字段（`entitlement` / `remaining` / `percent_remaining` / `unlimited` / `quota_reset_date_utc`），这些字段缺失或类型不符时**抛 `RefreshError.parsingError`**（不静默降级为 0，避免误触发 100% critical 告警）；次要字段（如 `overage_count`，目前未使用）缺失时降级为 0；如端点改版，单点修改 `CopilotResponseParser` 即可 |
+| Copilot 使用的 `/copilot_internal/user` 为非官方文档端点 | parser 硬依赖核心字段（`entitlement` / `remaining` / `percent_remaining` / `unlimited` / `quota_reset_date_utc`），这些字段缺失或类型不符时**抛 `RefreshError.parsingError`**（不静默降级为 0，避免误触发 100% critical 告警）；次要字段（`overage_count` / `overage_permitted` / `credits_used` / `quota_remaining`，用于 overage 检测）缺失时降级为 0 并继续运行；如端点改版，单点修改 `CopilotResponseParser` 即可。注意：**2026-07-30 已观察到 GitHub 在不通知的情况下修改 `overage_permitted` 语义（不再代表"当前超额"）并截断 `percent_remaining` 的负精度**，具体规避见附录 D 的"百分比计算规则"和 `docs/copilot-overage-stuck-at-100-percent.md` |
 | DeepSeek 余额接口变更 | 同上，定期关注 DeepSeek 开放平台公告 |
 | macOS 沙盒限制 | 为支持 OpenCode Go 供应商（需 `Process.run()` 执行 `opencode` CLI），App Sandbox 已关闭。MiniMax / DeepSeek / Copilot 供应商在沙箱开启或关闭下行为一致。若移除 OpenCode Go 支持，可重新开启沙箱。Entitlements 保持精简：`com.apple.security.network.client`（发起网络请求）、`com.apple.security.files.user-selected.read-only`（可选，读取本地配置） |
 | 用户 API 凭证安全担忧 | Keychain 存储，本地处理，计划开源 |
@@ -625,20 +625,22 @@ Accept: application/json
 - 该端点不要求 username，仅凭 token 鉴权
 - `/copilot_internal/user` 为 GitHub 内部端点，未在官方文档中正式列出（详见 6 节风险表）
 
-**响应示例**：
+**响应示例**（2026-07-30 实测）：
 
 ```json
 {
-  "copilot_plan": "pro",
-  "quota_reset_date_utc": "2026-07-01T00:00:00Z",
+  "copilot_plan": "individual_pro",
+  "quota_reset_date_utc": "2026-08-01T00:00:00.000Z",
   "quota_snapshots": {
     "premium_interactions": {
-      "entitlement": 300,
-      "percent_remaining": 73.33,
-      "remaining": 220,
+      "entitlement": 7000,
+      "percent_remaining": 0.0,
+      "remaining": -1055,
       "unlimited": false,
-      "overage_count": 0,
-      "overage_permitted": false
+      "overage_count": 1000,
+      "overage_permitted": false,
+      "credits_used": 8054,
+      "quota_remaining": -1054.2
     }
   }
 }
@@ -651,19 +653,22 @@ Accept: application/json
 | `copilot_plan` | string | 套餐名称，如 `"pro"`、`"pro_plus"`、`"business"` 等 |
 | `quota_reset_date_utc` | string (ISO 8601), 可选 | 下次配额重置时间（UTC），用于计算剩余周期。支持 `2026-07-01T00:00:00Z` 和 `2026-07-01T00:00:00.000Z` 两种格式。字段缺失、为空或格式不可解析时，parser 回退到月度估算（下月首日 UTC 零点） |
 | `quota_snapshots.premium_interactions.entitlement` | number | 月度配额上限 |
-| `quota_snapshots.premium_interactions.remaining` | number | 剩余次数 |
-| `quota_snapshots.premium_interactions.percent_remaining` | number | 剩余百分比（0-100，首选渲染字段） |
+| `quota_snapshots.premium_interactions.remaining` | number | 剩余次数。**可为负数**（超额时表示超出量），是 overage 检测的主信号 |
+| `quota_snapshots.premium_interactions.percent_remaining` | number | 剩余百分比（首选渲染字段）。**注意**：2026-07 起 GitHub 不再保留负精度，即使 `remaining<0` 此字段也会被截到 `0`，因此不能单靠它推断超额 |
 | `quota_snapshots.premium_interactions.unlimited` | boolean | true 时为无限套餐，菜单栏槽位已用百分比统一显示 0% |
-| `quota_snapshots.premium_interactions.overage_count` | number | 超额次数。当 `overage_permitted` 为 true 且此值 > 0 时，用量百分比会超过 100%，面板中显示为 `100% + (超出百分比)%` |
-| `quota_snapshots.premium_interactions.overage_permitted` | boolean | 是否允许超额消费。为 true 且 overage_count > 0 时解锁超额显示 |
+| `quota_snapshots.premium_interactions.overage_count` | number | 历史超额次数。**2026-07+ 不再是 overage 触发条件**（仅作为诊断字段保留，仍由 parser 写入 `<key>:overage_count` 副键） |
+| `quota_snapshots.premium_interactions.overage_permitted` | boolean | **2026-07 起语义已变**：表示"是否允许用户开通按量计费"，不再是"当前是否超额"。即使已超额，GitHub 仍返回 `false` |
+| `quota_snapshots.premium_interactions.credits_used` | number | **2026-07+ 新增**：权威"已用总数"。overage 命中时优先用 `credits_used / entitlement * 100` 计算百分比 |
+| `quota_snapshots.premium_interactions.quota_remaining` | number | **2026-07+ 新增**：`remaining` 的小数精度版（可负），overage 检测的额外信号 |
 
 **与本产品的关联**：
 
 - **统计维度**：仅暴露 `premium_interactions` 一个固定维度，作为 `Instance.dimension` 使用
 - **周期类型**：月度配额型，重置时间优先取 API 返回的 `quota_reset_date_utc`（支持毫秒精度）；缺失时 fallback 到下月首日 UTC 零点，下次刷新成功后自动覆盖
-- **百分比计算规则**：
+- **百分比计算规则**（2026-07-30 起的新契约，详见 `docs/copilot-overage-stuck-at-100-percent.md`）：
   - `unlimited == true` 时：菜单栏槽位已用百分比 = `0`（与 MiniMax 周配额未激活的语义一致，避免无限套餐误触发阈值）
-  - `unlimited == false` 时：已用百分比 = `100 - percent_remaining`。当 `overage_permitted == true` 且 `overage_count > 0` 时，已用百分比 = `(entitlement - remaining + overage_count) / entitlement * 100`，可超过 100%
+  - `unlimited == false` 且**未超额**（`remaining >= 0` 且 `quota_remaining >= 0` 且 `credits_used <= entitlement`，且旧契约下 `overage_permitted && overage_count > 0` 也不成立）：已用百分比 = `100 - percent_remaining`，**夹紧到 [0, 100]**
+  - `unlimited == false` 且**已超额**：已用百分比 = `credits_used / entitlement * 100`（有 `credits_used` 时）或按 `remaining` 形状分流（无 `credits_used` 时）——`remaining < 0` 时（新 API 形状，overage 已嵌入 `remaining`）用 `entitlement - remaining`，`remaining >= 0` 时（旧 API 形状，`remaining` 被夹到 0）用 `entitlement + overage_count`。**不夹紧**，可超过 100%（面板显示 `100% + (超出百分比)%`）
 - **覆盖套餐**：Free / Pro / Pro+ / Business / Enterprise 全部适用，端点对所有套餐通用
 - **不在本次实现范围**：GitHub Billing API（`/users/{username}/settings/billing/premium_request/usage`）的双探针模式，本项目自用 Personal 套餐，单 Internal API 已足够
 

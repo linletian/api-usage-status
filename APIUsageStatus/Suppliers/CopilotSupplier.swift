@@ -16,6 +16,8 @@ struct CopilotSupplier: Supplier {
         )
 
         let response = try await networkClient.request(endpoint, apiKey: apiKey)
-        return try parser.parse(response)
+        let parsed = try parser.parse(response)
+        logger.debug("Copilot premium_interactions rawData: \(parsed.rawData)")
+        return parsed
     }
 }

@@ -823,6 +823,12 @@ actor RefreshService {
                     // same "absolute total used" semantics) would get the
                     // same path for free. No other supplier writes this key
                     // today.
+                    //
+                    // Precondition for the guard to be sound: a supplier may
+                    // only write a non-zero `credits_used` when it is the
+                    // authoritative absolute total used (i.e. real overage
+                    // accounting) — never as a partial or relative counter.
+                    // Parsers enforcing that contract keep this branch safe.
                     let creditsUsed = Int(response.value(forDimension: "\(key):credits_used") ?? "0") ?? 0
                     let isUnlimited = response.value(forDimension: "\(key):unlimited") == "true"
                     if isUnlimited {

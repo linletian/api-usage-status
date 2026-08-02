@@ -815,6 +815,12 @@ actor RefreshService {
                     // "field absent" from "field present but 0 used" —
                     // both fall through to the same fallback today, but
                     // the `Int?` keeps the intent explicit.
+                    //
+                    // Contract (parser-side, see
+                    // `docs/copilot-overage-stuck-at-100-percent.md` §7,
+                    // "写入契约"): non-zero `credits_used` is only written
+                    // as the authoritative absolute total used — never as
+                    // a partial/relative counter.
                     let creditsUsed = Int(response.value(forDimension: "\(key):credits_used") ?? "")
                     let isUnlimited = response.value(forDimension: "\(key):unlimited") == "true"
                     if isUnlimited {

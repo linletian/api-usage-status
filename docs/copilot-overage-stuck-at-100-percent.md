@@ -111,6 +111,7 @@ curl -sS \
    - 用 `remaining < 0` / `quota_remaining < 0` / `credits_used > entitlement` 三者任一作为 overage 信号,替代 `overage_permitted && overage_count > 0`
    - 有 `credits_used` 时百分比改为 `credits_used / entitlement * 100`(更准);无则按 `remaining` 形状分流(`remaining < 0` 用 `entitlement - remaining`,`remaining >= 0` 用 `entitlement + overageCount`),避免在 `remaining<0` 时把 overage 算两次
    - 把 `credits_used` 写进 `rawData["premium_interactions:credits_used"]`,供下游 RefreshService 读取
+   - **写入契约**:parser 只在 `credits_used` 是权威绝对已用总量(真实超额计量)时写非零值,绝不写 partial / relative counter;这与 `RefreshService` 的 `creditsUsed > 0` 数值守卫互为前提——任何未来采用同 key 的 supplier 必须遵守同一语义,否则守卫不成立
    - **Overage 分支不夹紧 `[0, 100]`**,fallback 分支保留夹紧
 2. **Service 层**(`RefreshService.swift:817`)改用 `credits_used`,缺失时回退,避免 `overage_count` 重复计入。
 3. **AppState / MenuBarIconRenderer / UsageCardView** 不动——它们对任意 `percent` 已正确透传。

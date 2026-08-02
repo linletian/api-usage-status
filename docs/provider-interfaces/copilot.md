@@ -68,7 +68,7 @@ Accept: application/json
 **Overage 检测**（2026-07-30 起的新规则，见 `docs/copilot-overage-stuck-at-100-percent.md`）：
 - 任一条件满足即视为超额：`remaining < 0` / `quota_remaining < 0` / `credits_used > entitlement`
 - 旧规则 `overage_permitted && overage_count > 0` 仍保留作为 fallback，兼容更早的 API 响应
-- Overage 命中后，百分比优先算 `credits_used / entitlement * 100`，无 `credits_used` 时按 `remaining` 形状分流：`remaining < 0` 用 `entitlement - remaining`（新 API 形状），`remaining >= 0` 用 `entitlement + overageCount`（旧 API 形状，`remaining` 被夹到 0）
+- Overage 命中后，百分比优先算 `credits_used / entitlement * 100`，无 `credits_used` 时按 `remaining` 形状分流：`remaining < 0` 用 `entitlement - remaining`（新 API 形状），`remaining >= 0` 用 `entitlement - remaining + overage_count`（旧 API 形状，`remaining` 被夹到 0 时与 `entitlement + overage_count` 等价）
 - Overage 分支**不**夹紧到 `[0, 100]`（允许 `100%+n%` 显示）；fallback 分支继续 `min(100, ...)`
 
 **关键点**：

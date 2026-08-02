@@ -92,14 +92,16 @@ struct CopilotResponseParser {
             // new API shape `remaining < 0` already reflects overage, so
             // `entitlement - remaining` is the true total; in the legacy
             // shape `remaining` was clamped to 0 and overage lived in
-            // `overageCount`, so the two are additive.
+            // `overageCount`, so the two are additive (subtracting
+            // `remaining` is a no-op at 0 but keeps the formula correct if
+            // a legacy response ever reports `remaining > 0`).
             if creditsUsed > 0, entitlement > 0 {
                 return creditsUsed / entitlement * 100
             }
             if entitlement > 0 {
                 let totalUsage = remaining < 0
                     ? entitlement - remaining
-                    : entitlement + overageCount
+                    : entitlement - remaining + overageCount
                 return max(0, totalUsage / entitlement * 100)
             }
             return 0

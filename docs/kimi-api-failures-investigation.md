@@ -100,6 +100,7 @@ log show --predicate 'subsystem == "com.example.APIUsageStatus" AND category == 
 | 1. (同 commit) `docs(kimi): explain retain-previous policy in else branch` | `KimiResponseParser.swift` | 上一条对应的生产侧注释,说清楚 e462fa3 选了"宁可误保、不可误丢"的保守策略;**无业务行为变更** |
 | 2. `chore(kimi): surface response body on HTTP + parse failures` | `NetworkClient.swift` / `KimiSupplier.swift` / `Logger.swift` | 失败路径打响应体前 512 字符,带 URL + provider,`privacy: .public` 防止 `log show` 出 `<private>` |
 | 3. `fix(kimi): drop publicError wrapper, call os.Logger directly` | `Logger.swift` / `NetworkClient.swift` / `KimiSupplier.swift` / 本文档 | Commit 2 的 `AppLogger.publicError(OSLogMessage)` 编译不过(`os.Logger` 要求字面量插值,不接受转发的 `OSLogMessage`);改为暴露 `AppLogger.osLogger`,调用点直接 `logger.osLogger.error(...)` |
+| 4. (PR #15 评审修复) | `Endpoint.swift` / `NetworkClient.swift` / `KimiSupplier.swift` / `Data+Extensions.swift` | 通用路径 body 日志降为 `.private`,按 `Endpoint.exposesFailureBodyInLog` opt-in(原"OpenCode 经 NetworkClient"的豁免前提不成立,见 §9);两处的 4 KB/512 截断逻辑抽为 `Data.utf8Preview` 并补单测;error 插值从默认反射改为 `String(describing:)`,日志格式稳定 |
 
 **注**: 之前一版计划里写的"在 `KimiResponseParser` 的 `else` 分支用 `json["usage"] == nil` 守卫来收紧 5h 策略"被回退掉了——理由是用"周配额在不在"推断"账号是否真的有 5h 窗口"是脆弱的,会回退 e462fa3 明确要修的 partial-degrade 场景。e462fa3 选择"5h 缺失一律保留上次 5h 倒计时"是 conservative,不要没新证据就反转。
 
@@ -112,7 +113,7 @@ log show --predicate 'subsystem == "com.example.APIUsageStatus" AND category == 
 
 - **复现数据 ≠ 复现代码**: 第 5 节等的是**用户**拿 app 跑一次失败的 Kimi 刷新,把日志贴过来——不是由 Claude 重跑测试。xcodebuild test 在沙盒里成功跑通不能替代真实网络环境的复现。
 - **加日志对成功路径无影响**(只在 catch 块)。
-- **NetworkClient 改动对所有 supplier 都生效**: 任何 supplier 撞 non-2xx 都会多一行 body 预览。这是设计意图(同样适用于未来的"私有端点 + 特殊凭证"模式),但同时也是**扩大的 leak 面**——见 §9。
+- **NetworkClient 的 body 日志按 endpoint opt-in**: 非 2xx 分支默认以 `.private` 记录响应体(`log show` 显示 `<private>`),只有 `Endpoint.exposesFailureBodyInLog = true` 的 endpoint(目前仅 Kimi)以 `.public` 记录——上游网关的 4xx 错误体可能回显凭证片段或账号标识,不能对 DeepSeek / Copilot / MiniMax 默认放开。见 §9。
 - **不要把 `privacy: .public` 沿用到成功路径**: `AppLogger.osLogger` 的注释明确写了"诊断专用,never for tokens / secrets / PII"。未来如果有人想让成功日志可见,需要单独评估。
 
 ## 9. Leak 面评估
@@ -123,7 +124,7 @@ log show --predicate 'subsystem == "com.example.APIUsageStatus" AND category == 
 |------|------|
 | URL | 安全。Kimi/Copilot/DeepSeek/MiniMax 端点 URL 不带 query 参数。 |
 | HTTP status code | 安全。 |
-| 响应体(NetworkClient 通用) | **有条件不安全**。OpenCode 从本地 SQLite 读,响应体可能含 server-defined user identifiers。本分支是**诊断专用**,不会扩散到成功路径。 |
+| 响应体(NetworkClient 通用) | **默认安全**。非 2xx 分支以 `.private` 记录,`log show` 里渲染为 `<private>`;仅 `Endpoint.exposesFailureBodyInLog = true` 的 endpoint(目前仅 Kimi)放开为 `.public`。注:OpenCode 不走 `NetworkClient`(本地 SQLite 直读),早期版本中"OpenCode 响应体可能含 user identifiers"的评估前提不成立;真实影响面是 DeepSeek / Copilot / MiniMax / Kimi 四个远端 API 的错误体,而上游网关的 4xx 错误体可能回显凭证片段或账号标识——这正是默认 `.private` 的理由。 |
 | 响应体(KimiSupplier) | **安全**。Kimi `/usages` 响应是 quota 数字(`limit` / `used` / `resetTime`),无 PII。 |
 | error 实例 | 内部 RefreshError,不含 PII。 |
 

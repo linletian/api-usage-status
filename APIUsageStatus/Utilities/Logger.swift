@@ -16,10 +16,9 @@ struct AppLogger {
     ///
     /// Use `.public` ONLY for diagnostic payloads that are safe to
     /// surface in the system log — never for tokens, secrets, or PII.
-    /// For Kimi the body is quota numbers (no PII), so this is safe; for
-    /// the generic NetworkClient path the body could in theory carry
-    /// server-defined user identifiers — call sites must justify the
-    /// `.public` choice in a comment.
+    /// For Kimi the body is quota numbers (no PII), so this is safe; the
+    /// generic NetworkClient path redacts bodies unless the endpoint
+    /// opted in via `Endpoint.exposesFailureBodyInLog`.
     var osLogger: os.Logger { logger }
 
     private let logger: os.Logger

@@ -38,7 +38,24 @@ actor NetworkClient {
             }
 
             guard (200...299).contains(httpResponse.statusCode) else {
-                logger.error("HTTP error: statusCode=\(httpResponse.statusCode)")
+                // Diagnostic logging for the failure path. The body is only
+                // logged at `privacy: .public` for endpoints that opted in
+                // via `exposesFailureBodyInLog` (currently just Kimi) —
+                // error bodies from upstream gateways can echo credential
+                // fragments or account identifiers, so every other supplier
+                // routed through this client (DeepSeek / Copilot / MiniMax)
+                // gets the body redacted. See
+                // `docs/kimi-api-failures-investigation.md` §9.
+                let bodyPreview = data.utf8Preview()
+                if endpoint.exposesFailureBodyInLog {
+                    logger.osLogger.error(
+                        "HTTP error: url=\(endpoint.url.absoluteString, privacy: .public), statusCode=\(httpResponse.statusCode, privacy: .public), body=\(bodyPreview, privacy: .public)"
+                    )
+                } else {
+                    logger.osLogger.error(
+                        "HTTP error: url=\(endpoint.url.absoluteString, privacy: .public), statusCode=\(httpResponse.statusCode, privacy: .public), body=\(bodyPreview, privacy: .private)"
+                    )
+                }
                 throw RefreshError.httpError(statusCode: httpResponse.statusCode)
             }
 

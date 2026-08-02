@@ -59,6 +59,8 @@
 		806AE3DE3F60A3B0B7D7D9D8 /* ProviderIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2204828AE88393BAC31A2283 /* ProviderIconTests.swift */; };
 		81D42DF6C1ADD4C38960FBCF /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9101DD6DB185339B2BAE6210 /* KeychainService.swift */; };
 		82FC330496A2697E7AE88D96 /* Endpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 977885C36E639581C828E7C0 /* Endpoint.swift */; };
+		A1B2C3D4E5F6000000000001 /* Data+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000002 /* Data+Extensions.swift */; };
+		A1B2C3D4E5F6000000000003 /* DataUtf8PreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000004 /* DataUtf8PreviewTests.swift */; };
 		84C9A084597C9107957321A2 /* ErrorSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87B9DA87C77C8CEAF4FCD523 /* ErrorSummary.swift */; };
 		86A8DE171ACA7D1F3A91677B /* PersistenceServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 518462B60B626955B6AF736E /* PersistenceServiceTests.swift */; };
 		88A3107096B59279707E894C /* StatusDotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 137C5BE021708BC293F08038 /* StatusDotView.swift */; };
@@ -212,6 +214,8 @@
 		B1BF1F07D60E2B7A0201E07E /* OpenCodeGoLimits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeGoLimits.swift; sourceTree = "<group>"; };
 		B2257115BFF032B15F77F5C4 /* unlimited_normal.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = unlimited_normal.png; sourceTree = "<group>"; };
 		B473A213C6F7569D63A383D3 /* String+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "String+Extensions.swift"; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000002 /* Data+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Data+Extensions.swift"; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000004 /* DataUtf8PreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataUtf8PreviewTests.swift; sourceTree = "<group>"; };
 		B5D9A556F2497005B6C566BF /* InstanceCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstanceCardView.swift; sourceTree = "<group>"; };
 		B8802674223BA10EA5E537F6 /* EmptyStateGuideViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateGuideViewTests.swift; sourceTree = "<group>"; };
 		BB0025BE373F61D2ABB20F41 /* LimitRolloverDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitRolloverDetector.swift; sourceTree = "<group>"; };
@@ -381,6 +385,7 @@
 			isa = PBXGroup;
 			children = (
 				40C62BB21479E0CA1ADBDABF /* Color+Theme.swift */,
+				A1B2C3D4E5F6000000000002 /* Data+Extensions.swift */,
 				92758FB867464F45A1CE6E28 /* Date+Extensions.swift */,
 				9F806125A0A4E15F7DBEA606 /* Decimal+Extensions.swift */,
 				69879B60D9B0E7643EE31851 /* Provider+Icon.swift */,
@@ -397,6 +402,7 @@
 				C5E1319092BAD9B4DA448DEB /* BalanceCalculatorTests.swift */,
 				B1A2F4DE7927D40C412E3131 /* BreathingMathTests.swift */,
 				3A0161F72C904A640F8D2F18 /* CopilotResponseParserTests.swift */,
+				A1B2C3D4E5F6000000000004 /* DataUtf8PreviewTests.swift */,
 				2CF683BAB233440D650E0642 /* DeepSeekResponseParserTests.swift */,
 				B8802674223BA10EA5E537F6 /* EmptyStateGuideViewTests.swift */,
 				0BEB57C3EF79F2722ABC4501 /* FlowingGlowBarTests.swift */,
@@ -638,6 +644,7 @@
 				663745C64FC9AC87AAD6E56F /* Color+Theme.swift in Sources */,
 				5FBC0BF256E1BA4C8D651BB9 /* CopilotResponseParser.swift in Sources */,
 				0ECFB7E8942A163090939C3E /* CopilotSupplier.swift in Sources */,
+				A1B2C3D4E5F6000000000001 /* Data+Extensions.swift in Sources */,
 				43C82B54982192D27582D57E /* Date+Extensions.swift in Sources */,
 				4DC5637237CA7B0729761A8A /* Decimal+Extensions.swift in Sources */,
 				98AD5AB1B943EDB574215F6B /* DeepSeekResponseParser.swift in Sources */,
@@ -704,6 +711,7 @@
 				E151C0B79689A158AD80C756 /* BalanceCalculatorTests.swift in Sources */,
 				BF9F801A979A7AE6169DC54D /* BreathingMathTests.swift in Sources */,
 				63E92BE9CFBBEFE55E5D62B6 /* CopilotResponseParserTests.swift in Sources */,
+				A1B2C3D4E5F6000000000003 /* DataUtf8PreviewTests.swift in Sources */,
 				A59F71AB0AD3673AD43D9F6A /* DeepSeekResponseParserTests.swift in Sources */,
 				8AFAFFE170579091CE469EF5 /* EmptyStateGuideViewTests.swift in Sources */,
 				A4C643560715E0B697C2DED2 /* FlowingGlowBarTests.swift in Sources */,

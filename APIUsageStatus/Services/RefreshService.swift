@@ -809,36 +809,39 @@ actor RefreshService {
                     let entitlement = Int(response.value(forDimension: "\(key):entitlement") ?? "0") ?? 0
                     let remaining = Int(response.value(forDimension: "\(key):remaining") ?? "0") ?? 0
                     let overageCount = Int(response.value(forDimension: "\(key):overage_count") ?? "0") ?? 0
-                    // Authoritative total-used count from the 2026-07+ Copilot
-                    // API shape. When present it already accounts for overage,
-                    // so we must NOT also add `overageCount` (doing so
-                    // double-counts because `entitlement - remaining` in the
-                    // fallback below already embeds it once remaining goes
-                    // negative). See `docs/copilot-overage-stuck-at-100-percent.md`.
+                    // `credits_used` is Copilot-specific, written only by
+                    // `CopilotResponseParser` (absent on the legacy API
+                    // shape). The optional-binding sentinel distinguishes
+                    // "field absent" from "field present but 0 used" —
+                    // both fall through to the same fallback today, but
+                    // the `Int?` keeps the intent explicit.
                     //
-                    // The field name `credits_used` is Copilot-specific; the
-                    // check below is intentionally a numeric guard rather
-                    // than a `provider == githubCopilot` branch so that any
-                    // future supplier that adopts the same key (with the
-                    // same "absolute total used" semantics) would get the
-                    // same path for free. No other supplier writes this key
-                    // today.
-                    //
-                    // Precondition for the guard to be sound: a supplier may
-                    // only write a non-zero `credits_used` when it is the
-                    // authoritative absolute total used (i.e. real overage
-                    // accounting) — never as a partial or relative counter.
-                    // Parsers enforcing that contract keep this branch safe.
-                    let creditsUsed = Int(response.value(forDimension: "\(key):credits_used") ?? "0") ?? 0
+                    // Contract (parser-side, see
+                    // `docs/copilot-overage-stuck-at-100-percent.md` §7,
+                    // "写入契约"): non-zero `credits_used` is only written
+                    // as the authoritative absolute total used — never as
+                    // a partial/relative counter.
+                    let creditsUsed = Int(response.value(forDimension: "\(key):credits_used") ?? "")
                     let isUnlimited = response.value(forDimension: "\(key):unlimited") == "true"
                     if isUnlimited {
                         displayUsage = "∞"
                         displayLimit = String(entitlement)
-                    } else if creditsUsed > 0 {
+                    } else if let creditsUsed, creditsUsed > 0 {
+                        // Authoritative total-used count from the 2026-07+
+                        // Copilot API shape; already accounts for overage.
                         displayUsage = String(creditsUsed)
                         displayLimit = String(entitlement)
                     } else {
-                        let used = max(0, entitlement - remaining) + overageCount
+                        // Mirror `CopilotResponseParser`'s shape split:
+                        // `remaining < 0` already embeds overage, so adding
+                        // `overageCount` on top would double-count; in the
+                        // legacy shape `remaining` is clamped to 0 and
+                        // overage lives in `overageCount`, so the two are
+                        // additive. See
+                        // `docs/copilot-overage-stuck-at-100-percent.md`.
+                        let used = remaining < 0
+                            ? entitlement - remaining
+                            : max(0, entitlement - remaining) + overageCount
                         displayUsage = String(used)
                         displayLimit = String(entitlement)
                     }

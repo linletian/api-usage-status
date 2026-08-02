@@ -80,7 +80,7 @@ max(0, 7000 - (-1055)) + 1000 = 8055 + 1000 = 9055
 
 但 `credits_used = 8054`(唯一可信值)。**`overage_count` 被重复计入**——`entitlement - remaining` 在 `remaining < 0` 时已经包含了超额部分,无需再加 `overage_count`。同样症状导致弹窗里的 `used / entitlement` 显示也会偏大 1000。
 
-**修复后**(顺带解决了 parser 旧 fallback 同样的 bug):有 `credits_used` 时直接用,无时按 `remaining` 形状分流——`remaining < 0` 时用 `entitlement - remaining`(新 API 形状,`overage` 已嵌入),`remaining >= 0` 时用 `entitlement + overageCount`(旧 API 形状,`remaining` 被夹到 0)。这样无论哪种 API 形状都不会再把 overage 算两次。
+**修复后**(顺带解决了 parser 旧 fallback 同样的 bug):有 `credits_used` 时直接用,无时按 `remaining` 形状分流——`remaining < 0` 时用 `entitlement - remaining`(新 API 形状,`overage` 已嵌入),`remaining >= 0` 时用 `entitlement - remaining + overageCount`(旧 API 形状,`remaining` 被夹到 0 时与 `entitlement + overageCount` 等价)。这样无论哪种 API 形状都不会再把 overage 算两次。
 
 ## 6. 复现 / 验证步骤
 
@@ -109,18 +109,18 @@ curl -sS \
 
 1. **Parser 层**(`CopilotResponseParser`)独占 overage 识别:
    - 用 `remaining < 0` / `quota_remaining < 0` / `credits_used > entitlement` 三者任一作为 overage 信号,替代 `overage_permitted && overage_count > 0`
-   - 有 `credits_used` 时百分比改为 `credits_used / entitlement * 100`(更准);无则按 `remaining` 形状分流(`remaining < 0` 用 `entitlement - remaining`,`remaining >= 0` 用 `entitlement + overageCount`),避免在 `remaining<0` 时把 overage 算两次
+   - 有 `credits_used` 时百分比改为 `credits_used / entitlement * 100`(更准);无则按 `remaining` 形状分流(`remaining < 0` 用 `entitlement - remaining`,`remaining >= 0` 用 `entitlement - remaining + overageCount`),避免在 `remaining<0` 时把 overage 算两次(legacy 形状下 `remaining` 被夹到 0,减不减通常等价;减去是为了 `remaining > 0` 时仍正确)
    - 把 `credits_used` 写进 `rawData["premium_interactions:credits_used"]`,供下游 RefreshService 读取
    - **写入契约**:parser 只在 `credits_used` 是权威绝对已用总量(真实超额计量)时写非零值,绝不写 partial / relative counter;这与 `RefreshService` 的 `creditsUsed > 0` 数值守卫互为前提——任何未来采用同 key 的 supplier 必须遵守同一语义,否则守卫不成立
    - **Overage 分支不夹紧 `[0, 100]`**,fallback 分支保留夹紧
-2. **Service 层**(`RefreshService.swift:817`)改用 `credits_used`,缺失时回退,避免 `overage_count` 重复计入。
+2. **Service 层**(`RefreshService`)有 `credits_used` 时直接用它;缺失时**按 `remaining` 形状分流回退(与 parser 同规则)**,避免 `overage_count` 重复计入。
 3. **AppState / MenuBarIconRenderer / UsageCardView** 不动——它们对任意 `percent` 已正确透传。
 4. **测试**:新增一个新 API 形状的 fixture(`remaining = -1055`、`overage_permitted = false`、`credits_used = 8054` → 期望 `115.1%`);旧 `testOverageData` 保持原状继续通过。
 
 ## 8. 兼容性
 
 - 新 API(有 `credits_used`):走新公式 `credits_used / entitlement * 100`,overage 信号来自 `remaining < 0`。
-- 旧 API(无 `credits_used`):回退到旧公式;overage 信号回退到 `overage_permitted && overage_count > 0`。
+- 旧 API(无 `credits_used`):回退到旧公式 `entitlement - remaining + overageCount`;overage 信号回退到 `overage_permitted && overage_count > 0`。
 - `unlimited == true` 仍返回 0(显式最高优先级)。
 - fallback 分支(`percentRemaining` 反推)继续保留 `min(100, ...)` 夹紧——只在确实未超额时生效。
 
@@ -129,8 +129,17 @@ curl -sS \
 - `APIUsageStatus/Suppliers/CopilotResponseParser.swift` — 主修改
 - `APIUsageStatus/Services/RefreshService.swift:817` — `used` 计算修正
 - `APIUsageStatusTests/CopilotResponseParserTests.swift` — 新增 fixture + 用例
-- `APIUsageStatusTests/RefreshServiceMappingTests.swift` — 新增 `testCopilotOverageUsesCreditsUsedNotOverageCount`
+- `APIUsageStatusTests/RefreshServiceMappingTests.swift` — 新增 `testCopilotOverageUsesCreditsUsedNotOverageCount`(PR #15 评审跟进又补 `testCopilotOverageWithoutCreditsUsed`,见 §10.1)
 - `docs/provider-interfaces/copilot.md` — §1 / §3 字段表需后续同步更新(独立 PR)
+
+## 10.1 PR15 评审的跟进修复
+
+PR #14 合并后,PR #15 的评审发现两处实现与 §7 策略不一致,分别由两条分支修复:
+
+1. **`RefreshService` 的 fallback 分支未按形状分流** —— 由 PR #15(`f571dea`)修复:`6a85578` 只加了 `credits_used` 分支,`else` 分支仍是无条件的 `max(0, entitlement - remaining) + overageCount`——新 API 形状 + 无 `credits_used` 时,面板文字(`120 / 100`)与 parser 算出的进度条(110%)自相矛盾,正是本节要消除的双计。修复为 `remaining < 0 ? entitlement - remaining : max(0, entitlement - remaining) + overageCount`;顺带删掉"数值守卫让未来 supplier 免分支复用"的误导注释(该代码本就在 `githubCopilot` provider 分支内部)并改用 `Int?` 哨兵区分"字段缺失"与"字段为 0"。配套用例 `testCopilotOverageWithoutCreditsUsed`(Service 层)见 PR #15。
+2. **Parser legacy 分支丢了 `- remaining`** —— **本 PR**(`fix/copilot-overage-fallback-double-count`)修复:`6a85578` 把 `entitlement - remaining + overageCount` 改成了 `entitlement + overageCount`,仅在 `remaining == 0` 时等价(旧 fixture 恰好是 0 所以测试仍绿)。已恢复为 `entitlement - remaining + overageCount`。
+
+新增用例:`testLegacyOverageWithPositiveRemainingSubtractsRemaining`(Parser 层)。
 
 ## 10. 实施过程中顺带修复的预存在 Bug
 

@@ -172,6 +172,34 @@ final class CopilotResponseParserTests: XCTestCase {
         XCTAssertEqual(response.rawData["premium_interactions:quota_remaining"], "0.0")
     }
 
+    /// Legacy API shape (`overage_permitted: true`) with a positive
+    /// `remaining`: the legacy branch must subtract `remaining` — the plain
+    /// `entitlement + overage_count` form is only equivalent when
+    /// `remaining == 0` and would over-report here.
+    func testLegacyOverageWithPositiveRemainingSubtractsRemaining() throws {
+        let json = """
+        {
+          "copilot_plan": "pro",
+          "quota_reset_date_utc": "2026-08-01T00:00:00.000Z",
+          "quota_snapshots": {
+            "premium_interactions": {
+              "entitlement": 100,
+              "percent_remaining": 30,
+              "remaining": 30,
+              "unlimited": false,
+              "overage_count": 5,
+              "overage_permitted": true
+            }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+
+        // (100 - 30 + 5) / 100 * 100 = 75
+        XCTAssertEqual(response.rawData["premium_interactions"], "75.0")
+    }
+
     func testMissingQuotaSnapshotsThrows() {
         let json = """
         {

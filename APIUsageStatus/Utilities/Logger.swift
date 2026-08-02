@@ -19,6 +19,16 @@ struct AppLogger {
     /// For Kimi the body is quota numbers (no PII), so this is safe; the
     /// generic NetworkClient path redacts bodies unless the endpoint
     /// opted in via `Endpoint.exposesFailureBodyInLog`.
+    ///
+    /// TODO(pr15-followup): narrow this exposure. Exposing the raw
+    /// `os.Logger` means any future call site can write
+    /// `logger.osLogger.fault("\(token, privacy: .public)")` and bypass
+    /// the "bodies default to .private" policy without a compiler
+    /// error. A spec wrapper such as `func publicError(_ literal:
+    /// StaticString, _ args: CVarArg...)` — or a DEBUG-only gate —
+    /// would keep `.public` use opt-in and greppable. Revisit once the
+    /// Kimi diagnostic logging is retired (see
+    /// `docs/kimi-api-failures-investigation.md` §9).
     var osLogger: os.Logger { logger }
 
     private let logger: os.Logger

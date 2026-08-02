@@ -518,6 +518,61 @@ final class RefreshServiceMappingTests: XCTestCase {
         XCTAssertEqual(s.displayLimit, "7000")
     }
 
+    /// Same over-budget shape as the parser's
+    /// `testOverageDetectedWithoutCreditsUsed` fixture — `remaining < 0`
+    /// but NO `credits_used` key (field drop or legacy-adjacent
+    /// snapshot). `RefreshService` must mirror the parser's shape split
+    /// instead of re-adding `overage_count` on top of a negative
+    /// `remaining`, otherwise the panel text (120 / 100) contradicts
+    /// the progress bar (110%).
+    func testCopilotOverageWithoutCreditsUsed() async {
+        let service = RefreshService(
+            persistenceService: PersistenceService(keychainService: KeychainService()),
+            appState: AppState()
+        )
+
+        let metrics: [MetricConfig] = [
+            MetricConfig(key: "premium_interactions", group: nil, window: nil),
+        ]
+
+        let instance = Instance(
+            uuid: "copilot-overage-nocredits-1",
+            provider: Provider.githubCopilot.rawValue,
+            dimension: "premium_interactions",
+            metrics: metrics,
+            displayName: "Copilot Overage",
+            shortName: "CO",
+            apiKeyRef: "copilot-key",
+            enabled: true,
+            sortOrder: 0,
+            thresholds: .quota(warningPercent: 80, criticalPercent: 95)
+        )
+
+        var rawData: [String: String] = [:]
+        // Parser computes (100 - (-10)) / 100 * 100 = 110%
+        rawData["premium_interactions"] = "110.0"
+        rawData["premium_interactions:unlimited"] = "false"
+        rawData["premium_interactions:entitlement"] = "100"
+        rawData["premium_interactions:remaining"] = "-10"
+        rawData["premium_interactions:overage_count"] = "10"
+        rawData["premium_interactions:overage_permitted"] = "false"
+        // No `credits_used` key on purpose.
+
+        let response = SupplierResponse(rawData: rawData, currency: nil, isAvailable: true)
+
+        let result = await service.mapInstanceToSlotData(
+            instance: instance, response: response
+        )
+
+        let s = result.metricSnapshots[0]
+        XCTAssertEqual(s.percent, 110.0, accuracy: 0.01)
+        // remaining < 0 ⇒ entitlement - remaining = 110, NOT
+        // + overage_count (which would give 120 and contradict the
+        // parser's 110%).
+        XCTAssertEqual(s.displayUsage, "110")
+        XCTAssertEqual(s.displayLimit, "100")
+    }
+
     /// Copilot's parser writes the standard `<key>:end_time` ms key
     /// (derived from `quota_reset_date_utc`). `RefreshService` must
     /// pick it up and populate `cycleEndTime` so the per-card live

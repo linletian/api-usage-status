@@ -1,7 +1,7 @@
 # Kimi API 频繁失败 vs CLI `/usage` 正常 — Investigation
 
 > **日期**: 2026-07-30
-> **状态**: 诊断日志已落地,**未实机验证** —— 合并前需要在真实环境触发一次 Kimi 失败,确认 `log show` 真的能看到 `body=` 那一行(否则整套诊断白做,见 §4 "实机验证步骤")
+> **状态**: **根因已实机确认(2026-08-08/09 日志),修复已落地 `fix/kimi-missing-used-field` 分支** —— API 在数值为 0 时**省略** `used` 字段(proto3 JSON 零值省略语义),parser 的 `numericValue` 把缺字段当致命错误,整次 refresh abort。CLI 用 protobuf 生成的解析器,缺字段默认为 0,所以 `/usage` 永远正常。处置见 §6 已确认行。
 > **报告**: app 调 Kimi API 经常失败,但 `kimi` CLI 的 `/usage` 始终正常
 
 ---
@@ -20,7 +20,9 @@
 - 如果服务端 `/usages` 端点只对 OAuth 会话放行,Console Key 会被持续 401
 - 区分:curl 测试时 **OAuth 200 + Console Key 401** 即确认
 
-### 假设 2 — 字段类型严格校验触发 `parsingError`(中)
+### 假设 2 — 字段类型严格校验触发 `parsingError`(中)→ **已确认(形态略有出入)**
+
+> 2026-08-08 实机确认:触发点不是"非数值"而是"**缺字段**"——`used` 为 0 时服务端按 proto3 JSON 语义省略该字段,`numericValue` 走最后的 `throw ... Missing field` 分支。5h `detail` 和 weekly `usage` 两个块都会中招。详见 §5。
 
 - `KimiResponseParser.numericValue` 对 `limit` / `used` 严格数值校验,非数值直接 abort 整次 refresh
 - `KimiResponseParserTests.testNonNumericLimitThrows` 显式锁定了这个行为
@@ -77,19 +79,53 @@ log show --predicate 'subsystem == "com.example.APIUsageStatus" AND category == 
 
 也可以不修改代码,等真实环境自然失败一次——但如果连续几天都不失败(用户说的是"频繁",但可能不等于"100%"),验证会被卡住。**建议临时改 Key 强制触发一次**。
 
-## 5. 复现数据(待填)
+## 5. 复现数据(已确认,2026-08-08/09)
+
+`log show` 实机验证通过:`body=` 后是真实响应内容,非 `<private>`。24h 内 `category=supplier` 共 **642 条失败,错误信息完全一致**;`category=network` **零条**(HTTP 状态全部 2xx,假设 1 / 假设 3 排除):
 
 ```
-<paste log here>
+error=Parsing error: Missing field in Kimi response: used
 ```
+
+**关键证据 —— 响应体按用量形态分两种**:
+
+| 形态 | 出现次数(24h) | 样本 |
+|------|--------------|------|
+| 5h `detail` 缺 `used`(未用量) | ~633 | `"detail":{"limit":"100", "remaining":"100", "resetTime":"..."}` |
+| 5h `detail` 有 `used`(有用量) | 6 | `"detail":{"limit":"100", "used":"1", "remaining":"99", ...}` |
+| weekly `usage` 缺 `used`(重置后未用量) | 30 | `"usage":{"limit":"100", "remaining":"100", "resetTime":"..."}` |
+| weekly `usage` 有 `used` | 612 | `"usage":{"limit":"100", "used":"100", "resetTime":"..."}` |
+
+规律:**计数器为 0 时服务端省略 `used` 字段;计数器非 0 时字段出现**。这不是"用户开没开 CLI"的相关性,而是"服务端视角下该凭证的计数器是否为 0"的确定性规则——CLI 开着但空闲、或 CLI 的消耗不落进该 API Key 的配额桶时,计数器保持 0,失败就会持续。完整时间线证据:
+
+| 时间段(08-08/09,北京时) | weekly `usage` | 5h `detail` | app 结果 |
+|------------------------|----------------|-------------|---------|
+| 16:59 → 次日 13:20(~20h) | `used:"100"`(已耗尽) | 始终 `remaining:"100"` 无 `used` | **连续 612 次失败**,无一成功 |
+| 13:21(weekly 重置后)→ 15:28 | `remaining:"100"` 无 `used` | 无 `used` | 失败 24 次 |
+| 15:28:47 | 无 `used` | `remaining:"100"` 无 `used` | 失败 |
+| 15:30:10–15:31:32(用户 15:29 前后产生消耗) | 仍无 `used` | **`used:"1", remaining:"99"` 出现** | 仍失败(weekly 块缺 `used`) |
+| 16:06:28 / 16:06:52 | (消耗后两者均有 `used`) | 同左 | **成功**(`KimiSupplier.swift:38` 的 Info 成功日志,插值默认 `.private` 故显示 `<private>`) |
+
+要点:
+- 15:28 → 15:30 的转换是直接证据:消耗发生前 `used` 缺席,消耗发生后 `used:"1"` 立刻出现。**省略 ⟺ 零值**,不是随机抖动。
+- 那 ~20h 里 weekly 已耗尽(100/100)且 5h 计数器从未移动——无论期间 CLI 是否开着,该 API Key 视角下没有任何消耗落进 5h 桶。响应里的 `"authentication":{"method":"METHOD_API_KEY"}` 提示配额统计可能按凭证维度进行,CLI(OAuth)的消耗未必计入 API Key 的桶;这一点无法从日志确证,但**不影响修复方案**。
+- 用户反馈"CLI 开着也连续失败"与本结论一致:开关 CLI 不是变量,计数器是否为 0 才是。
+
+**proto3 JSON 证据**(服务端显然是 protobuf 序列化):
+- 枚举字符串:`"TIME_UNIT_MINUTE"` / `"METHOD_API_KEY"` / `"FEATURE_CODING"`
+- 全零消息序列化为空对象:`"totalQuota":{}`
+- int64 以字符串编码:`"limit":"100"`
+- proto3 JSON 默认省略零值标量 → `used: 0` 被省略
+
+CLI `/usage` 用 protobuf 生成的解析器,缺字段按默认值 0 处理,所以永远正常。
 
 ## 6. 拿到响应后的处置表
 
 | 看到什么 | 假设成立 | 下一步(独立分支) |
 |---------|---------|------------------|
-| `statusCode=401, body={"error":"invalid_token"\|"unauthorized"...}` | 1 | 改用 OAuth token + refresh 流程,涉及 keychain 多凭证管理 |
-| `statusCode=200` 但 parser 抛 `Non-numeric value for limit/used` | 2 | parser 加宽容模式:把 `limit: "unlimited"` 视作无限套餐,而不是 abort |
-| `statusCode=403\|429` 且 body 含 UA 提示 | 3 | `NetworkClient` 加 `User-Agent: kimi-code/x.x.x`(或类似) |
+| ~~`statusCode=401, body={"error":"invalid_token"\|"unauthorized"...}`~~ | ~~1~~ 已排除(24h 内 network category 零条) | ~~改用 OAuth token + refresh 流程,涉及 keychain 多凭证管理~~ |
+| `statusCode=200` 但 parser 抛 `Missing field: used`(**实际形态**,与假设 2 同类:字段严格校验) | **2 已确认** | **已修复(`fix/kimi-missing-used-field` 分支)**:`KimiResponseParser` 新增 `numericValueOrZeroIfOmitted`,`used` 缺失按 proto3 语义视为 0(生产日志证实"省略 ⟺ 零值",无需 `limit - remaining` 交叉验证);`limit` 及"存在但非数值"的 `used` 仍严格抛错。单测锁定生产实测响应形态(weekly 缺 `used`、5h `detail` 缺 `used`、`used` 非数值仍抛) |
+| ~~`statusCode=403\|429` 且 body 含 UA 提示~~ | ~~3~~ 已排除(同上) | ~~`NetworkClient` 加 `User-Agent: kimi-code/x.x.x`(或类似)~~ |
 | 其它 | - | 开新分支深入,补额外日志或重试策略 |
 
 ## 7. 本分支实际包含的改动

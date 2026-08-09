@@ -30,11 +30,16 @@ import Foundation
 /// keys so `RefreshService` populates `cycleEndTime` like any other provider.
 ///
 /// Strictness follows `CopilotResponseParser`: when a window block is present but its
-/// `limit` / `used` fields are missing or non-numeric, the parser throws
+/// `limit` field is missing or non-numeric, the parser throws
 /// `RefreshError.parsingError` instead of inventing a percent (which could trigger
-/// false threshold alerts). When a block is absent entirely the window reports 0%
-/// (and the weekly window reports `weekly_status = "0"`, i.e. unlimited), matching
-/// `MiniMaxResponseParser`'s "no quota tracked" semantics.
+/// false threshold alerts). `used` is the one exception: the server serializes with
+/// proto3 JSON semantics and **omits zero-valued scalars**, so a missing `used` means
+/// the counter is 0 (verified against 24h of production logs, 2026-08-08/09 — every
+/// omission coincided with `remaining == limit`, and `used: "1"` appeared the moment
+/// consumption started). A present-but-non-numeric `used` still throws. When a block
+/// is absent entirely the window reports 0% (and the weekly window reports
+/// `weekly_status = "0"`, i.e. unlimited), matching `MiniMaxResponseParser`'s
+/// "no quota tracked" semantics.
 struct KimiResponseParser {
     /// Fixed group identifier — Kimi For Coding exposes exactly one quota group
     /// (unlike MiniMax's per-model groups), so both windows share it.
@@ -59,7 +64,7 @@ struct KimiResponseParser {
 
         if let detail = rollingEntry?["detail"] as? [String: Any] {
             let limit = try numericValue(detail, key: "limit")
-            let used = try numericValue(detail, key: "used")
+            let used = try numericValueOrZeroIfOmitted(detail, key: "used")
             let usagePercent = Self.usagePercent(used: used, limit: limit)
             rawData[group] = formatPercent(usagePercent)
             rawData["\(group):status"] = "1"
@@ -93,7 +98,7 @@ struct KimiResponseParser {
         // --- Weekly subscription quota (usage) ---
         if let usage = json["usage"] as? [String: Any] {
             let limit = try numericValue(usage, key: "limit")
-            let used = try numericValue(usage, key: "used")
+            let used = try numericValueOrZeroIfOmitted(usage, key: "used")
             let usagePercent = Self.usagePercent(used: used, limit: limit)
             rawData["\(group):weekly_percent"] = formatPercent(usagePercent)
             // limit <= 0 with a present block means the plan does not enforce
@@ -149,6 +154,17 @@ struct KimiResponseParser {
             )
         }
         throw RefreshError.parsingError("Missing field in Kimi response: \(key)")
+    }
+
+    /// Like `numericValue` but treats a missing key as 0. The server serializes
+    /// with proto3 JSON semantics and omits zero-valued scalars — verified against
+    /// 24h of production logs (2026-08-08/09): every `used` omission coincided
+    /// with `remaining == limit`, and `used: "1"` appeared the moment consumption
+    /// started. Missing therefore means "counter is 0", not a malformed response.
+    /// A present-but-non-numeric value still throws, same as `numericValue`.
+    private func numericValueOrZeroIfOmitted(_ entry: [String: Any], key: String) throws -> Double {
+        guard entry[key] != nil else { return 0 }
+        return try numericValue(entry, key: key)
     }
 
     private func tolerantInt(_ value: Any?) -> Int? {

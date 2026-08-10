@@ -1,7 +1,7 @@
 # Kimi API 频繁失败 vs CLI `/usage` 正常 — Investigation
 
 > **日期**: 2026-07-30
-> **状态**: **根因已实机确认(2026-08-08/09 日志),修复已落地 `fix/kimi-missing-used-field` 分支** —— API 在数值为 0 时**省略** `used` 字段(proto3 JSON 零值省略语义),parser 的 `numericValue` 把缺字段当致命错误,整次 refresh abort。CLI 用 protobuf 生成的解析器,缺字段默认为 0,所以 `/usage` 永远正常。处置见 §6 已确认行。
+> **状态**: **根因已实机确认(2026-08-08/09 日志),修复已落地 PR #17** —— API 在数值为 0 时**省略** `used` 字段(proto3 JSON 零值省略语义),parser 的 `numericValue` 把缺字段当致命错误,整次 refresh abort。CLI 用 protobuf 生成的解析器,缺字段默认为 0,所以 `/usage` 永远正常。处置见 §6 已确认行。
 > **报告**: app 调 Kimi API 经常失败,但 `kimi` CLI 的 `/usage` 始终正常
 
 ---
@@ -124,7 +124,7 @@ CLI `/usage` 用 protobuf 生成的解析器,缺字段按默认值 0 处理,所�
 | 看到什么 | 假设成立 | 下一步(独立分支) |
 |---------|---------|------------------|
 | ~~`statusCode=401, body={"error":"invalid_token"\|"unauthorized"...}`~~ | ~~1~~ 已排除(24h 内 network category 零条) | ~~改用 OAuth token + refresh 流程,涉及 keychain 多凭证管理~~ |
-| `statusCode=200` 但 parser 抛 `Missing field: used`(**实际形态**,与假设 2 同类:字段严格校验) | **2 已确认** | **已修复(`fix/kimi-missing-used-field` 分支)**:`KimiResponseParser` 新增 `numericValueOrZeroIfOmitted`,`used` 缺失按 proto3 语义视为 0(生产日志证实"省略 ⟺ 零值",无需 `limit - remaining` 交叉验证);`limit` 及"存在但非数值"的 `used` 仍严格抛错。单测锁定生产实测响应形态(weekly 缺 `used`、5h `detail` 缺 `used`、`used` 非数值仍抛) |
+| `statusCode=200` 但 parser 抛 `Missing field: used`(**实际形态**,与假设 2 同类:字段严格校验) | **2 已确认** | **已修复(PR #17)**:`KimiResponseParser` 新增 `numericValueOrZeroIfOmitted`,`used` 缺失按 proto3 语义视为 0(生产日志证实"省略 ⟺ 零值",无需 `limit - remaining` 交叉验证);`limit` 及"存在但非数值"的 `used` 仍严格抛错。单测锁定生产实测响应形态(weekly 缺 `used`、5h `detail` 缺 `used`、`used` 非数值仍抛) |
 | ~~`statusCode=403\|429` 且 body 含 UA 提示~~ | ~~3~~ 已排除(同上) | ~~`NetworkClient` 加 `User-Agent: kimi-code/x.x.x`(或类似)~~ |
 | 其它 | - | 开新分支深入,补额外日志或重试策略 |
 

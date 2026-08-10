@@ -303,7 +303,7 @@ final class KimiResponseParserTests: XCTestCase {
         XCTAssertEqual(response.rawData["kimi"], "0.0")
         XCTAssertEqual(response.rawData["kimi:status"], "1")
         XCTAssertEqual(response.rawData["kimi:remaining"], "100.0")
-        XCTAssertNotEqual(response.rawData["kimi:end_time"], "0")
+        XCTAssertEqual(response.rawData["kimi:end_time"], "1786184454627")
         XCTAssertEqual(response.rawData["kimi:weekly_percent"], "100.0")
     }
 

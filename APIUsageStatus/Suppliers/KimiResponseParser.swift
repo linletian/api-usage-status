@@ -156,12 +156,11 @@ struct KimiResponseParser {
         throw RefreshError.parsingError("Missing field in Kimi response: \(key)")
     }
 
-    /// Like `numericValue` but treats a missing key as 0. The server serializes
-    /// with proto3 JSON semantics and omits zero-valued scalars — verified against
-    /// 24h of production logs (2026-08-08/09): every `used` omission coincided
-    /// with `remaining == limit`, and `used: "1"` appeared the moment consumption
-    /// started. Missing therefore means "counter is 0", not a malformed response.
-    /// A present-but-non-numeric value still throws, same as `numericValue`.
+    /// Like `numericValue` but treats a missing key as 0 (proto3 JSON zero-value
+    /// omission — evidence in the struct-level docstring above). Note that JSON
+    /// `null` is NOT "missing": `JSONSerialization` maps it to `NSNull`, so the
+    /// `nil` check lets it through and `numericValue` throws. That is deliberate —
+    /// proto3 omits zero values rather than sending `null`.
     private func numericValueOrZeroIfOmitted(_ entry: [String: Any], key: String) throws -> Double {
         guard entry[key] != nil else { return 0 }
         return try numericValue(entry, key: key)

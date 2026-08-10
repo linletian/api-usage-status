@@ -268,9 +268,50 @@ final class KimiResponseParserTests: XCTestCase {
         }
     }
 
-    func testMissingUsedFieldThrows() {
+    /// Real production shape captured from 24h of logs (2026-08-08/09): the server
+    /// serializes with proto3 JSON semantics and omits `used` when the counter is 0.
+    /// Missing `used` must parse as 0% — this was the dominant failure mode in
+    /// production (642 consecutive refresh failures, see
+    /// docs/kimi-api-failures-investigation.md §5).
+    func testMissingUsedInWeeklyUsageTreatedAsZero() throws {
         let json = """
-        { "usage": { "limit": "100" } }
+        { "usage": { "limit": "100", "remaining": "100", "resetTime": "2026-08-16T05:20:54.627714Z" } }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+
+        XCTAssertEqual(response.rawData["kimi:weekly_percent"], "0.0")
+        XCTAssertEqual(response.rawData["kimi:weekly_status"], "1")
+        XCTAssertEqual(response.rawData["kimi:weekly_remaining"], "100.0")
+    }
+
+    /// The exact 5h `detail` shape the server returned ~633 times in 24h while the
+    /// rolling window was untouched: `limit` + `remaining` + `resetTime`, no `used`.
+    func testMissingUsedInRollingDetailTreatedAsZero() throws {
+        let json = """
+        {
+          "usage": { "limit": "100", "used": "100", "resetTime": "2026-08-09T05:20:54.627714Z" },
+          "limits": [
+            { "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
+              "detail": { "limit": "100", "remaining": "100", "resetTime": "2026-08-08T10:20:54.627714Z" } }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let response = try parser.parse(json)
+
+        XCTAssertEqual(response.rawData["kimi"], "0.0")
+        XCTAssertEqual(response.rawData["kimi:status"], "1")
+        XCTAssertEqual(response.rawData["kimi:remaining"], "100.0")
+        XCTAssertEqual(response.rawData["kimi:end_time"], "1786184454627")
+        XCTAssertEqual(response.rawData["kimi:weekly_percent"], "100.0")
+    }
+
+    /// Zero-omission tolerance does not extend to garbage: a present but
+    /// non-numeric `used` must still fail the refresh, same as `limit`.
+    func testNonNumericUsedThrows() {
+        let json = """
+        { "usage": { "limit": "100", "used": "abc" } }
         """.data(using: .utf8)!
 
         XCTAssertThrowsError(try parser.parse(json)) { error in

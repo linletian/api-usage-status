@@ -103,7 +103,7 @@ Authorization: Bearer <kimiCodeConsoleApiKey>
 | `kimi:membership` | 会员等级字符串（可选） | 调试/未来详情面板 |
 | `kimi:parallel_limit` | 并发上限（可选） | 调试/未来详情面板 |
 
-**严格性（对齐 Copilot parser）**：窗口块存在但 `limit` / `used` 缺失或非数值时**抛 `RefreshError.parsingError`** —— 不静默默认 0，避免 API 变更时触发假告警。整块缺失才走 0% / 无限语义（对齐 MiniMax parser 的 "no quota tracked"）。
+**严格性（对齐 Copilot parser）**：窗口块存在但 `limit` 缺失或非数值时**抛 `RefreshError.parsingError`** —— 不静默默认 0，避免 API 变更时触发假告警。**`used` 是唯一例外**：服务端按 proto3 JSON 语义序列化，零值标量字段直接省略（2026-08-08/09 生产日志实证：所有 `used` 省略都伴随 `remaining == limit`，消耗发生后 `used: "1"` 立即出现），所以 `used` 缺失按 0 处理；但 `used` 存在且非数值仍抛错。整块缺失才走 0% / 无限语义（对齐 MiniMax parser 的 "no quota tracked"）。
 
 ---
 
@@ -162,7 +162,9 @@ RefreshService
 | 错误来源 | 抛出 | 映射 |
 |---------|------|------|
 | JSON 解析失败 | `RefreshError.parsingError("Invalid JSON from Kimi API")` | UI 显示"解析失败" |
-| 窗口块存在但 `limit`/`used` 缺失或非数值 | `RefreshError.parsingError(...)` | 同上（故意严格，防止假数据触发误报） |
+| 窗口块存在但 `limit` 缺失或非数值 | `RefreshError.parsingError(...)` | 同上（故意严格，防止假数据触发误报） |
+| `used` 缺失（proto3 JSON 零值省略） | **不抛错**，按 0 处理（2026-08-08/09 生产日志实证：省略 ⟺ 计数器为 0） | 正常展示 0% / 100% 剩余 |
+| `used` 存在但非数值 | `RefreshError.parsingError(...)` | 同 `limit`，故意严格 |
 | `limits` 空 / `usage` 缺失 | **不抛错**，5h 报 0%、周报无限 | 正常展示 |
 | `resetTime` 缺失/不可解析（5h 窗口） | **不抛错**，`kimi:end_time = "0"`，并声明 `metricCycleEndPolicies["kimi"] = .retainPreviousIfResponseMissing` | 通用 mapper 仅继承 cycle-start previous slot 中未过期的旧 `cycleEndTime`；新百分比、颜色、weekly 照常使用本次响应；旧缓存过期或不存在的行为与初次失败相同 |
 | HTTP 401（Key 无效/过期） | `NetworkClient` 抛 `httpError(statusCode: 401)` | UI 显示"鉴权失败" |
@@ -180,7 +182,8 @@ RefreshService
 - 300 分钟窗口定位（乱序数组）与未知窗口兜底取首条
 - resetTime 无小数秒解析、不可解析写 0 并声明 5h 策略；有效 5h 不声明
 - weekly 不可解析不会误声明 5h 策略
-- `limit` 非数值 / `used` 缺失 / 非法 JSON → 抛 parsingError
+- `limit` 非数值 / `used` 非数值 / 非法 JSON → 抛 parsingError
+- `used` 缺失（proto3 零值省略，含生产实测响应形态）→ 按 0 解析，不抛错
 
 `APIUsageStatusTests/RefreshServiceMappingTests.swift` 中额外的 provider-neutral 覆盖：
 
@@ -197,7 +200,7 @@ RefreshService
 
 | 风险 | 影响 | 缓解 |
 |------|------|------|
-| `/usages` 端点未出现在公开 API 文档（CLI 面板后端） | 端点可能改版 | 解析只依赖核心字段（limit/used/resetTime）；块级缺失走 0%/无限而非崩溃；关键字段缺失抛清晰 parsingError |
+| `/usages` 端点未出现在公开 API 文档（CLI 面板后端） | 端点可能改版 | 解析只依赖核心字段（limit/used/resetTime）；块级缺失走 0%/无限而非崩溃；`used` 缺失按 proto3 零值省略处理；`limit` 等关键字段缺失/非数值抛清晰 parsingError |
 | Console API Key 对 `/usages` 的兼容性未逐 Key 验证（调研时手头无 Key，OAuth token 实测 200） | 首次接入可能 401 | UI 显示"鉴权失败"，引导用户到 Console 重建 Key；备选方案是读 CLI OAuth 凭证（需实现 refresh，见 §1） |
 | limit/used 单位变化（如从配额点数改为 token 数） | 百分比仍正确（used/limit 比值不变），但绝对值不可解读 | 当前 UI 只展示百分比，与 MiniMax 一致 |
 | 新会员体系上线（官方已预告套餐权益拆分） | 响应结构可能变化 | 解析容错 + 严格字段校验会在刷新失败时显式报错，不会静默显示错数据 |

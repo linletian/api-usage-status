@@ -41,7 +41,6 @@ APIUsageStatus.app
 
 # CodeWhale / AI tool configs
 .codewhale/
-AGENTS.md
 .omo/
 
 # Xcode code coverage profiling data

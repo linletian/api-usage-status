@@ -206,4 +206,66 @@ final class InstanceEditorViewValidationTests: XCTestCase {
         XCTAssertTrue(newNoModels.isFormFilled,
                       "New MiniMax instance with no model list yet must be saveable with shortName alone")
     }
+
+    // MARK: - Banner visibility (user-action gate)
+
+    /// PR #23 review: the warning banner must not fire when the
+    /// user just opens an already-paused instance — the form's
+    /// load hook resets `hasUserTouchedMetrics` so the
+    /// forward-looking wording ("this will pause tracking") only
+    /// surfaces when the *current* session disabled the metrics.
+    func testBannerHiddenOnOpenForAlreadyPausedInstance() {
+        // Simulate the state right after `loadExistingData()`:
+        // empty metrics in an edit form, no user action yet.
+        let showBefore = InstanceEditorView.shouldShowAllMetricsBanner(
+            provider: .minimax,
+            selectedMetrics: [],
+            isEditing: true,
+            hasUserTouchedMetrics: false,
+            miniMaxModelNames: validModelNames
+        )
+        XCTAssertFalse(showBefore,
+                       "Banner must be hidden until the user actually touches the metric list")
+
+        // After the user touches metrics, the banner may surface
+        // (still gated on metrics being empty).
+        let showAfter = InstanceEditorView.shouldShowAllMetricsBanner(
+            provider: .minimax,
+            selectedMetrics: [],
+            isEditing: true,
+            hasUserTouchedMetrics: true,
+            miniMaxModelNames: validModelNames
+        )
+        XCTAssertTrue(showAfter,
+                      "Banner must surface once the user has interacted and emptied the list")
+    }
+
+    /// New-instance path: even with `hasUserTouchedMetrics=true`,
+    /// a new instance with zero metrics must NOT show the banner
+    /// (the form is unsaveable in that state — no need to warn).
+    func testBannerHiddenForNewInstanceEvenAfterUserTouch() {
+        let show = InstanceEditorView.shouldShowAllMetricsBanner(
+            provider: .minimax,
+            selectedMetrics: [],
+            isEditing: false,
+            hasUserTouchedMetrics: true,
+            miniMaxModelNames: validModelNames
+        )
+        XCTAssertFalse(show,
+                       "Banner is edit-only; a new instance form is not the right context")
+    }
+
+    /// Even with `hasUserTouchedMetrics=true`, an edit form with
+    /// at least one metric selected must not show the banner.
+    func testBannerHiddenWhenAtLeastOneMetricRemains() {
+        let show = InstanceEditorView.shouldShowAllMetricsBanner(
+            provider: .minimax,
+            selectedMetrics: validMetrics,
+            isEditing: true,
+            hasUserTouchedMetrics: true,
+            miniMaxModelNames: validModelNames
+        )
+        XCTAssertFalse(show,
+                       "Banner is only for the all-disabled case")
+    }
 }

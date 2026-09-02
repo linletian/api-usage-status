@@ -155,4 +155,17 @@ final class AppStateProxy: ObservableObject {
         await appState.updateInstance(instance)
         await syncFromState()
     }
+
+    /// Flip a single instance's tracking flag and immediately propagate
+    /// the change to `@Published` consumers (menu bar, usage panel).
+    ///
+    /// The toggle is intentionally non-throwing: it does no disk IO, so
+    /// there is nothing to fail. Callers that need to react to a no-op
+    /// (e.g. logging, suppressing a duplicate UI event) can read the
+    /// boolean return value of `AppState.setInstanceTracking` directly.
+    /// See issue #20.
+    func setInstanceTracking(uuid: String, enabled: Bool) async {
+        await appState.setInstanceTracking(uuid: uuid, enabled: enabled)
+        await syncFromState()
+    }
 }

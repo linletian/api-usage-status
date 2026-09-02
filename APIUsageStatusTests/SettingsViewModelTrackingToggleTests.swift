@@ -199,6 +199,66 @@ final class SettingsViewModelTrackingToggleTests: XCTestCase {
                       "Net result matches baseline: runtime state must be tracking on")
     }
 
+    // MARK: - Delete instance propagates to AppState
+
+    /// PR #23 review: deleting an instance from the settings draft
+    /// must immediately remove it from the runtime `AppState`,
+    /// otherwise `discardChanges` could leave the runtime in a
+    /// state where an instance the user wants gone still has its
+    /// slot visible. The deletion is a "single-UUID" event with
+    /// the same propagation contract as `setInstanceTracking`.
+    func testDeleteInstanceImmediatelyNotifiesAppState() async {
+        let viewModel = makeViewModel()
+        let inst = makeInstance(uuid: "inst-1", displayName: "Alpha", enabled: true)
+        try? await persistenceService.saveInstances([inst], settings: .default)
+        await viewModel.load()
+        // `viewModel.load()` only seeds the local draft; the
+        // shared `appState` from `setUp` still needs the instance
+        // (in production this is wired through `appStateProxy.initialize()`).
+        await appState.setInstances([inst])
+
+        // Sanity: instance is live in AppState after the seed.
+        var live = await appState.getInstances()
+        XCTAssertEqual(live.count, 1)
+        XCTAssertEqual(live[0].uuid, "inst-1")
+
+        await viewModel.deleteInstance(inst)
+
+        live = await appState.getInstances()
+        XCTAssertTrue(live.isEmpty,
+                      "deleteInstance must evict the UUID from the runtime AppState")
+    }
+
+    /// PR #23 review follow-up: the previous delete implementation
+    /// only mutated the local draft. Sequence: toggle A off →
+    /// delete A → click Discard. The local draft restored A with
+    /// trackingEnabled=true, but AppState still held A with
+    /// trackingEnabled=false, so the slot stayed pruned. With the
+    /// new delete path, AppState drops A on delete and Discard
+    /// brings the local draft back to the loaded state — both
+    /// sides agree "A is alive, tracking on, no slot yet".
+    func testDeleteThenDiscardStaysConsistent() async {
+        let viewModel = makeViewModel()
+        let inst = makeInstance(uuid: "inst-1", displayName: "Alpha", enabled: true)
+        try? await persistenceService.saveInstances([inst], settings: .default)
+        await viewModel.load()
+        await appState.setInstances([inst])
+
+        await viewModel.setInstanceTrackingEnabled(uuid: "inst-1", enabled: false)
+        await viewModel.deleteInstance(inst)
+
+        // AppState has already forgotten the instance.
+        var live = await appState.getInstances()
+        XCTAssertTrue(live.isEmpty)
+
+        // Discard: brings the local draft back to the loaded state.
+        await viewModel.discardChanges()
+        live = await appState.getInstances()
+        XCTAssertEqual(live.count, 1)
+        XCTAssertTrue(live[0].trackingEnabled,
+                      "Discard must leave AppState and draft consistent: instance restored with tracking on")
+    }
+
     // MARK: - Save persists toggle
 
     /// A toggle followed by `save()` must persist the new

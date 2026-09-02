@@ -275,4 +275,52 @@ final class AppStateTrackingToggleTests: XCTestCase {
         XCTAssertEqual(slots.first?.displayName, "Alpha-Refreshed",
                        "Post-enable refresh must rebuild the slot with fresh data")
     }
+
+    // MARK: - removeInstance
+
+    /// Removing a UUID that's not in `_instances` is a no-op. Same
+    /// defensive contract as `setInstanceTracking`'s missing-UUID
+    /// path — the settings flow's `deletedInstances` loop in
+    /// `save()` calls this redundantly for instances that have
+    /// already been evicted.
+    func testRemoveInstanceUnknownUuidIsNoOp() async {
+        let appState = AppState()
+        let inst = makeInstance(uuid: "inst-1")
+        await appState.setInstances([inst])
+
+        let removed = await appState.removeInstance(uuid: "ghost")
+        XCTAssertFalse(removed, "Unknown UUID must report no change")
+
+        let instances = await appState.getInstances()
+        XCTAssertEqual(instances.count, 1)
+    }
+
+    /// The basic happy path: known UUID is removed from both
+    /// `_instances` and `_slotViewDataList`. `removeInstance` is
+    /// the per-instance analog of `setInstances` (full replace)
+    /// and the missing-UUID guard ensures idempotency.
+    func testRemoveInstanceEvictsFromInstancesAndSlots() async {
+        let appState = AppState()
+        let a = makeInstance(uuid: "a")
+        let b = makeInstance(uuid: "b")
+        await appState.setInstances([a, b])
+        await appState.mergeCycleResult(
+            cycleSuccesses: [
+                makeSlot(uuid: "a", displayName: "A"),
+                makeSlot(uuid: "b", displayName: "B"),
+            ],
+            cycleErroredUUIDs: []
+        )
+
+        let removed = await appState.removeInstance(uuid: "a")
+        XCTAssertTrue(removed)
+
+        let instances = await appState.getInstances()
+        XCTAssertEqual(Set(instances.map(\.uuid)), ["b"],
+                       "Removed UUID must be evicted from _instances")
+
+        let slots = await appState.getSlotViewDataList()
+        XCTAssertEqual(uuids(of: slots), ["b"],
+                       "Removed UUID's slot must be evicted from the buffer")
+    }
 }

@@ -156,6 +156,17 @@ final class AppStateProxy: ObservableObject {
         await syncFromState()
     }
 
+    /// Drop a single instance from the live state immediately. Used
+    /// by `SettingsViewModel.deleteInstance` so the menu bar
+    /// reflects the deletion without waiting for the next save
+    /// cycle. Pairs with `setInstanceTracking` to give the settings
+    /// flow a complete per-instance mutation surface. See PR #23
+    /// review.
+    func removeInstance(uuid: String) async {
+        await appState.removeInstance(uuid: uuid)
+        await syncFromState()
+    }
+
     /// Flip a single instance's tracking flag and immediately propagate
     /// the change to `@Published` consumers (menu bar, usage panel).
     ///

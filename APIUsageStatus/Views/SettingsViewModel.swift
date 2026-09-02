@@ -76,10 +76,10 @@ final class SettingsViewModel: ObservableObject {
     }
 
     func discardChanges() async {
-        // Roll back any tracking toggles that already took effect on the
-        // runtime AppState. Comparing per-UUID avoids a full
-        // `setInstances(originalInstances)` rebuild, which would re-flash
-        // the menu bar for every unrelated instance. See issue #20.
+        // Per-UUID toggle rollback — preserves slot data for
+        // unrelated instances by avoiding a full `_instances`
+        // rewrite. Sufficient when the draft *only* changed
+        // tracking flags on existing instances. See issue #20.
         for instance in originalInstances {
             if let current = instances.first(where: { $0.uuid == instance.uuid }),
                current.trackingEnabled != instance.trackingEnabled {
@@ -95,6 +95,19 @@ final class SettingsViewModel: ObservableObject {
         apiKeys = [:]
         saveError = nil
         launchAtLoginError = nil
+
+        // The per-UUID rollback above is insufficient when the
+        // draft also added or removed instances — those need a
+        // full `setInstances` to take effect (e.g. the user
+        // toggled A off then deleted A, then clicked Discard;
+        // without this pass the runtime AppState would still be
+        // missing A while the local draft would have it back).
+        // `setInstances` runs `pruneDisabledSlots` so the runtime
+        // matches the restored tracking state. See PR #23 review.
+        await appState.setInstances(instances)
+        await appState.updateSettings(settings)
+        await appStateProxy.syncFromState()
+
         logger.info("SettingsViewModel discarded unsaved changes")
     }
 
@@ -238,6 +251,13 @@ final class SettingsViewModel: ObservableObject {
         instances.removeAll { $0.uuid == instance.uuid }
         apiKeys.removeValue(forKey: instance.uuid)
         recomputeSortOrders()
+        // Propagate the deletion to the runtime AppState so the
+        // menu bar slot disappears immediately and the discard
+        // path stays consistent. `removeInstance` is a no-op when
+        // the UUID is already gone, so the second-call path in
+        // `save()`'s `deletedInstances` loop is safe. See PR #23
+        // review.
+        await appStateProxy.removeInstance(uuid: instance.uuid)
     }
 
     func moveInstances(fromOffsets source: IndexSet, toOffset destination: Int) {

@@ -118,6 +118,22 @@ actor AppState {
         }
     }
 
+    /// Remove an instance from the live state and drop any cached
+    /// slot for its UUID. Mirrors `setInstanceTracking` in
+    /// "single-UUID, immediate propagation" semantics so callers
+    /// from the settings flow (delete button, future drag-to-trash,
+    /// etc.) don't have to batch-rewrite `_instances` to evict
+    /// one entry. Returns `true` when the UUID was found.
+    /// See PR #23 review.
+    @discardableResult
+    func removeInstance(uuid: String) -> Bool {
+        let before = _instances.count
+        _instances.removeAll { $0.uuid == uuid }
+        guard _instances.count < before else { return false }
+        _slotViewDataList.removeAll { $0.uuid == uuid }
+        return true
+    }
+
     func setLastRefreshAt(_ date: Date?) {
         _lastRefreshAt = date
     }

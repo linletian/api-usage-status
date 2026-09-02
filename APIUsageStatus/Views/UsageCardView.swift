@@ -54,7 +54,10 @@ struct UsageCardView: View {
         case .githubCopilot:
             return URL(string: "https://github.com/settings/billing/ai_usage")
         case .kimi:
-            return URL(string: "https://www.kimi.com/code/console")
+            // Issue #18: jump to the membership quota page (Kimi Code
+            // membership shares the same quota) instead of the API key
+            // console.
+            return URL(string: "https://www.kimi.com/membership/subscription?tab=quota")
         case .opencode:
             // Read the cache only — log scanning happens off-thread at app
             // launch via `OpenCodeWorkspaceResolver.prewarm()`. On a cold

@@ -149,7 +149,7 @@ RefreshService
 ```
 
 **关键耦合点**：
-- `Views/UsageCardView.swift` 的 `providerURL`：`.kimi` → `https://www.kimi.com/code/console`
+- `Views/UsageCardView.swift` 的 `providerURL`：`.kimi` → `https://www.kimi.com/membership/subscription?tab=quota`
 - `Views/InstanceEditorView.swift`：`kimiMetricsList`（OpenCode 风格的双窗口开关列表）、`apiKeyPlaceholder`、`resetMetricsForProvider` 三处分支
 - `Extensions/Provider+Icon.swift`：`moon.stars`
 - 凭据存储：复用 `KeychainService`（service = "APIUsageStatus"，apiKeyRef = UUID），与其它供应商一致

@@ -260,10 +260,9 @@
 
 **取消协作（详见 §6.3）**
 
-`Task.cancel()` 必须能传达到网络层和 Shell 层：
+`Task.cancel()` 必须能传达到网络层：
 
 - `URLSession.data(for:)` 自动抛 `URLError(.cancelled)`，`NetworkClient.mapURLError` 单独识别 `.cancelled` → 抛 `CancellationError`，**不**映射为 `.networkUnreachable`、**不**触发 RetryPolicy 重试
-- `ShellProcessRunner.run` 用 `withTaskCancellationHandler` 包裹，在 `onCancel` 中立刻 `process.terminate()`（SIGTERM），不等 timeout
 - `RetryPolicy.withRetry` 每次 `attempt` 顶端 `try Task.checkCancellation()`
 - `performRefresh` 自身在每个 key 组循环顶端也调用 `try Task.checkCancellation()`，让取消尽快冒泡
 
@@ -304,7 +303,7 @@ enum MetricCycleEndPolicy: Equatable {
   3. 否则 `cycleEndTime` 为 nil，倒计时行隐藏。
 - `now` 在每次 mapper 调用内通过 `Date()` 重新读取；`performRefresh` 在每个 `api_key_ref` 组的循环体内再调一次，避免被慢 supplier 拉长过期判定窗口。
 - `previousSlot` 由 `performRefresh` 在循环开始、`pushProgress()` 之前调用 `appState.getSlotViewDataList()` 一次捕获，构建 `[UUID: SlotViewData]` 索引；普通映射与 MiniMax auto-discover 重映射共用同一索引，确保两次映射都看到一致的 cycle-start 状态。
-- 继承路径只复用 `cycleEndTime` / `cycleRemainingSeconds`；`percent`、`colorState`、`displayUsage/Limit`、`isUnlimited`、`shortName`、`overageUSD`、`configIndex` 始终来自本次响应，`lastFetchedAt` 仍使用网络返回后的 `fetchTime`。
+- 继承路径只复用 `cycleEndTime` / `cycleRemainingSeconds`；`percent`、`colorState`、`displayUsage/Limit`、`isUnlimited`、`shortName`、`configIndex` 始终来自本次响应，`lastFetchedAt` 仍使用网络返回后的 `fetchTime`。
 
 ### 2.9 持久化服务（`PersistenceService.swift`）
 
@@ -699,10 +698,9 @@ struct MetricSnapshot: Equatable {
     let key: String
     let group: String?
     let window: String?
-    let percent: Double              // 用量百分比（可超过 100% 当开启套餐外余额消费时）
+    let percent: Double              // 用量百分比（GitHub Copilot 超支时可超过 100%；其余供应商上限 100）
     let displayUsage: String         // 预格式化的用量字符串（如 "369"、"$15.00"、"¥42.50"）
     let displayLimit: String         // 预格式化的上限字符串（可为空）
-    let overageUSD: Double           // OpenCode Go 超额消费的美元金额（无超额时为 0）
     let cycleEndTime: Date?          // 当前重置周期的绝对结束时间（per-row TimelineView 实时倒计时的权威源；每个 MetricSnapshot 独立驱动一条时间线）。`RefreshService` 在响应缺失/非法 end_time 且 parser 声明 `.retainPreviousIfResponseMissing` 策略时，会从 cycle-start previous slot 继承未过期的旧 end time；其他供应商、其他 metric 永远 nil
     let cycleRemainingSeconds: Int?  // 同次刷新时刻的剩余秒数快照（cycleEndTime - now，向下取整到 0），供 `cycleEndTime == nil` 的 snapshot 使用；也供 `InstanceType.quota` 等无 Date() 的调用方使用
     let colorState: ColorState
@@ -956,10 +954,9 @@ struct Endpoint {
 - 每次 `attempt` 顶端调用 `try Task.checkCancellation()`——否则取消会被吞掉继续重试，导致手动抢占在网络慢时要等完整个重试链才生效（最坏 30s+30s+30s ≈ 90s）
 - 抛出的 `CancellationError` **不**视为"网络错误重试"，因此重试策略在遇到 cancellation 时直接上抛，由外层 `performRefresh` 触发 `setRefreshingInstanceUUIDs([])` 清理
 
-**网络层与 Shell 层的 cancellation 透传：**
+**网络层的 cancellation 透传：**
 
 - `NetworkClient.request` 捕获 `URLError(.cancelled)` 时**不**映射为 `.networkUnreachable`，而是直接 `throw CancellationError()`——否则会把"用户取消"伪装成"网络故障"，RetryPolicy 会对 cancellation 触发重试，浪费 30s+ 且日志误导
-- `ShellProcessRunner.run` 用 `withTaskCancellationHandler { … } onCancel: { process.terminate() }` 包裹，在父任务被取消时立即给子进程发 SIGTERM（不等配置的 timeout）。Task.detached 内部的 `waitUntilExit()` / `readDataToEndOfFile()` 不需要主动取消——进程被 SIGTERM 后它们会自然返回
 
 ### 6.4 供应商实现
 
@@ -1694,7 +1691,6 @@ APIUsageStatus/
 │   ├── FlowingGlowBarTests.swift
 │   ├── MenuBarIconRendererTests.swift
 │   ├── OpenCodeResponseParserTests.swift
-│   ├── ShellProcessRunnerTests.swift
 │   ├── BreathingMathTests.swift
 │   ├── PersistenceServiceTests.swift    # Schema 版本化 + v1→v2 迁移检测
 │   ├── SchemaVersionTests.swift         # InstancesContainer schemaVersion 编解码

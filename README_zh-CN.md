@@ -14,7 +14,7 @@
 - **阈值告警** — 配额百分比或余额金额触发 macOS 系统通知，点击通知查看详情
 - **Web 控制台深链** — 每张卡片底部「See details」按钮一键在默认浏览器打开对应供应商的用量详情页（DeepSeek / MiniMax / GitHub Copilot 用静态 URL；OpenCode 解析本地日志得到 workspace ID 后跳转到 `https://opencode.ai/workspace/<id>/go`，未拿到时兜底到 `https://opencode.ai/zh/go`）
 - **余额追踪** — 记录历史快照，按周/月/近7天/近30天展示日均消耗
-- **零外部依赖** — 仅使用 AppKit、SwiftUI、Security 等系统框架。OpenCode Go 供应商需本地安装 `opencode` CLI。
+- **零外部依赖** — 仅使用 AppKit、SwiftUI、Security 等系统框架。
 
 | <img src="docs/README_assets/ScreenShot_Light.png" alt="用量面板截图（浅色）"> | <img src="docs/README_assets/ScreenShot_Dark.png" alt="用量面板截图（深色）"> |
 |---|---|
@@ -26,7 +26,7 @@
 | MiniMax | 每个 `model_name`（如 `general` 文本、`video` 非文本）的 5h 窗口与周窗口剩余百分比 | `www.minimaxi.com/v1/token_plan/remains` |
 | DeepSeek | 充值金额、赠送金额、总余额、货币单位；峰/谷时段提示（北京时间 09:00–12:00 与 14:00–18:00，**仅工作日**；周末两天全 off-peak） | `api.deepseek.com/user/balance` |
 | GitHub Copilot | 月度 `premium_interactions` 剩余百分比（Free / Pro / Pro+ / Business / Enterprise 全覆盖） | `api.github.com/copilot_internal/user` |
-| OpenCode Go | 5h / 每周 / 每月窗口的美元用量（上限 $12 / $30 / $60） | 本地 SQLite，通过 `opencode db` CLI 读取 |
+| OpenCode Go | 5h / 每周 / 每月窗口的用量百分比（服务端记账，仅套餐内用量，多设备口径一致） | `opencode.ai/zen/go/v1/usage`（Zen API Key） |
 | Kimi | 5 小时滚动限流窗口 + 每周订阅配额的用量百分比（会员套餐） | `api.kimi.com/coding/v1/usages` |
 
 > **说明**：上表中的 DeepSeek 峰/谷时段提示**固定锚定在「北京时间（UTC+8）」**，
@@ -58,7 +58,7 @@
   - Token 对应的 GitHub 账号必须已开通 Copilot 订阅（Free / Pro / Pro+ / Business / Enterprise 均可）
   - 可随时在 https://github.com/settings/tokens 撤销
 
-- **OpenCode Go** — 无需 API Key。供应商通过 shell 调用本地 `opencode` CLI（需安装在 `~/.opencode/bin/opencode`、`/usr/local/bin/opencode` 或 `/opt/homebrew/bin/opencode`），直接读取 OpenCode SQLite 数据库（`~/.local/share/opencode/opencode.db`）中的用量数据。数据层详见 `docs/provider-interfaces/opencode_go.md`；为「See details」深链提供 workspace ID 的离线恢复机制详见 `docs/provider-interfaces/opencode_workspace_resolver.md`。
+- **OpenCode Go** — 粘贴 Zen API Key（在 https://opencode.ai → 你的 workspace → API keys 创建）。供应商调用官方用量接口（`GET https://opencode.ai/zen/go/v1/usage`），服务端记账且仅统计套餐内用量，多设备数据口径一致。数据层详见 `docs/provider-interfaces/opencode_go.md`；为「See details」深链提供 workspace ID 的离线恢复机制详见 `docs/provider-interfaces/opencode_workspace_resolver.md`。
 - **Kimi** — 粘贴在 Kimi Code Console（https://www.kimi.com/code/console → **Create API Key**）创建的 API Key。需要已开通 Kimi 会员的 Kimi Code 权益，该 Key 与会员套餐共享同一配额。端点与数据契约详见 `docs/provider-interfaces/kimi.md`。
 
 ## 系统要求
@@ -161,7 +161,6 @@ APIUsageStatus/
 ├── AppState/                      # 运行时状态 Actor + @MainActor 代理
 ├── Models/                        # 数据模型（实例/余额/阈值/全局设置、BreathingMath）
 ├── Services/                      # 核心服务（Keychain/持久化/刷新/通知/开机自启）
-├── Shell/                         # Shell 进程执行（OpenCode Go 供应商使用）
 ├── Network/                       # HTTP 客户端 + 重试策略
 ├── Suppliers/                     # 供应商协议 + MiniMax / DeepSeek / Copilot / OpenCode 实现
 ├── Balance/                       # 余额计算器 + 历史快照
@@ -180,10 +179,10 @@ APIUsageStatusTests/                # 单测 + 快照测试，覆盖各供应商
 
 ## 安全与隐私
 
-- **⚠️ App Sandbox** — **已关闭**，以便 OpenCode Go 供应商能通过 `Process.run()` 执行 `opencode db` 命令读取本地 SQLite 数据库。这是查询 OpenCode Go 用量的唯一途径（无公开 REST API）。权衡说明：
-  - **获得**：OpenCode Go 实时用量监控（5h / 每周 / 每月窗口），直接从本地数据读取，无需等待官方 API。
-  - **失去**：macOS App Sandbox 保护。应用理论上可以访问当前用户可访问的任何文件，以及启动子进程。但本项目为自编译自用——仅与已知的 HTTPS API 端点通信，仅启动 `opencode` CLI，不处理不可信用户输入。在个人使用场景下，实际攻击面增加可忽略不计。详见 `docs/provider-interfaces/opencode_go.md`。
-  - **若不使用 OpenCode Go**：唯一需要关闭沙箱的代码路径是 `ShellProcessRunner`（仅由 `OpenCodeSupplier` 调用）。MiniMax / DeepSeek / Copilot 供应商在开启或关闭沙箱下行为完全一致。
+- **⚠️ App Sandbox** — **已关闭**，以便 `OpenCodeWorkspaceResolver` 能通过 `/usr/bin/grep` 子进程扫描 `~/.local/share/opencode/log/*.log`，恢复「See details」深链所需的 workspace ID。权衡说明：
+  - **获得**：OpenCode 卡片可直接深链到对应 workspace 的 Web 用量面板（`https://opencode.ai/workspace/<id>/go`）。用量查询本身已走官方 HTTP API（`opencode.ai/zen/go/v1/usage`），不依赖本地进程。
+  - **失去**：macOS App Sandbox 保护。应用理论上可以访问当前用户可访问的任何文件，以及启动子进程。但本项目为自编译自用——仅与已知的 HTTPS API 端点通信，仅启动 `/usr/bin/grep`，不处理不可信用户输入。在个人使用场景下，实际攻击面增加可忽略不计。
+  - **若不使用 OpenCode Go**：其余供应商在开启或关闭沙箱下行为完全一致，可重新开启沙箱。
 - **API Key** — 存储在 Keychain（InternetPassword 类型），不落磁盘明文
 - **网络** — 仅 HTTPS 访问供应商 API，不传输任何用户数据
 - **日志** — os.Logger，生产环境自动屏蔽敏感信息

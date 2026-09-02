@@ -160,7 +160,7 @@ CLI `/usage` 用 protobuf 生成的解析器,缺字段按默认值 0 处理,所�
 |------|------|
 | URL | 安全。Kimi/Copilot/DeepSeek/MiniMax 端点 URL 不带 query 参数。 |
 | HTTP status code | 安全。 |
-| 响应体(NetworkClient 通用) | **默认安全**。非 2xx 分支以 `.private` 记录,`log show` 里渲染为 `<private>`;仅 `Endpoint.exposesFailureBodyInLog = true` 的 endpoint(目前仅 Kimi)放开为 `.public`。注:OpenCode 不走 `NetworkClient`(本地 SQLite 直读),早期版本中"OpenCode 响应体可能含 user identifiers"的评估前提不成立;真实影响面是 DeepSeek / Copilot / MiniMax / Kimi 四个远端 API 的错误体,而上游网关的 4xx 错误体可能回显凭证片段或账号标识——这正是默认 `.private` 的理由。 |
+| 响应体(NetworkClient 通用) | **默认安全**。非 2xx 分支以 `.private` 记录,`log show` 里渲染为 `<private>`;仅 `Endpoint.exposesFailureBodyInLog = true` 的 endpoint(目前为 Kimi 与 OpenCode Go——后者错误体为无 PII 的 `{type,error}` JSON)放开为 `.public`。真实影响面是 DeepSeek / Copilot / MiniMax / Kimi / OpenCode 五个远端 API 的错误体,而上游网关的 4xx 错误体可能回显凭证片段或账号标识——这正是默认 `.private` 的理由。 |
 | 响应体(KimiSupplier) | **安全**。Kimi `/usages` 响应是 quota 数字(`limit` / `used` / `resetTime`),无 PII。 |
 | error 实例 | 内部 RefreshError,不含 PII。 |
 

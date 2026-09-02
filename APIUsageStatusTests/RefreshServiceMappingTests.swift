@@ -145,23 +145,19 @@ final class RefreshServiceMappingTests: XCTestCase {
         )
         var rawData: [String: String] = [:]
 
+        // The official usage API reports only a percent + absolute reset
+        // time per window — no `:used` / `:limit` dollar keys.
         rawData["5h"] = "70.8"
-        rawData["5h:used"] = "8.50"
-        rawData["5h:limit"] = "12.00"
         rawData["5h:end_time"] = String(endTimeMs)
 
         rawData["weekly"] = "50.0"
-        rawData["weekly:used"] = "15.00"
-        rawData["weekly:limit"] = "30.00"
         rawData["weekly:end_time"] = String(endTimeMs)
 
         rawData["monthly"] = "58.3"
-        rawData["monthly:used"] = "35.00"
-        rawData["monthly:limit"] = "60.00"
         rawData["monthly:end_time"] = String(endTimeMs)
 
         let response = SupplierResponse(
-            rawData: rawData, currency: "USD", isAvailable: true
+            rawData: rawData, currency: nil, isAvailable: true
         )
 
         let result = await service.mapInstanceToSlotData(
@@ -180,8 +176,8 @@ final class RefreshServiceMappingTests: XCTestCase {
         XCTAssertEqual(s0.key, "5h")
         XCTAssertEqual(s0.window, "5h")
         XCTAssertEqual(s0.percent, 70.8, accuracy: 0.01)
-        XCTAssertEqual(s0.displayUsage, "$8.50")
-        XCTAssertEqual(s0.displayLimit, "$12.00")
+        XCTAssertEqual(s0.displayUsage, "70.8")
+        XCTAssertEqual(s0.displayLimit, "")
         XCTAssertNotNil(s0.cycleRemainingSeconds)
         // All three OpenCode windows report `end_time` — every
         // snapshot must carry `cycleEndTime` so the live countdown
@@ -195,8 +191,8 @@ final class RefreshServiceMappingTests: XCTestCase {
         XCTAssertEqual(s1.key, "weekly")
         XCTAssertEqual(s1.window, "weekly")
         XCTAssertEqual(s1.percent, 50.0, accuracy: 0.01)
-        XCTAssertEqual(s1.displayUsage, "$15.00")
-        XCTAssertEqual(s1.displayLimit, "$30.00")
+        XCTAssertEqual(s1.displayUsage, "50.0")
+        XCTAssertEqual(s1.displayLimit, "")
         XCTAssertNotNil(s1.cycleRemainingSeconds)
         XCTAssertNotNil(s1.cycleEndTime, "Weekly snapshot must carry cycleEndTime")
         XCTAssertEqual(s1.configIndex, 2)
@@ -206,8 +202,8 @@ final class RefreshServiceMappingTests: XCTestCase {
         XCTAssertEqual(s2.key, "monthly")
         XCTAssertEqual(s2.window, "monthly")
         XCTAssertEqual(s2.percent, 58.3, accuracy: 0.01)
-        XCTAssertEqual(s2.displayUsage, "$35.00")
-        XCTAssertEqual(s2.displayLimit, "$60.00")
+        XCTAssertEqual(s2.displayUsage, "58.3")
+        XCTAssertEqual(s2.displayLimit, "")
         XCTAssertNotNil(s2.cycleRemainingSeconds)
         XCTAssertNotNil(s2.cycleEndTime, "Monthly snapshot must carry cycleEndTime")
         XCTAssertEqual(s2.configIndex, 3)
@@ -218,8 +214,8 @@ final class RefreshServiceMappingTests: XCTestCase {
             return
         }
         XCTAssertEqual(p, 70.8, accuracy: 0.01)
-        XCTAssertEqual(u, "$8.50")
-        XCTAssertEqual(l, "$12.00")
+        XCTAssertEqual(u, "70.8")
+        XCTAssertEqual(l, "")
         XCTAssertNotNil(crs)
         XCTAssertEqual(result.colorState, .normal)
         XCTAssertEqual(result.dimension, "5h")

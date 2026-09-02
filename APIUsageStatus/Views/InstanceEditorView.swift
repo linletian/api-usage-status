@@ -523,23 +523,8 @@ struct InstanceEditorView: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("API KEY")
 
-            if provider == .opencode {
-                Text("Requires the `opencode` CLI to be installed locally and authenticated with OpenCode Go. The supplier reads usage data from the local OpenCode SQLite database — no remote API key is required.")
-                    .font(.system(size: 11))
-                    .foregroundColor(.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.cardBg)
-                    .cornerRadius(6)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.cardBorder, lineWidth: 1)
-                    )
-            } else {
-                SecureInput(text: $apiKey, placeholder: apiKeyPlaceholder)
-                    .frame(height: 28)
-            }
+            SecureInput(text: $apiKey, placeholder: apiKeyPlaceholder)
+                .frame(height: 28)
         }
     }
 
@@ -763,7 +748,7 @@ struct InstanceEditorView: View {
         case .githubCopilot: return "GitHub PAT (classic, needs copilot scope)"
         case .deepseek, .minimax: return "API Key"
         case .kimi: return "Kimi Code Console API Key"
-        case .opencode: return "(no API key — uses local opencode CLI)"
+        case .opencode: return "OpenCode Zen API Key (opencode.ai → workspace → API keys)"
         }
     }
 

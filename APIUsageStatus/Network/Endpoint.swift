@@ -11,8 +11,9 @@ struct Endpoint {
     /// body at `privacy: .public`. Error bodies from upstream gateways can
     /// echo credential fragments or account identifiers, so the default is
     /// `false` (body rendered `<private>`); enable only for endpoints whose
-    /// error bodies are known to be PII-free — currently just Kimi, for the
-    /// diagnosis in `docs/kimi-api-failures-investigation.md`.
+    /// error bodies are known to be PII-free — currently Kimi (see
+    /// `docs/kimi-api-failures-investigation.md`) and OpenCode Go (generic
+    /// `{type, error}` JSON).
     let exposesFailureBodyInLog: Bool
 
     init(

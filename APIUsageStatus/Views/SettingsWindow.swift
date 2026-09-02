@@ -113,8 +113,11 @@ extension SettingsWindow: NSWindowDelegate {
             }
             return false
         case .alertSecondButtonReturn: // Don't Save
-            vm.discardChanges()
-            return true
+            Task { @MainActor in
+                await vm.discardChanges()
+                sender.close()
+            }
+            return false
         default: // Cancel
             return false
         }

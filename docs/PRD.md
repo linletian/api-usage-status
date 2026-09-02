@@ -70,7 +70,7 @@
       - DeepSeek → `https://platform.deepseek.com/usage`
       - MiniMax → `https://platform.minimaxi.com/user-center/payment/token-plan`
       - GitHub Copilot → `https://github.com/settings/billing/ai_usage`
-      - Kimi → `https://www.kimi.com/code/console`
+      - Kimi → `https://www.kimi.com/membership/subscription?tab=quota`
       - OpenCode Go → 从 UserDefaults 缓存读 workspace ID，链接到 `https://opencode.ai/workspace/<id>/go`；缓存为空时兜底到 `https://opencode.ai/zh/go`（该页带登录入口）
     - URL 映射逻辑集中在 `UsageCardView.providerURL`（按 `Provider.X.rawValue` 派发）；OpenCode 的 workspace ID 在 App 启动时由 `OpenCodeWorkspaceResolver.prewarm()` 后台扫描 `~/.local/share/opencode/log/*.log` 后写入 UserDefaults，view 层只读缓存、不阻塞 UI（详见 `docs/provider-interfaces/opencode_workspace_resolver.md`）
     - 使用无边框按钮样式，9pt 次级颜色，保持卡片视觉简洁

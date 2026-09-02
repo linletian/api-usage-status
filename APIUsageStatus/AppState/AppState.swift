@@ -63,10 +63,41 @@ actor AppState {
 
     func setInstances(_ instances: [Instance]) {
         _instances = instances
+        // After the live instance list changes, drop any cached slot whose
+        // owning instance is no longer being tracked. Without this, toggling
+        // a tracking switch off in `Settings → Services` would leave the
+        // previous slot data in the buffer, so the menu bar would keep
+        // rendering the instance even though the user just paused it. See
+        // issue #20 and `docs/ARCHITECTURE.md` §"Tracking toggle semantics".
+        pruneDisabledSlots()
     }
 
     func updateSlotData(_ slotViewDataList: [SlotViewData]) {
         _slotViewDataList = slotViewDataList
+    }
+
+    /// Atomically update a single instance's `trackingEnabled` flag and
+    /// prune its slot from `_slotViewDataList` when the instance becomes
+    /// disabled. The new state is the runtime authority — `SettingsViewModel`
+    /// also keeps a local copy for the "Save Changes / Discard Changes"
+    /// flow, but a discard rolls this value back via the same method. See
+    /// issue #20.
+    ///
+    /// Returns `true` when the instance was found and the state was
+    /// changed; `false` when the UUID didn't exist (no-op, including
+    /// leaving the slot buffer untouched).
+    @discardableResult
+    func setInstanceTracking(uuid: String, enabled: Bool) -> Bool {
+        guard let index = _instances.firstIndex(where: { $0.uuid == uuid }) else {
+            return false
+        }
+        let previous = _instances[index].trackingEnabled
+        guard previous != enabled else { return false }
+        _instances[index].trackingEnabled = enabled
+        if !enabled {
+            _slotViewDataList.removeAll { $0.uuid == uuid }
+        }
+        return true
     }
 
     func setRefreshState(_ state: RefreshState) {
@@ -85,6 +116,22 @@ actor AppState {
         if let index = _instances.firstIndex(where: { $0.uuid == instance.uuid }) {
             _instances[index] = instance
         }
+    }
+
+    /// Remove an instance from the live state and drop any cached
+    /// slot for its UUID. Mirrors `setInstanceTracking` in
+    /// "single-UUID, immediate propagation" semantics so callers
+    /// from the settings flow (delete button, future drag-to-trash,
+    /// etc.) don't have to batch-rewrite `_instances` to evict
+    /// one entry. Returns `true` when the UUID was found.
+    /// See PR #23 review.
+    @discardableResult
+    func removeInstance(uuid: String) -> Bool {
+        let before = _instances.count
+        _instances.removeAll { $0.uuid == uuid }
+        guard _instances.count < before else { return false }
+        _slotViewDataList.removeAll { $0.uuid == uuid }
+        return true
     }
 
     func setLastRefreshAt(_ date: Date?) {
@@ -124,6 +171,11 @@ actor AppState {
     ///     `fatalError` if a duplicate UUID ever appeared in the
     ///     buffer (a defensive guard against invariant violations; the
     ///     invariant should hold in normal operation).
+    ///   * The merge is followed by a `pruneDisabledSlots()` pass so a
+    ///     tracking toggle that flipped to `false` between cycle start
+    ///     and merge cannot leave a stale slot in the buffer. The prune
+    ///     re-reads `_instances` after the merge, so the final state
+    ///     always matches the live tracking flags. See issue #20.
     func mergeCycleResult(
         cycleSuccesses: [SlotViewData],
         cycleErroredUUIDs: Set<String>
@@ -162,6 +214,22 @@ actor AppState {
         }
 
         _slotViewDataList = Array(byUUID.values).sorted { $0.sortOrder < $1.sortOrder }
+
+        // Drop slots for any instance that has since been disabled. The
+        // supplier may have produced a fresh `cycleSuccesses` entry for a
+        // UUID that was toggled off mid-cycle; without this pass that
+        // entry would be re-introduced into the buffer.
+        pruneDisabledSlots()
+    }
+
+    /// Drop any slot whose owning instance has `trackingEnabled == false`.
+    /// Reads `_instances` inside the actor — caller-supplied snapshots are
+    /// intentionally not accepted to avoid a TOCTOU window against a
+    /// concurrent `setInstanceTracking`. See issue #20.
+    private func pruneDisabledSlots() {
+        let disabledUUIDs = Set(_instances.lazy.filter { !$0.trackingEnabled }.map(\.uuid))
+        guard !disabledUUIDs.isEmpty else { return }
+        _slotViewDataList.removeAll { disabledUUIDs.contains($0.uuid) }
     }
 
     // MARK: - State Query

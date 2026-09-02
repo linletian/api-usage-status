@@ -280,11 +280,6 @@ final class SettingsViewModel: ObservableObject {
         await appStateProxy.setInstanceTracking(uuid: uuid, enabled: enabled)
     }
 
-    @available(*, deprecated, message: "Use setInstanceTrackingEnabled instead")
-    func setInstanceEnabled(uuid: String, enabled: Bool) async {
-        await setInstanceTrackingEnabled(uuid: uuid, enabled: enabled)
-    }
-
     // MARK: - Notifications
 
     /// Called when the notifications toggle changes in the UI.

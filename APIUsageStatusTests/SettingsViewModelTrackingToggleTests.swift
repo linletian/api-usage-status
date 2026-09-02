@@ -262,14 +262,17 @@ final class SettingsViewModelTrackingToggleTests: XCTestCase {
     // MARK: - Save persists toggle
 
     /// A toggle followed by `save()` must persist the new
-    /// `tracking_enabled` value in `instances.json`. We can't read
-    /// the file with a custom decoder in this test (the
-    /// PersistenceService has no override hook for the base path),
-    /// but we can verify the success path runs to completion and
-    /// the `originalInstances` mirror reflects the new value —
-    /// proving the value was committed to the file (line 181 in
-    /// `SettingsViewModel.save` only runs after the file write at
-    /// line 129 succeeds).
+    /// `tracking_enabled` value in `instances.json`. The test
+    /// runs a full save round-trip and reads the file back to
+    /// verify the new value landed. The supplier path is
+    /// irrelevant to this test: the test's "test" provider has
+    /// no registered `Supplier` in `SupplierRegistry`, so
+    /// `RefreshService.performRefresh` short-circuits the cycle
+    /// via the registry lookup and writes an `errorSummaries`
+    /// entry instead of touching the network (see
+    /// `RefreshService.swift:454-466`). The save path itself
+    /// runs to completion regardless, which is what this case
+    /// pins.
     func testSavePersistsToggleState() async {
         let viewModel = makeViewModel()
         let baseline = makeInstance(uuid: "inst-1", displayName: "Alpha", enabled: true)
@@ -279,11 +282,6 @@ final class SettingsViewModelTrackingToggleTests: XCTestCase {
         await viewModel.setInstanceTrackingEnabled(uuid: "inst-1", enabled: false)
         XCTAssertTrue(viewModel.hasUnsavedChanges)
 
-        // Empty instances list avoids RefreshService touching the
-        // supplier — we just want the file-write path. To do that,
-        // we set the local list to a single no-provider instance and
-        // let the refresh no-op. (See RefreshService.performRefresh:
-        // empty enabledInstances short-circuits the cycle.)
         let success = await viewModel.save()
         XCTAssertTrue(success, "save() must succeed with a valid instance and one toggle")
         XCTAssertFalse(viewModel.hasUnsavedChanges,

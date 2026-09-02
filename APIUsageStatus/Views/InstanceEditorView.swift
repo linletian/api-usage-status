@@ -65,6 +65,10 @@ struct InstanceEditorView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    if isAllMetricsDisabled {
+                        allMetricsDisabledBanner
+                    }
+
                     providerSection
                     metricsSection
                     displaySection
@@ -414,6 +418,38 @@ struct InstanceEditorView: View {
         )
     }
 
+    /// Inline warning shown when the user has unchecked every metric
+    /// in the edit form. Mirrors the visual language of the error
+    /// banner at the bottom but uses the `warningYellow` token so the
+    /// message reads as advisory, not blocking. See issue #20.
+    @ViewBuilder
+    private var allMetricsDisabledBanner: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color.warningYellow)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 16, height: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Disabling all metrics will pause usage tracking for this instance.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.textPrimary)
+                Text("The menu bar slot will disappear until you re-enable at least one metric.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.textSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.warningYellow.opacity(0.12))
+        .cornerRadius(6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.warningYellow.opacity(0.5), lineWidth: 1)
+        )
+        .accessibilityIdentifier("instanceEditor.allMetricsDisabledBanner")
+    }
+
     // MARK: - Display Section
 
     @ViewBuilder
@@ -708,14 +744,61 @@ struct InstanceEditorView: View {
         }
     }
 
-    private var isFormFilled: Bool {
+    var isFormFilled: Bool {
+        Self.evaluateFormState(
+            provider: provider,
+            selectedMetrics: selectedMetrics,
+            shortName: shortName,
+            isEditing: isEditing,
+            miniMaxModelNames: miniMaxModelNames
+        ).isFormFilled
+    }
+
+    /// `true` when the user has cleared every metric in an edit form.
+    /// Drives the "this will pause tracking" warning banner so the
+    /// user has a clear signal that the saved instance will not
+    /// produce any menu bar slot. See issue #20.
+    var isAllMetricsDisabled: Bool {
+        Self.evaluateFormState(
+            provider: provider,
+            selectedMetrics: selectedMetrics,
+            shortName: shortName,
+            isEditing: isEditing,
+            miniMaxModelNames: miniMaxModelNames
+        ).isAllMetricsDisabled
+    }
+
+    /// Pure, side-effect-free form-state evaluator. Exposed as
+    /// `static` so unit tests can pin the form-validation rules
+    /// without having to drive the SwiftUI view body / `@State`
+    /// defaults (which can't be exercised reliably from XCTest
+    /// for this view). The instance computed properties above
+    /// delegate here, so the runtime and test paths share one
+    /// implementation. See issue #20.
+    static func evaluateFormState(
+        provider: Provider,
+        selectedMetrics: [MetricConfig],
+        shortName: String,
+        isEditing: Bool,
+        miniMaxModelNames: [String]
+    ) -> (isFormFilled: Bool, isAllMetricsDisabled: Bool) {
         let hasValidShortName = !shortName.isEmpty && shortName.count >= 2 && shortName.count <= 3
 
+        // MiniMax without available models and not editing: the
+        // form has no metric list to fill, so shortName alone is
+        // enough to be considered "form filled" (the user can't
+        // pick metrics that don't exist).
         if provider == .minimax && miniMaxModelNames.isEmpty && !isEditing {
-            return hasValidShortName
+            return (hasValidShortName, false)
         }
 
-        return hasValidShortName && !selectedMetrics.isEmpty
+        // Editing an existing instance allows saving with no metrics
+        // — the user is intentionally pausing tracking for that entry.
+        // Creating a new instance still requires at least one metric
+        // so we never persist a fully unconfigured entry. See issue #20.
+        let formFilled = hasValidShortName && (!selectedMetrics.isEmpty || isEditing)
+        let allDisabled = isEditing && selectedMetrics.isEmpty
+        return (formFilled, allDisabled)
     }
 
     private func dimensionDisplayName(_ key: String) -> String {

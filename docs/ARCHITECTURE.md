@@ -194,6 +194,33 @@
 - 所有变更通过 Actor 上的 async 方法执行
 - UI 通过 `AppStateProxy`（`@MainActor ObservableObject`）桥接观察，详见 §9
 
+**Tracking toggle semantics（issue #20）**
+
+`trackingEnabled`（持久化 schema v2 key `tracking_enabled`；旧版 `enabled` 由迁移路径处理）是 instance 是否参与刷新的权威标志。`AppState` 在所有可能改写 `_slotViewDataList` 的路径上做"按 enabled 过滤"——保证状态栏 slot 与运行时权威一致。
+
+| API | 行为 |
+| --- | --- |
+| `setInstanceTracking(uuid:enabled:)` | 翻转单实例的 `trackingEnabled`；`enabled == false` 时立刻从 `_slotViewDataList` 删除该 uuid 的 slot。返回 `Bool` 表示是否真的发生了状态变化（no-op 写回 `false`）。 |
+| `setInstances(_:)` | 整批替换 `_instances` 后立即按 `trackingEnabled == false` 清理 `_slotViewDataList`。 |
+| `mergeCycleResult(cycleSuccesses:cycleErroredUUIDs:)` | 在合并 cycle 结果后追加一次 `pruneDisabledSlots()`，防止用户在 cycle 期间把实例关掉、但 supplier 的 success slot 已经被回写到 buffer 的竞态。 |
+| `pruneDisabledSlots()`（private） | 共享 helper：丢弃 `_slotViewDataList` 中所有 `trackingEnabled == false` 的实例对应的 slot。actor 内部读 `_instances`，不接受 caller 传快照，避免与并发的 `setInstanceTracking` 形成 TOCTOU 窗口。 |
+
+**Toggle 路径（用户操作 → UI 即时更新）**
+
+1. 用户在 `Settings → Services` 卡片上点 tracking switch → `SettingsView.onToggleTracking` 触发 `viewModel.setInstanceTrackingEnabled(uuid:enabled:)`。
+2. `SettingsViewModel` 同步更新本地 `instances` 草稿（保持 `hasUnsavedChanges == true` 提示未保存），并 `await appStateProxy.setInstanceTracking(uuid:enabled:)`。
+3. `AppStateProxy` 转 `AppState.setInstanceTracking` 翻 `_instances` 的 `trackingEnabled`，`enabled == false` 时移除该 uuid 的 slot。
+4. `AppStateProxy.syncFromState()` 把 `_slotViewDataList` 的新值发布到 `@Published`，`MenuBarController` 通过 `proxy.$slotViewDataList` 观察、调用 `MenuBarIconRenderer.render(...)` 重新绘制。
+5. 用户若点 **Save Changes** → `viewModel.save()` 走 `persistenceService.saveInstances` 落盘到 `instances.json`；点 **Discard Changes** → `viewModel.discardChanges()` 逐 UUID 调用 `appStateProxy.setInstanceTracking(uuid:, enabled: originalInstances[i].trackingEnabled)` 回滚运行时状态（避免整批 `setInstances(originalInstances)` 引发的"全量重闪"）。
+
+**与刷新层的协作**
+
+`RefreshService.performRefresh` line 335 的 `instances.filter { $0.enabled }` 早已正确跳过 disabled instance，本 fix 之前的"实际刷新好像无效"现象**不是** 刷新逻辑错误，而是状态栏 slot 残留让用户误以为还在刷新。`mergeCycleResult` 末尾的 `pruneDisabledSlots()` 与 `performRefresh` 的 `enabled` 过滤是互补关系：前者保证旧 slot 不会留在 buffer，后者保证不会产生新 slot。
+
+**dead code 说明**
+
+`MenuBarIconRenderer.expandToMetricSlots` 中的 `colorState != .disabled` 分支目前是死代码——`MetricSnapshot.colorState` 写入路径（`RefreshService.mapInstanceToSlotData` + `determineQuotaColorState` / `determineBalanceColorState`）从未赋 `.disabled`。本 fix 故意不启用该路径（避免引入新行为面），依靠 AppState 边界过滤已经能彻底修复 issue #20 的可观察行为；该 dead code 留给未来的 `ColorState.disabled` 统一清理 PR。
+
 ### 2.7 刷新服务（`RefreshService.swift`）
 
 **职责**：编排刷新周期。使用 **Actor**。

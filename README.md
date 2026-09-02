@@ -24,13 +24,15 @@ A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek
 | Provider | Monitoring Dimension | Data Source |
 |----------|---------------------|--------------|
 | MiniMax | Multi-metric: each `model_name` (capability bucket, e.g. `general`/`video`/`speech-hd`) tracks 5h + weekly independently | `www.minimaxi.com/v1/token_plan/remains` |
-| DeepSeek | Topped-up amount, gifted amount, total balance, currency unit; peak/off-peak indicator (09:00–12:00 and 14:00–18:00 Beijing Time) | `api.deepseek.com/user/balance` |
+| DeepSeek | Topped-up amount, gifted amount, total balance, currency unit; peak/off-peak indicator (09:00–12:00 and 14:00–18:00 Beijing Time, **weekdays only**; weekends always off-peak) | `api.deepseek.com/user/balance` |
 | GitHub Copilot | Monthly `premium_interactions` remaining percentage (Free / Pro / Pro+ / Business / Enterprise) | `api.github.com/copilot_internal/user` |
 | OpenCode Go | Dollar usage of the 5h / weekly / monthly windows ($12 / $30 / $60 limits) | Local SQLite via `opencode db` CLI |
 | Kimi | 5-hour rolling rate window + weekly subscription quota usage percentage (membership plans) | `api.kimi.com/coding/v1/usages` |
 
 > **Note**: The DeepSeek peak/off-peak indicator above is fixed to **Beijing Time (UTC+8)**
-> and reflects the official pricing policy as of June 2026 (`policyVersion "2026-06"`).
+> and reflects the official pricing policy as of September 2026 (`policyVersion "2026-09"`):
+> the time-of-day peak windows apply **only on weekdays** (Mon–Fri); **weekends
+> (Sat & Sun) are always off-peak** regardless of clock time.
 > Boundary evaluation granularity is 60 seconds — the menu-bar overlay and the
 > "Peak / Off-Peak" badge in the popup may flip up to one minute late at a
 > window edge. See `docs/provider-interfaces/deepseek.md` §11 for the full
@@ -132,9 +134,10 @@ Or press Cmd+U in Xcode.
 The test target covers parsers (MiniMax / DeepSeek / Copilot / OpenCode), refresh &
 persistence services, balance calculation, menu-bar rendering (including the DeepSeek
 peak overlay), DeepSeek peak/off-peak window classification
-(`PeakPeriodTests` — 15 boundary cases pinned to Beijing Time), SwiftUI views,
-and snapshot-based pixel verification. The original `PixelFontEngineTests` (58 cases)
-is kept under `#if false` for historical reference and does not run.
+(`PeakPeriodTests` — 21 boundary cases pinned to Beijing Time, including 6 weekend
+short-circuit cases for the `policyVersion "2026-09"` rule from issue #19), SwiftUI
+views, and snapshot-based pixel verification. The original `PixelFontEngineTests`
+(58 cases) is kept under `#if false` for historical reference and does not run.
 
 ## Deploy to /Applications
 

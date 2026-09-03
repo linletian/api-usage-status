@@ -6,10 +6,13 @@ import Foundation
 ///
 /// The server is the single source of truth for the three plan windows
 /// (rolling 5h, weekly, monthly): it reports each window's used `percent`
-/// (integer 0–100, floored; always 100 when `status` is `rate-limited`) and
-/// absolute `resetsAt` timestamp. Only plan (lite) usage is counted
-/// server-side — balance top-up consumption is excluded — so the values are
-/// consistent across devices, unlike the retired local-SQLite approach.
+/// (integer 0–100, floored) and absolute `resetsAt` timestamp. The parser
+/// forces percent to 100 when `status` is `rate-limited` — the server-side
+/// contract (`Subscription.analyze*Usage`) couples the two, and enforcing it
+/// here keeps schema drift from rendering a partial bar on an exhausted
+/// window. Only plan (lite) usage is counted server-side — balance top-up
+/// consumption is excluded — so the values are consistent across devices,
+/// unlike the retired local-SQLite approach.
 ///
 /// Response shape:
 ///
@@ -51,20 +54,38 @@ struct OpenCodeResponseParser {
 
     private static func parseWindow(_ any: Any?, key: String) throws -> ParsedWindow {
         guard let dict = any as? [String: Any],
-              let percent = (dict["percent"] as? NSNumber)?.doubleValue,
+              let rawPercent = (dict["percent"] as? NSNumber)?.doubleValue,
               let resetsAt = dict["resetsAt"] as? String,
-              let endDate = iso8601WithFractionalSeconds.date(from: resetsAt) else {
+              let endDate = parseResetsAt(resetsAt) else {
             throw RefreshError.parsingError("OpenCode usage window '\(key)' is missing percent/resetsAt")
         }
+        // The server emits percent=100 together with `rate-limited`
+        // (`Subscription.analyze*Usage`); enforce it here so schema drift
+        // can never render a partially-used bar on an exhausted window.
+        let isRateLimited = dict["status"] as? String == "rate-limited"
         return ParsedWindow(
-            percent: max(0, min(100, percent)),
+            percent: isRateLimited ? 100 : max(0, min(100, rawPercent)),
             endTimeMs: Int64(endDate.timeIntervalSince1970 * 1000)
         )
+    }
+
+    /// `resetsAt` is documented as ISO8601 with milliseconds, but accept a
+    /// bare second-resolution timestamp too — a missing fraction is metadata
+    /// drift, not worth failing all three windows over.
+    private static func parseResetsAt(_ string: String) -> Date? {
+        iso8601WithFractionalSeconds.date(from: string)
+            ?? iso8601.date(from: string)
     }
 
     private static let iso8601WithFractionalSeconds: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let iso8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
         return formatter
     }()
 }

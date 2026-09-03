@@ -36,6 +36,30 @@ final class OpenCodeResponseParserTests: XCTestCase {
         XCTAssertEqual(p.monthly.percent, 7)
     }
 
+    /// Schema-drift guard: `rate-limited` with a non-100 percent must still
+    /// render as an exhausted window (the server couples the two, but the
+    /// parser enforces it rather than trusting the payload).
+    func testParseRateLimitedForcesHundredOnMismatch() throws {
+        let json = """
+        {"usage":{"rolling":{"status":"rate-limited","percent":42,"resetsAt":"2026-09-02T19:44:30.306Z"},"weekly":{"status":"ok","percent":3,"resetsAt":"2026-09-07T00:00:00.306Z"},"monthly":{"status":"ok","percent":7,"resetsAt":"2026-09-25T11:33:14.306Z"}}}
+        """.data(using: .utf8)!
+        let p = try parser.parse(json)
+        XCTAssertEqual(p.fiveHour.percent, 100)
+    }
+
+    /// `resetsAt` is documented as ISO8601 with milliseconds; a bare
+    /// second-resolution timestamp must still parse (metadata drift should
+    /// not break all three windows).
+    func testParseResetsAtWithoutFractionalSeconds() throws {
+        let json = """
+        {"usage":{"rolling":{"status":"ok","percent":0,"resetsAt":"2026-09-02T19:44:30Z"},"weekly":{"status":"ok","percent":79,"resetsAt":"2026-09-07T00:00:00Z"},"monthly":{"status":"ok","percent":55,"resetsAt":"2026-09-25T11:33:14.306Z"}}}
+        """.data(using: .utf8)!
+        let p = try parser.parse(json)
+        XCTAssertEqual(Double(p.fiveHour.endTimeMs), 1_788_378_270_000, accuracy: 1)
+        XCTAssertEqual(Double(p.weekly.endTimeMs), 1_788_739_200_000, accuracy: 1)
+        XCTAssertEqual(Double(p.monthly.endTimeMs), 1_790_335_994_306, accuracy: 1)
+    }
+
     func testParseClampsOutOfRangePercent() throws {
         let json = """
         {"usage":{"rolling":{"status":"ok","percent":150,"resetsAt":"2026-09-02T19:44:30.306Z"},"weekly":{"status":"ok","percent":-5,"resetsAt":"2026-09-07T00:00:00.306Z"},"monthly":{"status":"ok","percent":50,"resetsAt":"2026-09-25T11:33:14.306Z"}}}

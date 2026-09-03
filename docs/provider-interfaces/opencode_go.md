@@ -44,8 +44,8 @@ Authorization: Bearer <Zen API Key>
 | 字段 | 说明 |
 |------|------|
 | `status` | `"ok"` / `"rate-limited"`（该窗口达到上限时） |
-| `percent` | 已用百分比，0–100 整数（floor）；`rate-limited` 时恒为 100 |
-| `resetsAt` | 窗口重置的绝对时间，ISO8601 带毫秒（UTC） |
+| `percent` | 已用百分比，0–100 整数（floor）；`rate-limited` 时恒为 100（客户端 parser 同样强制此规则） |
+| `resetsAt` | 窗口重置的绝对时间，ISO8601 带毫秒（UTC）；客户端兼容无毫秒的秒级时间戳 |
 
 **注意**：响应不包含美元金额，也不包含上限绝对值——`percent` 是唯一直接可用的用量信号，卡片渲染因此是纯百分比（无 `$已用 / $上限`）。
 

@@ -11,7 +11,7 @@
 | MiniMax | 多指标：每个能力桶（`general`/`video`/`speech-hd` 等 `model_name`）独立跟踪 5h + weekly 双窗口 | `www.minimaxi.com/v1/token_plan/remains` |
 | DeepSeek | 充值/赠送/总余额、货币单位；峰谷时段指示（北京时间 09:00–12:00、14:00–18:00） | `api.deepseek.com/user/balance` |
 | GitHub Copilot | 月度 `premium_interactions` 剩余百分比 | `api.github.com/copilot_internal/user` |
-| OpenCode Go | 5h / weekly / monthly 窗口美元用量 | 本地 SQLite（shell 调用 `opencode db` CLI） |
+| OpenCode Go | 5h / weekly / monthly 窗口用量百分比（服务端记账，仅套餐内用量） | `opencode.ai/zen/go/v1/usage`（Zen API Key） |
 | Kimi | 5h 滚动限流窗口 + 周订阅配额百分比 | `api.kimi.com/coding/v1/usages` |
 
 功能：菜单栏双行堆叠图标（每启用 metric 一个槽位）、点击弹出用量面板、阈值告警系统通知、余额历史追踪（周/月/近7天/近30天日均）、Deep-Link 到各供应商 Web 控制台。
@@ -23,7 +23,7 @@
 - `project.yml` — XcodeGen 工程定义（target、构建设置、entitlements）。改 target/设置后运行 `xcodegen generate` 重新生成 `.xcodeproj`
 - `APIUsageStatus.xcodeproj/` — 由 XcodeGen 生成，不要手工编辑
 - `APIUsageStatus/Resources/Info.plist` — `LSUIElement=true`、版本号
-- `APIUsageStatus/APIUsageStatus.entitlements` — **App Sandbox 已禁用**（OpenCode Go 供应商需要 `Process.run()` 调本地 CLI）；仅保留 network client 与 user-selected 文件只读权限
+- `APIUsageStatus/APIUsageStatus.entitlements` — **App Sandbox 已禁用**（`OpenCodeWorkspaceResolver` 需 shell 出 `/usr/bin/grep` 扫描本地 OpenCode 日志以恢复 workspace ID）；仅保留 network client 与 user-selected 文件只读权限
 - `docs/ARCHITECTURE.md` — 权威架构文档（ADR-001），含模块拆解、数据流图、并发模型、Keychain/网络层设计
 - `docs/PRD.md`、`docs/DEVELOPMENT_PLAN.md` — 产品需求与开发计划
 - `docs/provider-interfaces/` — 各供应商 API 数据契约（minimax / deepseek / copilot / kimi / opencode_go）
@@ -43,7 +43,6 @@ APIUsageStatus/
 ├── Services/                 # RefreshService（Actor，刷新编排、cycle 抢占、单实例刷新）/ PersistenceService / KeychainService / NotificationManager / LimitRolloverDetector / AppLaunchService
 ├── Suppliers/                # Supplier 协议 + 各供应商实现与 Parser（MiniMax/DeepSeek/Copilot/OpenCode/Kimi）+ SupplierRegistry
 ├── Network/                  # NetworkClient（URLSession async/await）+ Endpoint + RetryPolicy（指数退避最多 3 次，协作取消）
-├── Shell/                    # ShellProcessRunner 等（仅 OpenCode Go 供应商使用，支持取消时 SIGTERM）
 ├── Balance/                  # BalanceCalculator（纯逻辑）+ BalanceSnapshot
 ├── PixelFont/                # ⚠️ 已弃用：原像素字模引擎，代码已注释，保留供历史参考
 ├── Extensions/               # Date/Decimal/String/Color/Data 扩展、Provider 图标
@@ -55,7 +54,7 @@ APIUsageStatusTests/          # 单元测试 + 快照测试；ReferenceImages/ �
 **核心并发约定**：
 
 - `AppState`、`RefreshService`、`PersistenceService`、`KeychainService`、`NetworkClient` 均为 Actor；UI 通过 `AppStateProxy`（`@MainActor`）观察
-- 刷新 cycle 槽位契约：任意时刻最多一个 cycle；手动刷新抢占式（`CycleToken` 引用相等判定 owner，被抢占方跳过清理写入），定时/单实例刷新非抢占；`Task.cancel()` 必须能穿透网络层（`URLError(.cancelled)` → `CancellationError` 不触发重试）与 Shell 层（`withTaskCancellationHandler` → SIGTERM）
+- 刷新 cycle 槽位契约：任意时刻最多一个 cycle；手动刷新抢占式（`CycleToken` 引用相等判定 owner，被抢占方跳过清理写入），定时/单实例刷新非抢占；`Task.cancel()` 必须能穿透网络层（`URLError(.cancelled)` → `CancellationError` 不触发重试）
 - **供应商特定逻辑只归属 Supplier/Parser 层**：通用执行路径（`AppState`/`RefreshService`）只识别 `MetricConfig.key` 与 `MetricCycleEndPolicy` 枚举，禁止出现 `Provider.xxx` 字面判断
 
 **持久化**：`instances.json`（实例配置+全局设置）与 `{uuid}.json`（余额历史）存于 Application Support，一律原子写入（临时文件→重命名）；API Key 只存 Keychain（`kSecClassInternetPassword`，server=`"APIUsageStatus"`，account=`api_key_ref`），绝不明文落盘、不入日志。
@@ -81,7 +80,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 > `-derivedDataPath ./tmp/DerivedData` 是必须的：默认 DerivedData 路径（`~/Library/Developer/Xcode/DerivedData`）存在权限问题，会导致构建失败。
 
-如需重新生成工程文件：`brew install xcodegen && xcodegen generate`。
+如需重新生成工程文件：`brew install xcodegen && xcodegen generate`。若 brew 安装失败（本机 macOS 13 无法源码构建 xcodegen），用 `tmp/xcodegen-dist/xcodegen/bin/xcodegen generate`（GitHub release 预编译二进制，已验证可用）。
 
 ### 签名
 
@@ -178,7 +177,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 - **API Key**：仅存 Keychain，绝不写入磁盘明文、`UserDefaults` 或日志
 - **网络**：仅 HTTPS 访问各供应商已知 API 端点，不外传用户数据
-- **App Sandbox 已禁用**：唯一原因是 OpenCode Go 供应商需 `Process.run()` 调本地 `opencode` CLI 读取 `~/.local/share/opencode/opencode.db`（无公开 REST API）。若不用 OpenCode Go，仅 `ShellProcessRunner` 代码路径需要此权限，其余供应商在沙箱下行为一致。改动时不得扩大子进程调用范围
+- **App Sandbox 已禁用**：唯一原因是 `OpenCodeWorkspaceResolver` 需 shell 出 `/usr/bin/grep` 扫描 `~/.local/share/opencode/log/` 恢复 workspace ID（「See details」深链）。用量查询本身已走官方 HTTP API（`opencode.ai/zen/go/v1/usage`），无任何本地子进程依赖。改动时不得扩大子进程调用范围
 - **日志**：os.Logger，生产环境敏感信息自动脱敏
 - **ad-hoc 签名**下 Keychain 正常工作，无需付费开发者账号
 

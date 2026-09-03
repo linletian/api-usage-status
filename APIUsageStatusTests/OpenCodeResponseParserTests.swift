@@ -4,178 +4,129 @@ import XCTest
 final class OpenCodeResponseParserTests: XCTestCase {
     let parser = OpenCodeResponseParser()
 
-    // Fixture captured 2026-06-15 against the real `~/.local/share/opencode/opencode.db`.
-    // `five_hour_ms` and `week_start_ms` are baked into the SQL by the supplier; only
-    // the row content matters here.
-    private let realPrimaryJSON = """
-    [
-      {
-        "five_hour_cost": 20.118024910000017,
-        "weekly_cost": 25.05777525,
-        "five_hour_oldest_ms": 1781490257796,
-        "anchor_ms": 1772019366076
-      }
-    ]
+    // Fixture captured 2026-09-02 from the live
+    // `GET https://opencode.ai/zen/go/v1/usage` (PR #16513, post-simplification
+    // response shape).
+    private let realAPIJSON = """
+    {"usage":{"rolling":{"status":"ok","percent":0,"resetsAt":"2026-09-02T19:44:30.306Z"},"weekly":{"status":"ok","percent":79,"resetsAt":"2026-09-07T00:00:00.306Z"},"monthly":{"status":"ok","percent":55,"resetsAt":"2026-09-25T11:33:14.306Z"}}}
     """.data(using: .utf8)!
 
-    private let realMonthlyJSON = """
-    [
-      {
-        "monthly_cost": 58.416045410000045
-      }
-    ]
-    """.data(using: .utf8)!
+    func testParseRealFixture() throws {
+        let p = try parser.parse(realAPIJSON)
 
-    func testParsePrimaryRealFixture() throws {
-        let p = try parser.parsePrimary(realPrimaryJSON)
-        XCTAssertEqual(p.fiveHourCost, 20.118, accuracy: 0.001)
-        XCTAssertEqual(p.weeklyCost, 25.058, accuracy: 0.001)
-        XCTAssertEqual(p.fiveHourOldestMs, 1781490257796)
-        XCTAssertEqual(p.anchorMs, 1772019366076)
+        XCTAssertEqual(p.fiveHour.percent, 0)
+        // 2026-09-02T19:44:30.306Z — ±1ms tolerance for the Double ms
+        // truncation in the parser.
+        XCTAssertEqual(Double(p.fiveHour.endTimeMs), 1_788_378_270_306, accuracy: 1)
+
+        XCTAssertEqual(p.weekly.percent, 79)
+        XCTAssertEqual(Double(p.weekly.endTimeMs), 1_788_739_200_306, accuracy: 1)
+
+        XCTAssertEqual(p.monthly.percent, 55)
+        XCTAssertEqual(Double(p.monthly.endTimeMs), 1_790_335_994_306, accuracy: 1)
     }
 
-    func testParsePrimaryAcceptsBareObject() throws {
+    func testParseRateLimitedWindow() throws {
         let json = """
-        {"five_hour_cost": 1.0, "weekly_cost": 2.0, "five_hour_oldest_ms": 100, "anchor_ms": 50}
+        {"usage":{"rolling":{"status":"rate-limited","percent":100,"resetsAt":"2026-09-02T19:44:30.306Z"},"weekly":{"status":"ok","percent":3,"resetsAt":"2026-09-07T00:00:00.306Z"},"monthly":{"status":"ok","percent":7,"resetsAt":"2026-09-25T11:33:14.306Z"}}}
         """.data(using: .utf8)!
-        let p = try parser.parsePrimary(json)
-        XCTAssertEqual(p.fiveHourCost, 1.0)
-        XCTAssertEqual(p.weeklyCost, 2.0)
-        XCTAssertEqual(p.fiveHourOldestMs, 100)
-        XCTAssertEqual(p.anchorMs, 50)
+        let p = try parser.parse(json)
+        XCTAssertEqual(p.fiveHour.percent, 100)
+        XCTAssertEqual(p.weekly.percent, 3)
+        XCTAssertEqual(p.monthly.percent, 7)
     }
 
-    func testParseMonthlyRealFixture() throws {
-        let cost = try parser.parseMonthly(realMonthlyJSON)
-        XCTAssertEqual(cost, 58.416, accuracy: 0.001)
+    /// Schema-drift guard: `rate-limited` with a non-100 percent must still
+    /// render as an exhausted window (the server couples the two, but the
+    /// parser enforces it rather than trusting the payload).
+    func testParseRateLimitedForcesHundredOnMismatch() throws {
+        let json = """
+        {"usage":{"rolling":{"status":"rate-limited","percent":42,"resetsAt":"2026-09-02T19:44:30.306Z"},"weekly":{"status":"ok","percent":3,"resetsAt":"2026-09-07T00:00:00.306Z"},"monthly":{"status":"ok","percent":7,"resetsAt":"2026-09-25T11:33:14.306Z"}}}
+        """.data(using: .utf8)!
+        let p = try parser.parse(json)
+        XCTAssertEqual(p.fiveHour.percent, 100)
     }
 
-    func testBuildParsedAllDimensions() {
-        let primary = OpenCodeResponseParser.ParsedPrimary(
-            fiveHourCost: 6.0,
-            weeklyCost: 15.0,
-            anchorMs: 1_772_019_366_076,
-            fiveHourOldestMs: 1_781_490_257_796
-        )
-        let now = Date(timeIntervalSince1970: 1_783_000_000) // 2026-06-15
-        let p = parser.buildParsed(primary: primary, monthlyCost: 30.0, now: now)
-
-        XCTAssertEqual(p.fiveHour.used, 6.0)
-        XCTAssertEqual(p.fiveHour.limit, OpenCodeGoLimits.fiveHour, accuracy: 0.001)
-        XCTAssertEqual(p.fiveHour.percent, 50.0, accuracy: 0.01)
-        XCTAssertNotNil(p.fiveHour.endTimeMs)
-
-        XCTAssertEqual(p.weekly.used, 15.0)
-        XCTAssertEqual(p.weekly.limit, OpenCodeGoLimits.weekly, accuracy: 0.001)
-        XCTAssertEqual(p.weekly.percent, 50.0, accuracy: 0.01)
-
-        XCTAssertEqual(p.monthly.used, 30.0)
-        XCTAssertEqual(p.monthly.limit, OpenCodeGoLimits.monthly, accuracy: 0.001)
-        XCTAssertEqual(p.monthly.percent, 50.0, accuracy: 0.01)
+    /// `resetsAt` is documented as ISO8601 with milliseconds; a bare
+    /// second-resolution timestamp must still parse (metadata drift should
+    /// not break all three windows).
+    func testParseResetsAtWithoutFractionalSeconds() throws {
+        let json = """
+        {"usage":{"rolling":{"status":"ok","percent":0,"resetsAt":"2026-09-02T19:44:30Z"},"weekly":{"status":"ok","percent":79,"resetsAt":"2026-09-07T00:00:00Z"},"monthly":{"status":"ok","percent":55,"resetsAt":"2026-09-25T11:33:14.306Z"}}}
+        """.data(using: .utf8)!
+        let p = try parser.parse(json)
+        XCTAssertEqual(Double(p.fiveHour.endTimeMs), 1_788_378_270_000, accuracy: 1)
+        XCTAssertEqual(Double(p.weekly.endTimeMs), 1_788_739_200_000, accuracy: 1)
+        XCTAssertEqual(Double(p.monthly.endTimeMs), 1_790_335_994_306, accuracy: 1)
     }
 
-    // MARK: - Window algorithm tests
-
-    func testFiveHourResetWithOldest() {
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let oldest = Int64(1_700_000_000 * 1000)
-        let reset = OpenCodeResponseParser.fiveHourResetDate(from: oldest, fallback: now)
-        XCTAssertEqual(reset.timeIntervalSince(now), 5 * 3600, accuracy: 1)
+    func testParseClampsOutOfRangePercent() throws {
+        let json = """
+        {"usage":{"rolling":{"status":"ok","percent":150,"resetsAt":"2026-09-02T19:44:30.306Z"},"weekly":{"status":"ok","percent":-5,"resetsAt":"2026-09-07T00:00:00.306Z"},"monthly":{"status":"ok","percent":50,"resetsAt":"2026-09-25T11:33:14.306Z"}}}
+        """.data(using: .utf8)!
+        let p = try parser.parse(json)
+        XCTAssertEqual(p.fiveHour.percent, 100)
+        XCTAssertEqual(p.weekly.percent, 0)
     }
 
-    func testFiveHourResetNoMessages() {
-        let now = Date()
-        let reset = OpenCodeResponseParser.fiveHourResetDate(from: nil, fallback: now)
-        XCTAssertEqual(reset.timeIntervalSince(now), 5 * 3600, accuracy: 1)
+    func testParseRejectsMissingUsageKey() {
+        let json = #"{"unexpected": true}"#.data(using: .utf8)!
+        XCTAssertThrowsError(try parser.parse(json))
     }
 
-    func testNextMondayMidnightUTC() {
-        // 2026-06-15 is a Monday at some time-of-day. The reset should be
-        // exactly 7 days later at 00:00 UTC.
-        let monday = Date(timeIntervalSince1970: 1_783_000_000)
-        let reset = OpenCodeResponseParser.nextMondayMidnightUTC(from: monday)
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(secondsFromGMT: 0)!
-        let comps = cal.dateComponents([.weekday, .hour, .minute, .second], from: reset)
-        XCTAssertEqual(comps.weekday, 2) // Monday
-        XCTAssertEqual(comps.hour, 0)
-        XCTAssertEqual(comps.minute, 0)
-        XCTAssertEqual(comps.second, 0)
+    func testParseRejectsNonObjectRoot() {
+        let json = #"[1, 2, 3]"#.data(using: .utf8)!
+        XCTAssertThrowsError(try parser.parse(json))
     }
 
-    func testNextMondayMidnightFromMidweek() {
-        let wednesday = Date(timeIntervalSince1970: 1_783_432_800)
-        let reset = OpenCodeResponseParser.nextMondayMidnightUTC(from: wednesday)
-
-        // Compute the expected next Monday 00:00 UTC dynamically instead of
-        // hardcoding a timestamp that drifts across timezones.
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(secondsFromGMT: 0)!
-        var mondayComps = DateComponents()
-        mondayComps.weekday = 2
-        mondayComps.hour = 0
-        mondayComps.minute = 0
-        mondayComps.second = 0
-        let expectedMonday = cal.nextDate(after: wednesday, matching: mondayComps, matchingPolicy: .nextTime)!
-
-        XCTAssertEqual(reset.timeIntervalSince(expectedMonday), 0, accuracy: 60)
+    func testParseRejectsMissingWindow() {
+        let json = """
+        {"usage":{"rolling":{"status":"ok","percent":0,"resetsAt":"2026-09-02T19:44:30.306Z"},"weekly":{"status":"ok","percent":79,"resetsAt":"2026-09-07T00:00:00.306Z"}}}
+        """.data(using: .utf8)!
+        XCTAssertThrowsError(try parser.parse(json))
     }
 
-    func testAnchoredMonthEndInPastThisMonth() {
-        // Anchor 25th, now mid-month → end is this month's 25th
-        let anchor = Date(timeIntervalSince1970: 1_772_019_366) // 2026-02-25
-        let now = Date(timeIntervalSince1970: 1_782_000_000)   // 2026-06-10
-        let end = OpenCodeResponseParser.anchoredMonthEnd(now: now, anchor: anchor)
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(secondsFromGMT: 0)!
-        let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: end)
-        XCTAssertEqual(comps.year, 2026)
-        XCTAssertEqual(comps.month, 6)
-        XCTAssertEqual(comps.day, 25)
-        XCTAssertEqual(comps.hour, 11)
+    func testParseRejectsMissingPercent() {
+        let json = """
+        {"usage":{"rolling":{"status":"ok","resetsAt":"2026-09-02T19:44:30.306Z"},"weekly":{"status":"ok","percent":79,"resetsAt":"2026-09-07T00:00:00.306Z"},"monthly":{"status":"ok","percent":55,"resetsAt":"2026-09-25T11:33:14.306Z"}}}
+        """.data(using: .utf8)!
+        XCTAssertThrowsError(try parser.parse(json))
     }
 
-    func testAnchoredMonthEndAlreadyPassed() {
-        // Anchor 25th, now past this month's 25th → end is next month's 25th
-        let anchor = Date(timeIntervalSince1970: 1_772_019_366) // 2026-02-25
-        let now = Date(timeIntervalSince1970: 1_784_000_000)   // 2026-06-26
-        let end = OpenCodeResponseParser.anchoredMonthEnd(now: now, anchor: anchor)
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(secondsFromGMT: 0)!
-        let comps = cal.dateComponents([.year, .month, .day], from: end)
-        XCTAssertEqual(comps.year, 2026)
-        XCTAssertEqual(comps.month, 7)
-        XCTAssertEqual(comps.day, 25)
+    func testParseRejectsMalformedResetsAt() {
+        let json = """
+        {"usage":{"rolling":{"status":"ok","percent":0,"resetsAt":"not-a-date"},"weekly":{"status":"ok","percent":79,"resetsAt":"2026-09-07T00:00:00.306Z"},"monthly":{"status":"ok","percent":55,"resetsAt":"2026-09-25T11:33:14.306Z"}}}
+        """.data(using: .utf8)!
+        XCTAssertThrowsError(try parser.parse(json))
     }
 
     // MARK: - makeResponse (rawData shape)
 
     func testMakeResponseShape() {
-        let primary = OpenCodeResponseParser.ParsedPrimary(
-            fiveHourCost: 1.0,
-            weeklyCost: 2.0,
-            anchorMs: 1_772_019_366_076,
-            fiveHourOldestMs: 1_781_490_257_796
+        let parsed = OpenCodeResponseParser.Parsed(
+            fiveHour: OpenCodeResponseParser.ParsedWindow(percent: 70.8, endTimeMs: 1_788_378_270_306),
+            weekly: OpenCodeResponseParser.ParsedWindow(percent: 50, endTimeMs: 1_788_739_200_306),
+            monthly: OpenCodeResponseParser.ParsedWindow(percent: 58.3, endTimeMs: 1_790_335_994_306)
         )
-        let now = Date(timeIntervalSince1970: 1_783_000_000)
-        let parsed = parser.buildParsed(primary: primary, monthlyCost: 3.0, now: now)
         let response = OpenCodeSupplier.makeResponse(from: parsed)
 
-        // 5h: percent = 1/12 * 100 ≈ 8.33
-        XCTAssertEqual(response.rawData["5h"], "8.3")
-        XCTAssertEqual(response.rawData["5h:used"], "1.00")
-        XCTAssertEqual(response.rawData["5h:limit"], "12.00")
-        XCTAssertNotNil(response.rawData["5h:end_time"])
+        XCTAssertEqual(response.rawData["5h"], "70.8")
+        XCTAssertEqual(response.rawData["5h:end_time"], "1788378270306")
+        XCTAssertEqual(response.rawData["weekly"], "50.0")
+        XCTAssertEqual(response.rawData["weekly:end_time"], "1788739200306")
+        XCTAssertEqual(response.rawData["monthly"], "58.3")
+        XCTAssertEqual(response.rawData["monthly:end_time"], "1790335994306")
 
-        XCTAssertEqual(response.rawData["weekly:used"], "2.00")
-        XCTAssertEqual(response.rawData["weekly:limit"], "30.00")
-        XCTAssertNotNil(response.rawData["weekly:end_time"])
+        // The API reports no absolute dollar amounts — the retired
+        // local-SQLite path's keys must not come back.
+        XCTAssertNil(response.rawData["5h:used"])
+        XCTAssertNil(response.rawData["5h:limit"])
+        XCTAssertNil(response.rawData["weekly:used"])
+        XCTAssertNil(response.rawData["weekly:limit"])
+        XCTAssertNil(response.rawData["monthly:used"])
+        XCTAssertNil(response.rawData["monthly:limit"])
 
-        XCTAssertEqual(response.rawData["monthly:used"], "3.00")
-        XCTAssertEqual(response.rawData["monthly:limit"], "60.00")
-        XCTAssertNotNil(response.rawData["monthly:end_time"])
-
-        XCTAssertEqual(response.currency, "USD")
+        XCTAssertNil(response.currency)
         XCTAssertTrue(response.isAvailable)
     }
 }

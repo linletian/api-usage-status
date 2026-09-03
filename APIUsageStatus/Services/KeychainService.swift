@@ -146,20 +146,23 @@ actor KeychainService {
         }
     }
 
-    // MARK: - OpenCode Placeholder Key
+    // MARK: - OpenCode Shared Key
 
-    /// Fixed `apiKeyRef` shared by all OpenCode Go instances. OpenCode has
-    /// no real API key, but `RefreshService` looks up the ref in Keychain
-    /// before calling `fetchUsage`. We store an empty string so the lookup
-    /// succeeds; `OpenCodeSupplier` ignores the value.
+    /// Fixed `apiKeyRef` shared by all OpenCode Go instances. The official
+    /// usage API requires a Zen API key, and one key covers all three
+    /// windows (5h/weekly/monthly), so every OpenCode instance points at
+    /// this single entry — pasting the key in any one instance's editor
+    /// configures them all, and `RefreshService` de-dupes to one fetch per
+    /// cycle. The entry is created empty at launch; `OpenCodeSupplier`
+    /// rejects an empty key with a "configure in Settings" error.
     static let openCodePlaceholderRef = "local://opencode-go"
 
-    /// Ensure the OpenCode placeholder key exists in the keychain. Idempotent.
+    /// Ensure the shared OpenCode keychain entry exists. Idempotent.
     func ensureOpenCodePlaceholder() throws {
         if retrieve(for: Self.openCodePlaceholderRef) != nil {
             return
         }
         try store(key: "", for: Self.openCodePlaceholderRef)
-        logger.info("Inserted OpenCode placeholder key for ref: \(Self.openCodePlaceholderRef, privacy: .private)")
+        logger.info("Inserted OpenCode shared key entry for ref: \(Self.openCodePlaceholderRef, privacy: .private)")
     }
 }

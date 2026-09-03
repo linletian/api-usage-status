@@ -153,49 +153,6 @@ final class RefreshServiceCycleSlotTests: XCTestCase {
         }
     }
 
-    // MARK: - Shell process cancellation
-
-    /// Cancelling the parent Task mid-shell-call must terminate the child
-    /// process and return quickly. We use `/bin/sleep 30` with timeout 30
-    /// (so the timeout would otherwise take 30s) and cancel after 50ms —
-    /// the run should return in well under 2s via SIGTERM.
-    func testShellProcessRunnerTerminatesOnParentCancellation() async throws {
-        let runner = ShellProcessRunner.shared
-        let cmd = ShellCommand(
-            executable: "/bin/sleep",
-            arguments: ["30"],
-            timeout: 30
-        )
-
-        let start = Date()
-        let runnerTask = Task<Void, Error> {
-            do {
-                _ = try await runner.run(cmd)
-                throw NSError(domain: "test", code: 0,
-                              userInfo: [NSLocalizedDescriptionKey: "expected throw"])
-            } catch is CancellationError {
-                return
-            } catch is ShellError {
-                // SIGTERM surfaces as nonZeroExit / launchFailed before
-                // cancellation propagates. Either way, the process must
-                // have been terminated within the time bound.
-                return
-            } catch {
-                // URLError / POSIX / NSError from terminated process are
-                // also acceptable here.
-                return
-            }
-        }
-        // Give the process a chance to spawn, then cancel.
-        try? await Task.sleep(for: .milliseconds(50))
-        runnerTask.cancel()
-        try await runnerTask.value
-        let elapsed = Date().timeIntervalSince(start)
-
-        XCTAssertLessThan(elapsed, 2.0,
-            "SIGTERM should kill the child well within 2s; took \(elapsed)s")
-    }
-
     // MARK: - Cycle-slot age-based force-clear (§4.7 defense)
 
     /// A seeded token whose `startedAt` is older than `2 × refreshInterval`

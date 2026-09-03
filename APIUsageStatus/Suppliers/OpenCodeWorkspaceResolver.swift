@@ -64,9 +64,11 @@ enum OpenCodeWorkspaceResolver {
     // Reference sample of the canonical wrk_ ID format. Used by the
     // debug-only `validateFormatContract` check below to flag any future
     // drift in the wrk_ ID character set (e.g. if OpenCode mixes in lowercase).
+    // The trailing `/` is required: `idRegex` only matches an ID followed by
+    // `/` (lookahead), so a bare ID sample would never match.
     // Update this constant if a new format is verified — the assert will then
     // catch the next regression on dev/test runs.
-    private static let knownGoodSample = "wrk_01ABCDEFGHIJKLMNOPQRSTUVWX"
+    private static let knownGoodSample = "wrk_01ABCDEFGHIJKLMNOPQRSTUVWX/"
 
     /// Confirms the regex still matches the canonical wrk_ format. Runs only
     /// in debug builds (`assert` is a no-op in `-O` release builds), so this

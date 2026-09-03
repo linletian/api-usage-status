@@ -83,6 +83,21 @@ final class SettingsViewModelTrackingToggleTests: XCTestCase {
         )
     }
 
+    private func makeSlot(
+        uuid: String,
+        displayName: String
+    ) -> SlotViewData {
+        SlotViewData(
+            uuid: uuid,
+            displayName: displayName,
+            shortName: String(displayName.prefix(3)).uppercased(),
+            sortOrder: 0,
+            colorState: .normal,
+            provider: "test",
+            dimension: "test"
+        )
+    }
+
     // MARK: - Immediate AppState propagation
 
     /// Toggling tracking off on a single instance must flip the live
@@ -158,15 +173,28 @@ final class SettingsViewModelTrackingToggleTests: XCTestCase {
         try? await persistenceService.saveInstances([baseline], settings: .default)
         await viewModel.load()
         await appState.setInstances([baseline])
+        // Seed a slot so the "toggle off prunes it, discard does NOT
+        // resurrect it — the next refresh rebuilds it" contract is
+        // observable, not just implied. See PR #23 re-review.
+        await appState.mergeCycleResult(
+            cycleSuccesses: [makeSlot(uuid: "inst-1", displayName: "Alpha")],
+            cycleErroredUUIDs: []
+        )
 
         await viewModel.setInstanceTrackingEnabled(uuid: "inst-1", enabled: false)
         let midToggle = await appState.getInstances()
         XCTAssertFalse(midToggle[0].trackingEnabled, "Sanity: toggle took effect")
+        let slotsAfterToggle = await appState.getSlotViewDataList()
+        XCTAssertNil(slotsAfterToggle.first { $0.uuid == "inst-1" },
+                     "Toggling off must prune the slot immediately")
 
         await viewModel.discardChanges()
         let afterDiscard = await appState.getInstances()
         XCTAssertTrue(afterDiscard[0].trackingEnabled,
                       "discardChanges must roll the runtime tracking flag back to the loaded baseline")
+        let slotsAfterDiscard = await appState.getSlotViewDataList()
+        XCTAssertNil(slotsAfterDiscard.first { $0.uuid == "inst-1" },
+                     "Discard restores the tracking flag, not the slot — the next refresh rebuilds it")
         XCTAssertFalse(viewModel.hasUnsavedChanges,
                        "Discard must clear the dirty marker")
     }
@@ -243,6 +271,13 @@ final class SettingsViewModelTrackingToggleTests: XCTestCase {
         try? await persistenceService.saveInstances([inst], settings: .default)
         await viewModel.load()
         await appState.setInstances([inst])
+        // Seed a slot so the "no slot yet" half of the contract is
+        // observable after the delete + discard sequence, not just
+        // asserted against an always-empty buffer. See PR #23 re-review.
+        await appState.mergeCycleResult(
+            cycleSuccesses: [makeSlot(uuid: "inst-1", displayName: "Alpha")],
+            cycleErroredUUIDs: []
+        )
 
         await viewModel.setInstanceTrackingEnabled(uuid: "inst-1", enabled: false)
         await viewModel.deleteInstance(inst)
@@ -257,6 +292,9 @@ final class SettingsViewModelTrackingToggleTests: XCTestCase {
         XCTAssertEqual(live.count, 1)
         XCTAssertTrue(live[0].trackingEnabled,
                       "Discard must leave AppState and draft consistent: instance restored with tracking on")
+        let slots = await appState.getSlotViewDataList()
+        XCTAssertNil(slots.first { $0.uuid == "inst-1" },
+                     "Discard restores the instance, not its slot — the next refresh rebuilds it")
     }
 
     // MARK: - Save persists toggle

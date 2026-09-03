@@ -211,7 +211,7 @@
 2. `SettingsViewModel` 同步更新本地 `instances` 草稿（保持 `hasUnsavedChanges == true` 提示未保存），并 `await appStateProxy.setInstanceTracking(uuid:enabled:)`。
 3. `AppStateProxy` 转 `AppState.setInstanceTracking` 翻 `_instances` 的 `trackingEnabled`，`enabled == false` 时移除该 uuid 的 slot。
 4. `AppStateProxy.syncFromState()` 把 `_slotViewDataList` 的新值发布到 `@Published`，`MenuBarController` 通过 `proxy.$slotViewDataList` 观察、调用 `MenuBarIconRenderer.render(...)` 重新绘制。
-5. 用户若点 **Save Changes** → `viewModel.save()` 走 `persistenceService.saveInstances` 落盘到 `instances.json`；点 **Discard Changes** → `viewModel.discardChanges()` 逐 UUID 调用 `appStateProxy.setInstanceTracking(uuid:, enabled: originalInstances[i].trackingEnabled)` 回滚运行时状态（避免整批 `setInstances(originalInstances)` 引发的"全量重闪"）。
+5. 用户若点 **Save Changes** → `viewModel.save()` 走 `persistenceService.saveInstances` 落盘到 `instances.json`；点 **Discard Changes** → `viewModel.discardChanges()` 用 `setInstances(originalInstances)` 整批回滚运行时 `_instances`（其 `pruneDisabledSlots` 同步清理被禁用实例的槽位；草稿期间被裁剪的槽位不复活，下次刷新重建）。整批回滚同时覆盖「仅改开关」「新增实例」「删除实例」三种草稿形态。
 
 **与刷新层的协作**
 

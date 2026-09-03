@@ -80,8 +80,8 @@ actor AppState {
     /// prune its slot from `_slotViewDataList` when the instance becomes
     /// disabled. The new state is the runtime authority — `SettingsViewModel`
     /// also keeps a local copy for the "Save Changes / Discard Changes"
-    /// flow, but a discard rolls this value back via the same method. See
-    /// issue #20.
+    /// flow; a discard restores the baseline wholesale via `setInstances`.
+    /// See issue #20.
     ///
     /// Returns `true` when the instance was found and the state was
     /// changed; `false` when the UUID didn't exist (no-op, including

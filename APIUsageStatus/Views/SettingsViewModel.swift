@@ -76,34 +76,20 @@ final class SettingsViewModel: ObservableObject {
     }
 
     func discardChanges() async {
-        // Per-UUID toggle rollback — preserves slot data for
-        // unrelated instances by avoiding a full `_instances`
-        // rewrite. Sufficient when the draft *only* changed
-        // tracking flags on existing instances. See issue #20.
-        for instance in originalInstances {
-            if let current = instances.first(where: { $0.uuid == instance.uuid }),
-               current.trackingEnabled != instance.trackingEnabled {
-                await appStateProxy.setInstanceTracking(
-                    uuid: instance.uuid,
-                    enabled: instance.trackingEnabled
-                )
-            }
-        }
-
         instances = originalInstances
         settings = originalSettings
         apiKeys = [:]
         saveError = nil
         launchAtLoginError = nil
 
-        // The per-UUID rollback above is insufficient when the
-        // draft also added or removed instances — those need a
-        // full `setInstances` to take effect (e.g. the user
-        // toggled A off then deleted A, then clicked Discard;
-        // without this pass the runtime AppState would still be
-        // missing A while the local draft would have it back).
-        // `setInstances` runs `pruneDisabledSlots` so the runtime
-        // matches the restored tracking state. See PR #23 review.
+        // Roll the runtime `_instances` back to the loaded baseline so
+        // Discard and the next save see the same starting point. One
+        // wholesale `setInstances` covers every draft shape — tracking
+        // toggles, additions, and removals alike. Its `pruneDisabledSlots`
+        // pass drops slots whose owner is disabled again, while slots
+        // evicted by a mid-draft toggle/delete intentionally stay gone
+        // until the next refresh rebuilds them (the "no slot yet"
+        // contract pinned by `testDeleteThenDiscardStaysConsistent`).
         await appState.setInstances(instances)
         await appState.updateSettings(settings)
         await appStateProxy.syncFromState()

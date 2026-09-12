@@ -5,9 +5,12 @@ import XCTest
 //
 // DeepSeek officially announced that API usage is billed differently during
 // peak and off-peak hours. Peak windows (in Beijing Time, UTC+8):
-//   • 09:00 ≤ t < 12:00
-//   • 14:00 ≤ t < 18:00
-// Off-peak is everything else.
+//   • 09:00 ≤ t < 12:00   (weekdays only — see issue #19)
+//   • 14:00 ≤ t < 18:00   (weekdays only — see issue #19)
+//
+// `policyVersion "2026-09"` (issue #19): weekends (Saturday & Sunday) are
+// entirely off-peak. The time-of-day peak windows above apply only on
+// Mon–Fri. So on Sat/Sun, the answer is `.offPeak` regardless of clock time.
 //
 // These tests pin `PeakSchedule.isPeak(at:calendar:)` against the BJT
 // boundaries and verify that a non-BJT calendar (UTC) sees the same BJT
@@ -122,6 +125,60 @@ final class PeakPeriodTests: XCTestCase {
     func testOffPeakJustBeforeLunch() {
         // 13:59 BJT — last minute before second peak window
         let now = dateAtBJTHourMinute(hour: 13, minute: 59)
+        XCTAssertEqual(PeakSchedule.isPeak(at: now, calendar: bjtCalendar), .offPeak)
+    }
+
+    // MARK: - Weekend short-circuit (issue #19, policyVersion "2026-09")
+    //
+    // Per the updated DeepSeek rule, Saturday (weekday 7) and Sunday
+    // (weekday 1) are *always* off-peak regardless of clock time. These
+    // tests pin the short-circuit branch in `PeakSchedule.isPeak(at:calendar:)`
+    // by exercising BJT instants that would otherwise be peak on a weekday.
+    //
+    // Date anchors in BJT:
+    //   2026-07-04 = Saturday (weekday 7)
+    //   2026-07-05 = Sunday   (weekday 1)
+    // Foundation's `Calendar.weekday` is 1=Sun, 2=Mon, …, 7=Sat.
+
+    func testWeekendSaturdayMidPeakWindow() {
+        // Saturday 09:30 BJT — would be peak on a weekday; must be off-peak.
+        let now = dateAtBJTHourMinute(day: 4, hour: 9, minute: 30)
+        XCTAssertEqual(PeakSchedule.isPeak(at: now, calendar: bjtCalendar), .offPeak)
+    }
+
+    func testWeekendSaturdayPeakStartEdge() {
+        // Saturday 09:00 BJT — exact weekday peak start, must still be off-peak.
+        let now = dateAtBJTHourMinute(day: 4, hour: 9, minute: 0)
+        XCTAssertEqual(PeakSchedule.isPeak(at: now, calendar: bjtCalendar), .offPeak)
+    }
+
+    func testWeekendSaturdaySecondPeakWindow() {
+        // Saturday 14:00 BJT — second weekday peak window start, must be off-peak.
+        let now = dateAtBJTHourMinute(day: 4, hour: 14, minute: 0)
+        XCTAssertEqual(PeakSchedule.isPeak(at: now, calendar: bjtCalendar), .offPeak)
+    }
+
+    func testWeekendSaturdayLateEvening() {
+        // Saturday 23:30 BJT — already off-peak on a weekday, but the test
+        // exists to confirm the weekend branch also covers "obviously off-peak"
+        // clock times (defense in depth — no implicit assumption that the
+        // branch only fires for time-of-day conflicts).
+        let now = dateAtBJTHourMinute(day: 4, hour: 23, minute: 30)
+        XCTAssertEqual(PeakSchedule.isPeak(at: now, calendar: bjtCalendar), .offPeak)
+    }
+
+    func testWeekendSundayEarlyMorning() {
+        // Sunday 02:00 BJT — mirrors `testOffPeakLateNight` but goes through
+        // the weekend branch (weekday=1) rather than the time-of-day branch.
+        let now = dateAtBJTHourMinute(day: 5, hour: 2, minute: 0)
+        XCTAssertEqual(PeakSchedule.isPeak(at: now, calendar: bjtCalendar), .offPeak)
+    }
+
+    func testWeekendSundayPeakStartEdge() {
+        // Sunday 09:00 BJT — second weekend day, exact weekday peak start.
+        // Confirms the short-circuit is symmetric across Sat (weekday 7) and
+        // Sun (weekday 1).
+        let now = dateAtBJTHourMinute(day: 5, hour: 9, minute: 0)
         XCTAssertEqual(PeakSchedule.isPeak(at: now, calendar: bjtCalendar), .offPeak)
     }
 

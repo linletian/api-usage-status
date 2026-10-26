@@ -75,12 +75,25 @@ final class SettingsViewModel: ObservableObject {
         logger.info("SettingsViewModel loaded \(sortedInstances.count) instances")
     }
 
-    func discardChanges() {
+    func discardChanges() async {
         instances = originalInstances
         settings = originalSettings
         apiKeys = [:]
         saveError = nil
         launchAtLoginError = nil
+
+        // Roll the runtime `_instances` back to the loaded baseline so
+        // Discard and the next save see the same starting point. One
+        // wholesale `setInstances` covers every draft shape — tracking
+        // toggles, additions, and removals alike. Its `pruneDisabledSlots`
+        // pass drops slots whose owner is disabled again, while slots
+        // evicted by a mid-draft toggle/delete intentionally stay gone
+        // until the next refresh rebuilds them (the "no slot yet"
+        // contract pinned by `testDeleteThenDiscardStaysConsistent`).
+        await appState.setInstances(instances)
+        await appState.updateSettings(settings)
+        await appStateProxy.syncFromState()
+
         logger.info("SettingsViewModel discarded unsaved changes")
     }
 
@@ -224,6 +237,13 @@ final class SettingsViewModel: ObservableObject {
         instances.removeAll { $0.uuid == instance.uuid }
         apiKeys.removeValue(forKey: instance.uuid)
         recomputeSortOrders()
+        // Propagate the deletion to the runtime AppState so the
+        // menu bar slot disappears immediately and the discard
+        // path stays consistent. `removeInstance` is a no-op when
+        // the UUID is already gone, so the second-call path in
+        // `save()`'s `deletedInstances` loop is safe. See PR #23
+        // review.
+        await appStateProxy.removeInstance(uuid: instance.uuid)
     }
 
     func moveInstances(fromOffsets source: IndexSet, toOffset destination: Int) {
@@ -231,15 +251,19 @@ final class SettingsViewModel: ObservableObject {
         recomputeSortOrders()
     }
 
-    func setInstanceTrackingEnabled(uuid: String, enabled: Bool) {
+    /// Toggle a single instance's tracking flag. The change is
+    /// propagated to the runtime `AppState` immediately so the menu
+    /// bar and usage panel reflect it without waiting for the user
+    /// to click "Save Changes". The local `instances` draft is also
+    /// updated so `hasUnsavedChanges` keeps showing the toggle as
+    /// a pending commit (the change is only durable after `save()`).
+    /// `discardChanges()` rolls the runtime state back via the same
+    /// `appStateProxy.setInstanceTracking` path. See issue #20.
+    func setInstanceTrackingEnabled(uuid: String, enabled: Bool) async {
         if let index = instances.firstIndex(where: { $0.uuid == uuid }) {
             instances[index].trackingEnabled = enabled
         }
-    }
-
-    @available(*, deprecated, message: "Use setInstanceTrackingEnabled instead")
-    func setInstanceEnabled(uuid: String, enabled: Bool) {
-        setInstanceTrackingEnabled(uuid: uuid, enabled: enabled)
+        await appStateProxy.setInstanceTracking(uuid: uuid, enabled: enabled)
     }
 
     // MARK: - Notifications

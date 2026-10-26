@@ -58,6 +58,13 @@ struct InstanceEditorView: View {
     @State private var currency: String = "CNY"
     @State private var thresholds: Thresholds = .defaultQuota
     @State private var validationError: String?
+    /// True after the user has *changed* the metric selection in this
+    /// form session. Reset to `false` by `loadExistingData` so opening
+    /// an already-paused instance doesn't fire the forward-looking
+    /// "this will pause tracking" banner — the warning only makes
+    /// sense when the user is the one doing the disabling. See PR #23
+    /// review.
+    @State private var hasUserTouchedMetrics: Bool = false
 
     private var isEditing: Bool { existingInstance != nil }
 
@@ -65,6 +72,16 @@ struct InstanceEditorView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    if Self.shouldShowAllMetricsBanner(
+                        provider: provider,
+                        selectedMetrics: selectedMetrics,
+                        isEditing: isEditing,
+                        hasUserTouchedMetrics: hasUserTouchedMetrics,
+                        miniMaxModelNames: miniMaxModelNames
+                    ) {
+                        allMetricsDisabledBanner
+                    }
+
                     providerSection
                     metricsSection
                     displaySection
@@ -338,6 +355,7 @@ struct InstanceEditorView: View {
         } else if let option = kimiMetricOptions.first(where: { $0.window == window }) {
             selectedMetrics.append(option)
         }
+        hasUserTouchedMetrics = true
     }
 
     private func kimiWindowDisplayName(_ window: String) -> String {
@@ -412,6 +430,44 @@ struct InstanceEditorView: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(Color.cardBorder, lineWidth: 1)
         )
+    }
+
+    /// Inline warning shown when the user has unchecked every metric
+    /// in the edit form. Mirrors the visual language of the error
+    /// banner at the bottom but uses the `warningYellow` token so the
+    /// message reads as advisory, not blocking. See issue #20.
+    ///
+    /// The wording is honest about the actual behavior: the
+    /// `AppState` boundary filter only drops a slot when
+    /// `trackingEnabled == false`, so saving with zero metrics
+    /// while tracking is still on keeps the shortName visible —
+    /// it just stops emitting data. See PR #23 review.
+    @ViewBuilder
+    private var allMetricsDisabledBanner: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color.warningYellow)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 16, height: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("No metrics selected — usage data will stop updating for this instance.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.textPrimary)
+                Text("The shortName stays in the menu bar but no number or status will be shown. Re-enable at least one metric to resume updates.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.textSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.warningYellow.opacity(0.12))
+        .cornerRadius(6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.warningYellow.opacity(0.5), lineWidth: 1)
+        )
+        .accessibilityIdentifier("instanceEditor.allMetricsDisabledBanner")
     }
 
     // MARK: - Display Section
@@ -603,6 +659,7 @@ struct InstanceEditorView: View {
                 selectedMetrics[idx].displayInMenuBar = newState
             }
         }
+        hasUserTouchedMetrics = true
     }
 
     private func toggleMiniMaxWindow(modelName: String, window: String) {
@@ -617,6 +674,7 @@ struct InstanceEditorView: View {
         } else {
             selectedMetrics.append(MetricConfig(key: key, group: modelName, window: window))
         }
+        hasUserTouchedMetrics = true
     }
 
     private func openCodeMetricIsSelected(_ window: String) -> Bool {
@@ -629,6 +687,7 @@ struct InstanceEditorView: View {
         } else {
             selectedMetrics.append(MetricConfig(key: window, group: nil, window: window))
         }
+        hasUserTouchedMetrics = true
     }
 
     private func openCodeWindowDisplayName(_ window: String) -> String {
@@ -708,14 +767,85 @@ struct InstanceEditorView: View {
         }
     }
 
-    private var isFormFilled: Bool {
+    var isFormFilled: Bool {
+        Self.evaluateFormState(
+            provider: provider,
+            selectedMetrics: selectedMetrics,
+            shortName: shortName,
+            isEditing: isEditing,
+            miniMaxModelNames: miniMaxModelNames
+        ).isFormFilled
+    }
+
+    /// `true` when the user has cleared every metric in an edit form.
+    /// Drives the "this will pause tracking" warning banner so the
+    /// user has a clear signal that the saved instance will not
+    /// produce any menu bar slot. See issue #20.
+    var isAllMetricsDisabled: Bool {
+        Self.evaluateFormState(
+            provider: provider,
+            selectedMetrics: selectedMetrics,
+            shortName: shortName,
+            isEditing: isEditing,
+            miniMaxModelNames: miniMaxModelNames
+        ).isAllMetricsDisabled
+    }
+
+    /// Pure, side-effect-free form-state evaluator. Exposed as
+    /// `static` so unit tests can pin the form-validation rules
+    /// without having to drive the SwiftUI view body / `@State`
+    /// defaults (which can't be exercised reliably from XCTest
+    /// for this view). The instance computed properties above
+    /// delegate here, so the runtime and test paths share one
+    /// implementation. See issue #20.
+    static func evaluateFormState(
+        provider: Provider,
+        selectedMetrics: [MetricConfig],
+        shortName: String,
+        isEditing: Bool,
+        miniMaxModelNames: [String]
+    ) -> (isFormFilled: Bool, isAllMetricsDisabled: Bool) {
         let hasValidShortName = !shortName.isEmpty && shortName.count >= 2 && shortName.count <= 3
 
+        // MiniMax without available models and not editing: the
+        // form has no metric list to fill, so shortName alone is
+        // enough to be considered "form filled" (the user can't
+        // pick metrics that don't exist).
         if provider == .minimax && miniMaxModelNames.isEmpty && !isEditing {
-            return hasValidShortName
+            return (hasValidShortName, false)
         }
 
-        return hasValidShortName && !selectedMetrics.isEmpty
+        // Editing an existing instance allows saving with no metrics
+        // — the user is intentionally pausing tracking for that entry.
+        // Creating a new instance still requires at least one metric
+        // so we never persist a fully unconfigured entry. See issue #20.
+        let formFilled = hasValidShortName && (!selectedMetrics.isEmpty || isEditing)
+        let allDisabled = isEditing && selectedMetrics.isEmpty
+        return (formFilled, allDisabled)
+    }
+
+    /// Whether the inline "metrics disabled" warning banner should
+    /// actually render. Combines the form's structural
+    /// `isAllMetricsDisabled` state with a user-action gate so the
+    /// forward-looking banner doesn't fire when the user just opens
+    /// an instance that was already paused. `evaluateFormState`
+    /// stays focused on the validation rules; this helper bakes in
+    /// the UI policy. See PR #23 review.
+    static func shouldShowAllMetricsBanner(
+        provider: Provider,
+        selectedMetrics: [MetricConfig],
+        isEditing: Bool,
+        hasUserTouchedMetrics: Bool,
+        miniMaxModelNames: [String]
+    ) -> Bool {
+        guard hasUserTouchedMetrics else { return false }
+        return evaluateFormState(
+            provider: provider,
+            selectedMetrics: selectedMetrics,
+            shortName: "MX",  // shortName is irrelevant for the banner check
+            isEditing: isEditing,
+            miniMaxModelNames: miniMaxModelNames
+        ).isAllMetricsDisabled
     }
 
     private func dimensionDisplayName(_ key: String) -> String {
@@ -746,6 +876,11 @@ struct InstanceEditorView: View {
     }
 
     private func loadExistingData() {
+        // Reset the touched flag on every form load so the warning
+        // banner only surfaces when the *current* user action
+        // disabled everything — not when the user just opened an
+        // instance that was already paused. See PR #23 review.
+        hasUserTouchedMetrics = false
         if let instance = existingInstance {
             provider = Provider(rawValue: instance.provider) ?? .minimax
             selectedMetrics = instance.metrics.filter { !$0.key.isEmpty }

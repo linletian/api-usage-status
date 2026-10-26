@@ -163,10 +163,12 @@ struct SettingsView: View {
                                 viewModel.requestDelete(instance)
                             },
                             onToggleTracking: {
-                                viewModel.setInstanceTrackingEnabled(
-                                    uuid: instance.uuid,
-                                    enabled: !instance.trackingEnabled
-                                )
+                                Task { @MainActor in
+                                    await viewModel.setInstanceTrackingEnabled(
+                                        uuid: instance.uuid,
+                                        enabled: !instance.trackingEnabled
+                                    )
+                                }
                             }
                         )
                     }

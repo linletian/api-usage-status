@@ -12,8 +12,11 @@ struct Instance: Codable, Identifiable, Equatable {
     var currency: String?
     var thresholds: Thresholds
 
-    /// Computed bridge for backward compatibility.
-    /// SettingsViewModel.setInstanceEnabled writes to this setter.
+    /// Computed bridge for backward compatibility with the v1
+    /// JSON schema. v2 persists \`tracking_enabled\` directly; this
+    /// bridge is kept so legacy call sites that still write
+    /// \`instance.enabled = ...\` keep working without a read site
+    /// update.
     var enabled: Bool {
         get { trackingEnabled }
         set { trackingEnabled = newValue }

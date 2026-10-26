@@ -134,10 +134,10 @@ actor PersistenceService {
         try await keychainService.delete(for: apiKeyRef)
     }
 
-    /// Ensure the OpenCode placeholder key exists in the keychain. Called at
-    /// app launch so any OpenCode instance's `apiKeyRef` resolves to a
-    /// non-nil value (the supplier ignores the value, but the keychain
-    /// lookup must succeed).
+    /// Ensure the shared OpenCode keychain entry exists. Called at app
+    /// launch so any OpenCode instance's `apiKeyRef` resolves to a non-nil
+    /// value; an empty value means the user has not pasted a Zen API key
+    /// yet, which the supplier reports as a configuration error.
     func ensureOpenCodePlaceholder() async throws {
         try await keychainService.ensureOpenCodePlaceholder()
     }

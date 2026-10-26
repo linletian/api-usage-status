@@ -214,7 +214,7 @@ struct UsageCardView: View {
             // All quota-type providers use text-above-bar to match the
             // Weekly section layout. Balance-type instances have their
             // own layout and don't go through this path.
-            quotaSummaryRow(usageValue: usageValue, limitValue: limitValue, percent: percent, overageUSD: slot.metricSnapshots.first?.overageUSD ?? 0)
+            quotaSummaryRow(usageValue: usageValue, limitValue: limitValue, percent: percent)
             quotaProgressBar(percent: percent, height: 4)
 
             // Countdown row: "Xh Ym remaining" (until the quota window
@@ -351,28 +351,27 @@ struct UsageCardView: View {
     }
 
     @ViewBuilder
-    private func quotaSummaryRow(usageValue: String, limitValue: String, percent: Double, overageUSD: Double = 0) -> some View {
+    private func quotaSummaryRow(usageValue: String, limitValue: String, percent: Double) -> some View {
         HStack(spacing: 4) {
             Text(quotaSummaryText(usageValue: usageValue, limitValue: limitValue))
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundColor(.textSecondary)
             Spacer()
-            Text(overagePercentText(percent: percent, overageUSD: overageUSD))
+            Text(overagePercentText(percent: percent))
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundColor(percent >= 95 ? .dangerRed : (percent >= 80 ? .warningYellow : .textPrimary))
         }
     }
 
-    private func overagePercentText(percent: Double, overageUSD: Double) -> String {
+    private func overagePercentText(percent: Double) -> String {
         guard percent > 100 else { return "\(Int(percent))%" }
-        switch slot.provider {
-        case Provider.githubCopilot.rawValue:
+        // Copilot is the only provider whose parser can report percent > 100
+        // (over-budget premium interactions); everyone else is clamped to
+        // 100 upstream, so the overage bar never triggers for them.
+        if slot.provider == Provider.githubCopilot.rawValue {
             return "100% + \(String(format: "%.1f", percent - 100))%"
-        case Provider.opencode.rawValue:
-            return "100% + $\(String(format: "%.2f", overageUSD))"
-        default:
-            return "\(Int(percent))%"
         }
+        return "\(Int(percent))%"
     }
 
     @ViewBuilder
@@ -644,7 +643,7 @@ struct UsageCardView: View {
                             .foregroundColor(.textSecondary)
                     }
                     Spacer()
-                    Text(overagePercentText(percent: snapshot.percent, overageUSD: snapshot.overageUSD))
+                    Text(overagePercentText(percent: snapshot.percent))
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .foregroundColor(percentTextColor(for: snapshot.percent))
                 }

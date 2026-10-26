@@ -44,7 +44,7 @@ final class AppStateProxy: ObservableObject {
     func initialize() async {
         logger.info("AppStateProxy initializing")
 
-        // Ensure the OpenCode placeholder keychain entry exists. The
+        // Ensure the shared OpenCode keychain entry exists. The
         // keychainService is unreachable through `appState`, so we go
         // through `persistenceService`. Idempotent — safe to call on
         // every launch.

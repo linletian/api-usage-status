@@ -795,16 +795,14 @@ actor RefreshService {
 
                 // Provider-specific display values. Copilot stores absolute
                 // credit counts, so the panel shows used/total credits.
-                // OpenCode exposes both used and limit in dollars (the
-                // supplier pre-formats them as "%.2f" strings). MiniMax
-                // only exposes a percent from the API — we pass an empty
+                // MiniMax, Kimi, and OpenCode only expose a percent from
+                // their APIs — we pass an empty
                 // `displayLimit` so the view renders just "<value>%" instead
                 // of "<value> / 100" (the "/ 100" is a meaningless constant
                 // since the API doesn't expose a real denominator for these
                 // providers).
                 let displayUsage: String
                 let displayLimit: String
-                let overageUSD: Double
                 if instance.provider == Provider.githubCopilot.rawValue {
                     let entitlement = Int(response.value(forDimension: "\(key):entitlement") ?? "0") ?? 0
                     let remaining = Int(response.value(forDimension: "\(key):remaining") ?? "0") ?? 0
@@ -845,19 +843,9 @@ actor RefreshService {
                         displayUsage = String(used)
                         displayLimit = String(entitlement)
                     }
-                    overageUSD = 0
-                } else if instance.provider == Provider.opencode.rawValue {
-                    let usedStr = response.value(forDimension: "\(key):used") ?? "0"
-                    let limitStr = response.value(forDimension: "\(key):limit") ?? "0"
-                    displayUsage = "$\(usedStr)"
-                    displayLimit = "$\(limitStr)"
-                    let usedVal = Double(usedStr) ?? 0
-                    let limitVal = Double(limitStr) ?? 0
-                    overageUSD = usedVal > limitVal ? usedVal - limitVal : 0
                 } else {
                     displayUsage = valueString
                     displayLimit = ""
-                    overageUSD = 0
                 }
 
                 let colorState = determineColorState(percent: percent, thresholds: instance.thresholds)
@@ -891,8 +879,7 @@ actor RefreshService {
                     displayInMenuBar: metricConfig.displayInMenuBar,
                     isUnlimited: isUnlimited,
                     shortName: metricConfig.shortName,
-                    cycleEndTime: cycleEndTime,
-                    overageUSD: overageUSD
+                    cycleEndTime: cycleEndTime
                 ))
             }
 

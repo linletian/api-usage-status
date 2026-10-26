@@ -14,7 +14,7 @@ A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek
 - **Threshold Alerts** — quota percentages or balance amounts trigger macOS system notifications; click the notification to view details
 - **Deep-Link to Web Dashboard** — each card exposes a `See details` button that opens the provider's web usage page in the default browser (DeepSeek, MiniMax, GitHub Copilot → static URLs; OpenCode → `https://opencode.ai/workspace/<id>/go`, where `<id>` is recovered from `~/.local/share/opencode/log/*.log`; falls back to `https://opencode.ai/zh/go` if not yet recovered)
 - **Balance Tracking** — records historical snapshots, displays daily averages by week / month / last 7 days / last 30 days
-- **Zero External Dependencies** — only uses system frameworks such as AppKit, SwiftUI, and Security. OpenCode Go provider requires the `opencode` CLI to be installed locally.
+- **Zero External Dependencies** — only uses system frameworks such as AppKit, SwiftUI, and Security.
 
 | <img src="docs/README_assets/ScreenShot_Light.png" alt="Usage panel screenshot (light mode)"> | <img src="docs/README_assets/ScreenShot_Dark.png" alt="Usage panel screenshot (dark mode)"> |
 |---|---|
@@ -26,7 +26,7 @@ A pure menu bar macOS app designed for macOS 13 that monitors MiniMax / DeepSeek
 | MiniMax | Multi-metric: each `model_name` (capability bucket, e.g. `general`/`video`/`speech-hd`) tracks 5h + weekly independently | `www.minimaxi.com/v1/token_plan/remains` |
 | DeepSeek | Topped-up amount, gifted amount, total balance, currency unit; peak/off-peak indicator (09:00–12:00 and 14:00–18:00 Beijing Time, **weekdays only**; weekends always off-peak) | `api.deepseek.com/user/balance` |
 | GitHub Copilot | Monthly `premium_interactions` remaining percentage (Free / Pro / Pro+ / Business / Enterprise) | `api.github.com/copilot_internal/user` |
-| OpenCode Go | Dollar usage of the 5h / weekly / monthly windows ($12 / $30 / $60 limits) | Local SQLite via `opencode db` CLI |
+| OpenCode Go | Usage percentage of the 5h / weekly / monthly windows (server-side metering, plan-only usage, consistent across devices) | `opencode.ai/zen/go/v1/usage` (Zen API key) |
 | Kimi | 5-hour rolling rate window + weekly subscription quota usage percentage (membership plans) | `api.kimi.com/coding/v1/usages` |
 
 > **Note**: The DeepSeek peak/off-peak indicator above is fixed to **Beijing Time (UTC+8)**
@@ -59,7 +59,7 @@ Each provider has a different authentication model. All credentials are stored i
   - The GitHub account owning the token must have an active Copilot subscription (Free / Pro / Pro+ / Business / Enterprise all work).
   - You can revoke the token at any time at https://github.com/settings/tokens.
 
-- **OpenCode Go** — No API key required. The supplier shells out to the local `opencode` CLI (must be installed at `~/.opencode/bin/opencode`, `/usr/local/bin/opencode`, or `/opt/homebrew/bin/opencode`) and reads the usage data directly from the OpenCode SQLite database (`~/.local/share/opencode/opencode.db`). See `docs/provider-interfaces/opencode_go.md` for the data layer and `docs/provider-interfaces/opencode_workspace_resolver.md` for how the workspace ID powering the "See details" deep link is recovered.
+- **OpenCode Go** — Paste a Zen API Key (created at https://opencode.ai → your workspace → API keys). The supplier calls the official usage API (`GET https://opencode.ai/zen/go/v1/usage`), which reports plan-only usage metered server-side — consistent across multiple devices. See `docs/provider-interfaces/opencode_go.md` for the data layer and `docs/provider-interfaces/opencode_workspace_resolver.md` for how the workspace ID powering the "See details" deep link is recovered.
 - **Kimi** — Paste an API Key created in the Kimi Code Console (https://www.kimi.com/code/console → **Create API Key**). Requires an active Kimi membership with Kimi Code benefits; the key shares the membership quota. See `docs/provider-interfaces/kimi.md` for the endpoint and data contract.
 
 ## System Requirements
@@ -163,7 +163,6 @@ APIUsageStatus/
 ├── AppState/                      # Runtime state Actor + @MainActor proxy
 ├── Models/                        # Data models (instance/balance/threshold/global settings, BreathingMath)
 ├── Services/                      # Core services (Keychain/persistence/refresh/notification/launch at login)
-├── Shell/                         # Shell process execution (used by OpenCode Go supplier)
 ├── Network/                       # HTTP client + retry policy
 ├── Suppliers/                     # Provider protocol + MiniMax / DeepSeek / Copilot / OpenCode implementations
 ├── Balance/                       # Balance calculator + history snapshots
@@ -182,10 +181,10 @@ APIUsageStatusTests/                # Unit + snapshot tests covering parsers,
 
 ## Security & Privacy
 
-- **⚠️ App Sandbox** — **Disabled** so that the OpenCode Go supplier can run `opencode db` via `Process.run()` to read the local SQLite database. This is the only way to query OpenCode Go usage (there is no public REST API). The trade-off:
-  - **What's gained**: OpenCode Go real-time usage monitoring (5h / weekly / monthly windows) directly from local data — no need to wait for an official API.
-  - **What's lost**: macOS App Sandbox protections. The app can now theoretically access any file the current user can access, and spawn child processes. In practice, this project is self-compiled and self-used — it only talks to known HTTPS API endpoints and spawns only the `opencode` CLI; it never processes untrusted user input. The actual attack surface increase is negligible for personal use. See `docs/provider-interfaces/opencode_go.md` for details.
-  - **If you don't use OpenCode Go**: the only code path that requires sandbox-disabled is `ShellProcessRunner` (invoked solely by `OpenCodeSupplier`). The MiniMax / DeepSeek / Copilot suppliers work identically with or without sandbox.
+- **⚠️ App Sandbox** — **Disabled** so that `OpenCodeWorkspaceResolver` can spawn `/usr/bin/grep` to scan `~/.local/share/opencode/log/*.log` and recover the workspace ID behind the "See details" deep link. The trade-off:
+  - **What's gained**: the OpenCode card deep-links straight into the per-workspace web dashboard (`https://opencode.ai/workspace/<id>/go`). Usage querying itself goes through the official HTTP API (`opencode.ai/zen/go/v1/usage`) and needs no local process.
+  - **What's lost**: macOS App Sandbox protections. The app can now theoretically access any file the current user can access, and spawn child processes. In practice, this project is self-compiled and self-used — it only talks to known HTTPS API endpoints and spawns only `/usr/bin/grep`; it never processes untrusted user input. The actual attack surface increase is negligible for personal use.
+  - **If you don't use OpenCode Go**: every other supplier works identically with or without sandbox, so you can re-enable it.
 - **API Key** — stored in Keychain (InternetPassword type), never written to disk in plain text
 - **Network** — only HTTPS access to provider APIs, no user data transmitted
 - **Logging** — os.Logger, sensitive information automatically masked in production

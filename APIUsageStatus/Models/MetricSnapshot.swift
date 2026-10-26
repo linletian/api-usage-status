@@ -78,10 +78,6 @@ struct MetricSnapshot: Equatable {
     /// When `nil` the menu bar renderer falls back to the instance short name.
     let shortName: String?
 
-    /// Dollars over the plan limit when overage billing is active (OpenCode Go).
-    /// 0 when there is no overage or the provider doesn't support it.
-    let overageUSD: Double
-
     init(
         key: String,
         group: String?,
@@ -95,8 +91,7 @@ struct MetricSnapshot: Equatable {
         displayInMenuBar: Bool = true,
         isUnlimited: Bool = false,
         shortName: String? = nil,
-        cycleEndTime: Date? = nil,
-        overageUSD: Double = 0
+        cycleEndTime: Date? = nil
     ) {
         self.key = key
         self.group = group
@@ -111,6 +106,5 @@ struct MetricSnapshot: Equatable {
         self.displayInMenuBar = displayInMenuBar
         self.isUnlimited = isUnlimited
         self.shortName = shortName
-        self.overageUSD = overageUSD
     }
 }
